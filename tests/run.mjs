@@ -12,6 +12,7 @@ import './reading-progress.test.mjs';
 import './reader-layout.test.mjs';
 import './reader-ui-state.test.mjs';
 import './deduplicate-selection.test.mjs';
+import './archive-deletion.test.mjs';
 import './session-state.test.mjs';
 import './pwa-install.test.mjs';
 import './eh-comments-cache.test.mjs';

@@ -2838,6 +2838,28 @@ textarea:focus-visible,
   align-items: start;
 }
 
+.dedupe-chain {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: start;
+  gap: 24px 18px;
+  max-width: 100%;
+  padding: 30px 10px 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 42%, var(--glass-border));
+  border-radius: 14px;
+}
+
+.dedupe-chain-label {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .dedupe-group {
   box-sizing: border-box;
   width: max-content;
@@ -2851,21 +2873,38 @@ textarea:focus-visible,
   box-shadow: 0 12px 34px rgba(251, 191, 36, 0.08);
 }
 
-.dedupe-group-selection-message {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition: grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
+.dedupe-group-toggle {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--dropdown-bg);
+  color: var(--text-main);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
-.dedupe-group-selection-message > div {
-  min-height: 0;
-  overflow: hidden;
+.dedupe-group-toggle[aria-pressed="true"] {
+  color: #fbbf24;
+  border-color: rgba(251,191,36,0.72);
+}
+
+.dedupe-group-selection-message {
+  min-height: 27px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .dedupe-group.is-selected .dedupe-group-selection-message {
-  grid-template-rows: 1fr;
   opacity: 1;
+  transform: translateY(0);
 }
 
 .dedupe-group-selection-message-content {
@@ -2927,6 +2966,87 @@ textarea:focus-visible,
   color: #fff;
   font-weight: 800;
   box-shadow: 0 8px 18px rgba(0,0,0,0.3);
+}
+
+.dedupe-execution-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dedupe-execution-progress-heading,
+.dedupe-failure-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dedupe-execution-progress-heading span,
+.dedupe-execution-progress-detail,
+.dedupe-failure-copy-status,
+.dedupe-failure-message {
+  color: var(--text-sub);
+  font-size: 12px;
+}
+
+.dedupe-execution-progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.16);
+}
+
+.dedupe-execution-progress-track span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 160ms ease;
+}
+
+.dedupe-failure-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  min-width: 0;
+}
+
+.dedupe-failure-heading .btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.dedupe-failure-copy-status:empty {
+  display: none;
+}
+
+.dedupe-failure-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  margin: 0;
+  padding-left: 20px;
+  overflow: auto;
+  user-select: text;
+}
+
+.dedupe-failure-list li {
+  min-width: 0;
+}
+
+.dedupe-failure-list a,
+.dedupe-failure-list span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.dedupe-failure-list span {
+  margin-top: 2px;
+  color: var(--text-sub);
+  font-size: 12px;
 }
 
 .dedupe-card-item > .archive-card-wrap.is-wide {
@@ -3182,7 +3302,8 @@ textarea:focus-visible,
     animation: none !important;
   }
   .dedupe-group,
-  .dedupe-group-selection-message {
+  .dedupe-group-selection-message,
+  .dedupe-execution-progress-track span {
     transition: none !important;
   }
   .archive-card-wrap.is-wide > .archive-card-shell {

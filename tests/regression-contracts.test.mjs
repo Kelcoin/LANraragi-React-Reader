@@ -95,8 +95,27 @@ test('dedupe results use compact persistence, interlocked selection, and wide-ca
   assert.match(page, /pagecount \?\? archive\.total/);
   assert.match(css, /\.dedupe-groups-grid\s*\{/);
   assert.match(css, /\.dedupe-card-item\s*>\s*\.archive-card-wrap\.is-wide/);
-  assert.match(css, /\.dedupe-group-selection-message\s*\{[^}]*grid-template-rows:\s*0fr/s);
-  assert.match(css, /\.dedupe-group\.is-selected\s+\.dedupe-group-selection-message\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.match(css, /\.dedupe-group-selection-message\s*\{[^}]*min-height:\s*\d+px;[^}]*opacity:\s*0;/s);
+  assert.doesNotMatch(css, /\.dedupe-group-selection-message\s*\{[^}]*grid-template-rows/s);
+  assert.match(css, /\.dedupe-group\.is-selected\s+\.dedupe-group-selection-message\s*\{[^}]*opacity:\s*1;/s);
+});
+
+test('dedupe execution combines actions, groups chains, reports progress, and preserves retry failures', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const deletion = read('src/lib/archiveDeletion.js');
+  const css = read('src/index.css');
+  assert.match(page, /groupDuplicatePairsByChain/);
+  assert.match(page, /className="dedupe-chain"/);
+  assert.match(page, />\s*执行\s*</);
+  assert.doesNotMatch(page, />\s*删除选中\s*</);
+  assert.doesNotMatch(page, />\s*标记分组不重复\s*</);
+  assert.match(page, /aria-live="polite"/);
+  assert.match(page, /navigator\.clipboard\.writeText/);
+  assert.match(page, /continueOnFavoriteError:\s*true/);
+  assert.match(page, /deleteArchiveWithFavoriteSync/);
+  assert.doesNotMatch(page, /\{status\}<\/div>/);
+  assert.match(deletion, /runArchiveDeletionOperations/);
+  assert.match(css, /\.dedupe-chain\s*\{/);
 });
 
 test('dedupe cards own a focused context menu and progress-free central thumbnail preview', () => {
@@ -163,10 +182,12 @@ test('dedupe bulk group toggle lives below scan stats and its context menu stays
   assert.match(page, /<StatsPanel[\s\S]*allGroupsSelected=\{allGroupsSelected\}/);
   assert.match(page, /\['选中档案', selectedArchiveCount\]/);
   assert.match(page, /\['选中分组', selectedGroupCount\]/);
-  assert.match(page, /function StatsPanel\([\s\S]*智能选择[\s\S]*>\s*删除选中\s*<[\s\S]*>\s*标记分组不重复\s*</);
-  assert.doesNotMatch(page, /删除选中 \(\{selectedArchiveCount\}\)|标记分组不重复 \(\{selectedGroupCount\}\)/);
+  assert.match(page, /function StatsPanel\([\s\S]*智能选择[\s\S]*>\s*执行\s*</);
+  assert.doesNotMatch(page, />\s*删除选中\s*<|>\s*标记分组不重复\s*</);
   assert.match(page, /function DateRangePanel\([\s\S]*检测范围[\s\S]*>重置</);
-  assert.match(page, /function DateRangePanel\([\s\S]*\{running \? '处理中\.\.\.' : '开始检测'\}/);
+  assert.match(page, /<h2 style=\{\{ margin: 0, fontWeight: 800, fontSize: '16px'[^}]*\}\}>检测范围<\/h2>/);
+  assert.doesNotMatch(page, /按档案入库日期筛选，默认范围包含全部档案/);
+  assert.match(page, /function DateRangePanel\([\s\S]*\{running \? '处理中…' : '开始检测'\}/);
   assert.doesNotMatch(page, /<header[\s\S]*智能选择[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*开始检测[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*选择全部分组标记为不重复[\s\S]*<\/header>/);
@@ -300,8 +321,15 @@ test('immersive Reader replaces its top toolbar with side-aware corner controls'
 });
 
 test('build and proxy hardening are reproducible', () => {
+  const app = read('src/App.jsx');
   const vite = read('vite.config.js');
   const workflow = read('.github/workflows/mobile-build.yml');
+  assert.match(app, /import React, \{ lazy, Suspense,/);
+  for (const page of ['Reader', 'Home', 'HistoryPage', 'WatchlistPage', 'DeduplicatePage', 'MetadataPage', 'UploadPage']) {
+    assert.match(app, new RegExp(`const ${page} = lazy\\(\\(\\) => import\\('\\./pages/${page}'\\)\\);`));
+    assert.doesNotMatch(app, new RegExp(`import ${page} from '\\./pages/${page}'`));
+  }
+  assert.match(app, /<Suspense fallback=\{<AppRouteFallback \/>\}>/);
   assert.doesNotMatch(vite, /secure:\s*false/);
   assert.doesNotMatch(vite, /wildcards/);
   assert.match(vite, /VITE_LRR_PROXY_TARGET/);
@@ -561,7 +589,7 @@ test('archive mutations synchronize catalog and short search caches after succes
   const progressActions = read('src/lib/archiveProgressActions.js');
   const reader = read('src/pages/Reader.jsx');
 
-  assert.match(deletion, /await lrrApi\.deleteArchive\(archiveId\);[\s\S]{0,300}removeArchivesFromCatalog\(archiveId\);[\s\S]{0,200}clearArchiveSearchResponseCache\(\);/);
+  assert.match(deletion, /archiveOperation:\s*async \(\) =>\s*assertArchiveDeletionResult\(await lrrApi\.deleteArchive\(archiveId\)\)[\s\S]{0,500}removeArchivesFromCatalog\(archiveId\);[\s\S]{0,200}clearArchiveSearchResponseCache\(\);/);
   assert.match(metadataPage, /await lrrApi\.updateArchiveMetadata[\s\S]{0,500}rememberArchiveInCatalog\(/);
   assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,300}uploadResults\.some[\s\S]{0,200}invalidateArchiveCatalog\(\)/);
   assert.match(progressActions, /rememberArchiveProgressInCatalog\(id, result\.page/);
