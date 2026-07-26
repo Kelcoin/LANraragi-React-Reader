@@ -8,7 +8,7 @@ import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import { HomeSectionGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
 import { isArchiveMissingError, runHistoryExistenceCheck } from '../lib/historyMaintenance';
-import { getSyncToken, getWorkerUrl } from '../lib/worker-config';
+import { hasValidWorkerConfig } from '../lib/worker-config';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
 import { lrrApi } from '../lib/api';
 import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
@@ -78,6 +78,7 @@ function groupHistoryByPeriod(items) {
 }
 
 export default function HistoryPage({ onSelectArchive, onBack }) {
+  const workerReady = hasValidWorkerConfig();
   const [history, setHistoryState] = useState(() => getHistory());
   const [hideRead, setHideReadState] = useState(getHideRead);
   const [cropCover] = useState(getCropCover);
@@ -148,7 +149,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   }, []);
 
   const handleSyncHistory = useCallback(async () => {
-    if (!getWorkerUrl() || !getSyncToken() || syncing) return;
+    if (!workerReady || syncing) return;
     setSyncing(true);
     try {
       const state = await loadHistoryState({ force: true });
@@ -157,7 +158,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     } finally {
       setSyncing(false);
     }
-  }, [syncing]);
+  }, [syncing, workerReady]);
 
   const handleCheckHistory = useCallback(async () => {
     if (checking) return;
@@ -271,7 +272,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     setArchiveDeleting(true);
     try {
       await deleteArchiveWithFavoriteSync(archiveDeleteTarget, {
-        syncEnabled: getEhFavoriteDeleteSync(),
+        syncEnabled: workerReady && getEhFavoriteDeleteSync(),
         confirmationEnabled: archiveDeleteSyncConfirmed,
       });
       await Promise.all([removeHistoryItems([archiveId]), removeWatchlistItem(archiveId)]);
@@ -289,7 +290,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     } finally {
       setArchiveDeleting(false);
     }
-  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting]);
+  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting, workerReady]);
 
   return (
     <>
@@ -310,15 +311,16 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
           </div>
           <div className="history-page-actions">
             <button className="btn" onClick={onBack}>返回</button>
+            {workerReady && (
             <button
               className="btn"
               onClick={handleSyncHistory}
-              disabled={!getWorkerUrl() || !getSyncToken() || syncing}
-              style={{ opacity: !getWorkerUrl() || !getSyncToken() ? 0.5 : 1 }}
-              title={!getWorkerUrl() || !getSyncToken() ? '配置 Worker 后可从远端读取历史记录' : '从 Worker 刷新阅读历史'}
+              disabled={syncing}
+              title="从 Worker 刷新阅读历史"
             >
               {syncing ? '刷新中' : '刷新'}
             </button>
+            )}
             <button className="btn" onClick={handleCheckHistory} disabled={checking}>
               {checking ? '检查中' : '清理失效'}
             </button>
@@ -477,7 +479,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         onCancel={() => { if (!archiveDeleting) setArchiveDeleteTarget(null); }}
         confirmDisabled={archiveDeleting}
       >
-        {getEhFavoriteDeleteSync() && (
+        {workerReady && getEhFavoriteDeleteSync() && (
           <EhFavoriteDeleteSwitch checked={archiveDeleteSyncConfirmed} onChange={setArchiveDeleteSyncConfirmed} disabled={archiveDeleting} />
         )}
       </ConfirmDialog>

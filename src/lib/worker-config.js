@@ -14,6 +14,16 @@ export function getSyncToken() {
   return localStorage.getItem(SYNC_TOKEN_KEY) || '';
 }
 
+export function hasValidWorkerConfig(url = getWorkerUrl(), token = getSyncToken()) {
+  if (!String(token || '').trim()) return false;
+  try {
+    const parsed = new URL(String(url || '').trim());
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !!parsed.hostname;
+  } catch {
+    return false;
+  }
+}
+
 export function setSyncToken(token) {
   if (token) localStorage.setItem(SYNC_TOKEN_KEY, token);
   else localStorage.removeItem(SYNC_TOKEN_KEY);

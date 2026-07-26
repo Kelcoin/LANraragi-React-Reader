@@ -739,6 +739,81 @@ test('Home auto-loads archives and desktop history count badges stay vertically 
   assert.match(css, /\.history-page-title-row\s*\{[^}]*align-items:\s*center;/s);
 });
 
+test('Worker-dependent controls are hidden without a valid Worker configuration', () => {
+  const home = read('src/pages/Home.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const watchlist = read('src/pages/WatchlistPage.jsx');
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const reader = read('src/pages/Reader.jsx');
+
+  for (const source of [home, history, watchlist, dedupe, reader]) {
+    assert.match(source, /hasValidWorkerConfig/);
+    assert.match(source, /workerReady/);
+  }
+  assert.match(home, /\{workerReady && \(\s*<button[\s\S]*?handleSyncHistory/);
+  assert.match(history, /\{workerReady && \(\s*<button[\s\S]*?handleSyncHistory/);
+  assert.match(watchlist, /\{workerReady && \(\s*<button[\s\S]*?handleSync/);
+  assert.match(dedupe, /showWorkerActions=\{workerReady\}/);
+  assert.match(dedupe, /if \(workerReady\) \{[\s\S]*?getNonDuplicatePairKeys\(\)/);
+  assert.match(reader, /ehWorker=\{workerReady \? getWorkerUrl\(\) : ''\}/);
+});
+
+test('archive context menus toggle LANraragi Favorites and expose async status', () => {
+  const home = read('src/pages/Home.jsx');
+  const menu = read('src/components/ArchiveContextMenu.jsx');
+  const dedupeMenu = read('src/components/DedupeArchiveContextMenu.jsx');
+  const css = read('src/index.css');
+
+  assert.match(home, /getCategoryDisplayName\(cat\)/);
+  assert.match(home, /sortCategoriesForDisplay\(categories\)/);
+  assert.match(home, /selectedCategoryOverride\.archives/);
+  assert.match(home, /selectedCategoryOverride\?\.search/);
+  assert.doesNotMatch(home, /category:\$\{cat\.name\}/);
+  assert.match(home, /handleCategoryClick[\s\S]*?writeFilter\(cleared\)[\s\S]*?setFilter\(cleared\)/);
+  assert.match(home, /syncChangedCategory[\s\S]*?setCategories\([\s\S]*?setSelectedCategory\(current => \(current\?\.id === changed\.id \? changed : current\)\)[\s\S]*?lrr:categories-changed/);
+  for (const source of [menu, dedupeMenu]) {
+    assert.match(source, /getFavoriteState/);
+    assert.match(source, /setArchiveFavorite/);
+    assert.match(source, /加入收藏夹/);
+    assert.match(source, /移出收藏夹/);
+    assert.match(source, /favoriteError\s*&&/);
+    assert.match(source, /aria-live="polite"/);
+  }
+  assert.match(menu, /加入待看/);
+  assert.match(menu, /移出待看/);
+  assert.doesNotMatch(menu, /取消待看/);
+  assert.doesNotMatch(css, /\.archive-context-menu-status\s*\{[^}]*min-height/s);
+});
+
+test('active categories remain selected while applying and clearing text filters', () => {
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(home, /const hasActiveTextFilter = effectiveFilter\.active && !!String\(effectiveFilter\.query \|\| ''\)\.trim\(\)/);
+  assert.match(home, /!hasActiveTextFilter && \(isUntaggedMode \|\| isStaticCategoryMode\)/);
+  assert.match(home, /category:\s*!isUntaggedMode \? selectedCategoryOverride\?\.id : ''/);
+  assert.match(home, /untaggedOnly:\s*isUntaggedMode/);
+  assert.match(home, /const handleSearch = \(\) => \{\s*applyFilter\(filter\.query, filter\.sortBy, filter\.order, selectedCategory\);/);
+  const clearFilter = home.match(/const clearFilter = \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.doesNotMatch(clearFilter, /setSelectedCategory\(null\)/);
+});
+
+test('category switches show a loading count instead of stale archive totals', () => {
+  const home = read('src/pages/Home.jsx');
+  const countLabel = home.match(/const archiveCountLabel = useMemo\(\(\) => \{[\s\S]*?\n  \}, \[/)?.[0] || '';
+  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[selectedCategory\]\);/)?.[0] || '';
+
+  assert.match(countLabel, /if \(loading\) return '正在获取结果\.\.\.';/);
+  assert.match(categoryClick, /setLoading\(true\)/);
+});
+
+test('README documents category-scoped filtering and LANraragi Favorites', () => {
+  const readme = read('README.md');
+
+  assert.match(readme, /静态和动态分类/);
+  assert.match(readme, /`🔖 Favorites`[\s\S]*?`⭐收藏夹`/);
+  assert.match(readme, /加入或移出 LANraragi 收藏夹/);
+});
+
 test('touch surfaces suppress native WebKit tap highlight globally', () => {
   const css = read('src/index.css');
   assert.match(css, /\*\s*\{[^}]*-webkit-tap-highlight-color:\s*transparent;/s);

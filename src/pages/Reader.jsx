@@ -37,7 +37,7 @@ import {
 import { computeContainedImageRect } from '../lib/pageIndicatorLayout';
 import { classifyWebtoonSeams, compareSeamPixels, sampleImageSeam } from '../lib/webtoonDetector';
 import { detectImageBorderInsets } from '../lib/readerImageTransform';
-import { getWorkerUrl, getSyncToken } from '../lib/worker-config';
+import { getWorkerUrl, getSyncToken, hasValidWorkerConfig } from '../lib/worker-config';
 import { getBootState, markBackground, loadReaderSnapshot, saveReaderSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
 import { navigateHistory, navigateHome, navigateToArchive, navigateToMetadata, navigateWatchlist, parseRouteFromLocation } from '../lib/navigation';
@@ -1081,6 +1081,7 @@ function ReaderStageSlot({ status, onRetry }) {
 }
 
 export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
+  const workerReady = hasValidWorkerConfig();
   const bootState = getBootState();
   const readerSnapshotRef = useRef(null);
   if (readerSnapshotRef.current === null) {
@@ -4057,7 +4058,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               sourceUrl={sourceUrl}
               ehEnabled={settings.ehEnabled}
               ehCookie={settings.ehCookie}
-              ehWorker={getWorkerUrl()}
+              ehWorker={workerReady ? getWorkerUrl() : ''}
               ehToken={getSyncToken()}
               ehMinScore={settings.ehMinScore}
               ehMaxComments={settings.ehMaxComments}

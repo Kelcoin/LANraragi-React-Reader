@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import * as api from '../src/lib/api.js';
+import * as categories from '../src/lib/categories.js';
 import * as upload from '../src/lib/upload.js';
 import * as workerConfig from '../src/lib/worker-config.js';
 
@@ -89,6 +90,37 @@ test('archive search cache evicts the least recently used response', async () =>
   }
 });
 
+test('archive search scopes filters by category or untagged state', async () => {
+  const previousStorage = globalThis.localStorage;
+  const previousFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.localStorage = {
+    getItem: (key) => (key === 'lrr_server_url' ? 'https://example.test' : ''),
+  };
+  globalThis.fetch = async (url) => {
+    urls.push(new URL(String(url)));
+    return { ok: true, text: async () => JSON.stringify({ data: [] }) };
+  };
+  try {
+    api.clearArchiveSearchResponseCache();
+    await api.lrrApi.search('artist:test$', 0, 'date_added', 'desc', { category: 'SET_1234567890' });
+    await api.lrrApi.search('artist:test$', 0, 'date_added', 'desc', { category: 'SET_1234567890' });
+    await api.lrrApi.search('artist:test$', 0, 'date_added', 'desc', { category: 'SET_0987654321' });
+    await api.lrrApi.search('artist:test$', 0, 'date_added', 'desc', { untaggedOnly: true });
+
+    assert.equal(urls.length, 3, 'category scope must participate in the cache key');
+    assert.equal(urls[0].searchParams.get('category'), 'SET_1234567890');
+    assert.equal(urls[0].searchParams.get('filter'), 'artist:test$');
+    assert.equal(urls[1].searchParams.get('category'), 'SET_0987654321');
+    assert.equal(urls[2].searchParams.get('untaggedonly'), 'true');
+    assert.equal(urls[2].searchParams.get('category'), null);
+  } finally {
+    api.clearArchiveSearchResponseCache();
+    globalThis.fetch = previousFetch;
+    globalThis.localStorage = previousStorage;
+  }
+});
+
 test('reader settings reject unsafe automatic turn intervals', () => {
   assert.equal(typeof readerSettings.normalizeReaderSettings, 'function', 'normalizeReaderSettings must load in Node');
   assert.equal(readerSettings.normalizeReaderSettings({ autoTurnInterval: 0 }).autoTurnInterval, 5);
@@ -145,6 +177,76 @@ test('config import ignores non-string field values', () => {
     assert.equal(values.has('lrr_server_url'), false);
     assert.equal(values.get('lrr_api_key'), 'ok');
   } finally {
+    globalThis.localStorage = previousStorage;
+  }
+});
+
+test('Worker features require a valid HTTP URL and a non-empty token', () => {
+  assert.equal(typeof workerConfig.hasValidWorkerConfig, 'function');
+  assert.equal(workerConfig.hasValidWorkerConfig('https://sync.example.workers.dev', 'token'), true);
+  assert.equal(workerConfig.hasValidWorkerConfig('http://localhost:8787', 'token'), true);
+  assert.equal(workerConfig.hasValidWorkerConfig('not-a-url', 'token'), false);
+  assert.equal(workerConfig.hasValidWorkerConfig('ftp://sync.example.test', 'token'), false);
+  assert.equal(workerConfig.hasValidWorkerConfig('https://sync.example.test', '   '), false);
+});
+
+test('Favorites category keeps its server name and uses the fixed UI label', () => {
+  assert.equal(categories.FAVORITES_CATEGORY_NAME, '🔖 Favorites');
+  assert.equal(categories.getCategoryDisplayName({ name: '🔖 Favorites' }), '⭐收藏夹');
+  assert.equal(categories.getCategoryDisplayName({ name: 'Reading' }), 'Reading');
+
+  const source = [
+    { id: 'reading', name: 'Reading' },
+    { id: 'favorites', name: '🔖 Favorites' },
+    { id: 'later', name: 'Later' },
+  ];
+  assert.deepEqual(
+    categories.sortCategoriesForDisplay(source).map((category) => category.id),
+    ['favorites', 'reading', 'later'],
+  );
+  assert.deepEqual(source.map((category) => category.id), ['reading', 'favorites', 'later']);
+});
+
+test('Favorites creates a missing category and toggles archive membership', async () => {
+  const previousStorage = globalThis.localStorage;
+  const previousFetch = globalThis.fetch;
+  const values = new Map([
+    ['lrr_server_url', 'https://lrr.example.test'],
+    ['lrr_api_key', 'secret'],
+  ]);
+  const calls = [];
+  const categoryId = 'SET_1234567890';
+  const archiveId = 'a'.repeat(40);
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+  globalThis.fetch = async (url, options = {}) => {
+    const method = options.method || 'GET';
+    calls.push({ url: String(url), method, headers: options.headers || {}, body: options.body });
+    let payload = { success: 1 };
+    if (method === 'GET' && String(url).endsWith('/api/categories')) payload = [];
+    if (method === 'PUT' && String(url).endsWith('/api/categories')) {
+      payload = { success: 1, category_id: categoryId };
+    }
+    return { ok: true, text: async () => JSON.stringify(payload) };
+  };
+  try {
+    categories.clearCategoriesCache();
+    assert.equal((await categories.getFavoriteState(archiveId)).favorite, false);
+    assert.equal((await categories.setArchiveFavorite(archiveId, true)).favorite, true);
+    assert.equal((await categories.getFavoriteState(archiveId)).favorite, true);
+    assert.equal((await categories.setArchiveFavorite(archiveId, false)).favorite, false);
+
+    const create = calls.find((call) => call.method === 'PUT' && call.url.endsWith('/api/categories'));
+    assert.equal(create.headers['Content-Type'], 'application/x-www-form-urlencoded;charset=UTF-8');
+    assert.equal(create.body, new URLSearchParams({ name: '🔖 Favorites' }).toString());
+    assert.ok(calls.some((call) => call.method === 'PUT' && call.url.endsWith(`/api/categories/${categoryId}/${archiveId}`)));
+    assert.ok(calls.some((call) => call.method === 'DELETE' && call.url.endsWith(`/api/categories/${categoryId}/${archiveId}`)));
+  } finally {
+    categories.clearCategoriesCache?.();
+    globalThis.fetch = previousFetch;
     globalThis.localStorage = previousStorage;
   }
 });

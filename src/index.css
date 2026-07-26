@@ -1757,6 +1757,23 @@ textarea:focus-visible,
   background: var(--surface-3);
 }
 
+.archive-context-menu-item:disabled {
+  cursor: wait;
+  opacity: 0.56;
+}
+
+.archive-context-menu-status {
+  padding: 2px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.archive-context-menu-status.is-error {
+  color: var(--danger-text);
+}
+
 .archive-context-menu-item.is-danger {
   color: var(--danger-text);
 }

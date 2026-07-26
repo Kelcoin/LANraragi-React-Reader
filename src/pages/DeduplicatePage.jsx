@@ -28,17 +28,11 @@ import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
 import { getNonDuplicatePairKeys, markNonDuplicatePairs } from '../lib/worker-kv';
 import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { scopedStorageKey } from '../lib/configScope';
+import { getArchiveSearchTotal } from '../lib/archiveSearch';
+import { hasValidWorkerConfig } from '../lib/worker-config';
 
 const THUMBNAIL_CONCURRENCY = 4;
 const DEDUPE_SAVED_RESULT_KEY = 'lrr_dedupe_saved_result_v1';
-
-function getSearchTotal(res, dataLength, previousTotal = null) {
-  const found = [res?.recordsFiltered, res?.recordsTotal, res?.total, res?.filtered, res?.count]
-    .find((value) => Number.isFinite(Number(value)));
-  if (found !== undefined) return Number(found);
-  if (dataLength === 0) return 0;
-  return Number.isFinite(Number(previousTotal)) ? Number(previousTotal) : null;
-}
 
 function archiveId(archive) {
   return String(archive?.arcid || archive?.id || '');
@@ -208,6 +202,7 @@ function StatsPanel({
   onSmartSelect,
   onToggleAllGroups,
   onExecute,
+  showWorkerActions,
 }) {
   if (!stats) return null;
   const items = [
@@ -217,9 +212,11 @@ function StatsPanel({
     ['有效封面', stats.signatureCount],
     ['已排除', stats.missing],
     ['疑似重复', stats.pairCount],
-    ['已忽略组合', ignoredCount],
     ['选中档案', selectedArchiveCount],
-    ['选中分组', selectedGroupCount],
+    ...(showWorkerActions ? [
+      ['已忽略组合', ignoredCount],
+      ['选中分组', selectedGroupCount],
+    ] : []),
   ];
   return (
     <div className="glass-panel" style={{ padding: '14px 16px', marginBottom: '16px', borderRadius: '12px' }}>
@@ -252,7 +249,7 @@ function StatsPanel({
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
         <button type="button" className="btn" onClick={onSmartSelect} disabled={allGroupsDisabled}>智能选择</button>
-        <button
+        {showWorkerActions && <button
           type="button"
           className="btn"
           aria-pressed={allGroupsSelected}
@@ -260,7 +257,7 @@ function StatsPanel({
           disabled={allGroupsDisabled}
         >
           {allGroupsSelected ? '取消全选' : '全选分组'}
-        </button>
+        </button>}
         <button type="button" className="btn" onClick={onExecute} disabled={running || (selectedArchiveCount === 0 && selectedGroupCount === 0)}>
           执行
         </button>
@@ -384,6 +381,7 @@ function ExecutionProgressPanel({ progress }) {
 }
 
 export default function DeduplicatePage({ onBack }) {
+  const workerReady = hasValidWorkerConfig();
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
   const showGlobalArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, false);
   const reserveGlobalProgressSpace = progressBarVisibility === ARCHIVE_PROGRESS_VISIBILITY.GLOBAL;
@@ -456,7 +454,7 @@ export default function DeduplicatePage({ onBack }) {
       const data = Array.isArray(res?.data) ? res.data : [];
       if (data.length === 0) break;
       all.push(...data);
-      total = getSearchTotal(res, data.length, total);
+      total = getArchiveSearchTotal(res, data.length, total);
       const nextStart = start + data.length;
       if (nextStart <= start) throw new Error('档案分页未前进，已停止扫描');
       start = nextStart;
@@ -482,12 +480,14 @@ export default function DeduplicatePage({ onBack }) {
     try {
       let ignored = [];
       let delayedWorkerWarning = '';
-      try {
-        setStatus('正在读取非重复记录');
-        setProgress({ label: '读取非重复记录', current: 0, total: 1, detail: '从 Worker KV 读取已忽略组合' });
-        ignored = await getNonDuplicatePairKeys();
-      } catch (err) {
-        delayedWorkerWarning = '无法读取 Worker 中的非重复记录，本次检测未排除已标记项目。请确认 Worker 已部署新版 /dedupe/non-duplicates 接口。';
+      if (workerReady) {
+        try {
+          setStatus('正在读取非重复记录');
+          setProgress({ label: '读取非重复记录', current: 0, total: 1, detail: '从 Worker KV 读取已忽略组合' });
+          ignored = await getNonDuplicatePairKeys();
+        } catch (err) {
+          delayedWorkerWarning = '无法读取 Worker 中的非重复记录，本次检测未排除已标记项目。请确认 Worker 已部署新版 /dedupe/non-duplicates 接口。';
+        }
       }
       const ignoredSet = new Set(ignored);
       setIgnoredPairs(ignoredSet);
@@ -588,7 +588,7 @@ export default function DeduplicatePage({ onBack }) {
     } finally {
       setRunning(false);
     }
-  }, [dateRange.end, dateRange.start, loadAllArchives]);
+  }, [dateRange.end, dateRange.start, loadAllArchives, workerReady]);
 
   const toggleArchiveSelection = useCallback((archive) => {
     const id = archiveId(archive);
@@ -673,7 +673,7 @@ export default function DeduplicatePage({ onBack }) {
   ]);
 
   const executeSelected = useCallback(async () => {
-    const selectedGroups = groups.filter((group) => selectedGroupKeys.has(groupKey(group)));
+    const selectedGroups = workerReady ? groups.filter((group) => selectedGroupKeys.has(groupKey(group))) : [];
     if (selectedGroups.length === 0 && selectedArchives.length === 0) return;
 
     const total = selectedGroups.length + selectedArchives.length;
@@ -715,7 +715,7 @@ export default function DeduplicatePage({ onBack }) {
       });
       try {
         await deleteArchiveWithFavoriteSync(archive, {
-          syncEnabled: ehFavoriteDeleteSync,
+          syncEnabled: workerReady && ehFavoriteDeleteSync,
           confirmationEnabled: deleteSyncConfirmed,
           continueOnFavoriteError: true,
           onFavoriteError: ({ galleryUrl, error }) => {
@@ -776,6 +776,7 @@ export default function DeduplicatePage({ onBack }) {
     selectedArchives,
     selectedGroupKeys,
     syncSavedResult,
+    workerReady,
   ]);
 
   const copyEhFailureUrls = useCallback(async () => {
@@ -846,7 +847,9 @@ export default function DeduplicatePage({ onBack }) {
       setGroups(restoredGroups);
       const restoredSelection = (payload.selectedArchiveIds || []).filter((id) => visibleArchiveIds.has(id));
       setSelectedArchiveIds(new Set(normalizeDuplicateSelection(restoredGroups, restoredSelection)));
-      setSelectedGroupKeys(new Set((payload.selectedGroupKeys || []).filter((key) => visibleGroupKeys.has(key))));
+      setSelectedGroupKeys(workerReady
+        ? new Set((payload.selectedGroupKeys || []).filter((key) => visibleGroupKeys.has(key)))
+        : new Set());
       setProcessedDeletedArchiveIds(deletedSet);
       setProcessedNonDuplicatePairKeys(nonDuplicateSet);
       setIgnoredPairs(new Set(Array.isArray(payload.ignoredPairs) ? payload.ignoredPairs : []));
@@ -859,7 +862,7 @@ export default function DeduplicatePage({ onBack }) {
     } catch (err) {
       alert(err.message || '载入保存结果失败');
     }
-  }, []);
+  }, [workerReady]);
 
   const deleteSavedResult = useCallback(() => {
     try {
@@ -871,7 +874,7 @@ export default function DeduplicatePage({ onBack }) {
     }
   }, []);
 
-  const allGroupsSelected = groups.length > 0 && selectedGroupKeys.size === groups.length;
+  const allGroupsSelected = workerReady && groups.length > 0 && selectedGroupKeys.size === groups.length;
 
   const renderGroup = (group) => {
     const key = groupKey(group);
@@ -892,19 +895,19 @@ export default function DeduplicatePage({ onBack }) {
             : 'rgba(255,255,255,0.025)',
         }}
       >
-        <button
+        {workerReady && <button
           type="button"
           className="dedupe-group-toggle"
           aria-pressed={selected}
           onClick={() => toggleGroupSelection(group)}
         >
           疑似重复 {groupNumberByKey.get(key)}
-        </button>
-        <div className="dedupe-group-selection-message" aria-hidden={!selected}>
+        </button>}
+        {workerReady && <div className="dedupe-group-selection-message" aria-hidden={!selected}>
           <div>
             <div className="dedupe-group-selection-message-content">已选择整组标记为不重复</div>
           </div>
-        </div>
+        </div>}
         <div className="dedupe-group-cards">
           {group.map((archive) => {
             const id = archiveId(archive);
@@ -970,6 +973,7 @@ export default function DeduplicatePage({ onBack }) {
           setSelectedArchiveIds(new Set());
         }}
         onExecute={requestExecuteSelected}
+        showWorkerActions={workerReady}
       />
 
       <div className="dedupe-groups-grid">
@@ -1021,7 +1025,7 @@ export default function DeduplicatePage({ onBack }) {
         confirmDisabled={running}
         dismissOnBackdrop={!running}
       >
-        {ehFavoriteDeleteSync && selectedArchives.length > 0 && (
+        {workerReady && ehFavoriteDeleteSync && selectedArchives.length > 0 && (
           <EhFavoriteDeleteSwitch checked={deleteSyncConfirmed} onChange={setDeleteSyncConfirmed} disabled={running} />
         )}
         <ExecutionProgressPanel progress={executionProgress} />

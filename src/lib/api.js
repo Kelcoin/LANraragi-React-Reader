@@ -14,7 +14,9 @@ export function clearArchiveSearchResponseCache() {
 
 function cachedArchiveSearch(filter, start, sortby, order, options) {
   const normalizedFilter = String(filter || '').trim();
-  const key = `${getConfigScopeId()}|${normalizedFilter}|${start}|${sortby}|${order}`;
+  const category = String(options?.category || '').trim();
+  const untaggedOnly = !!options?.untaggedOnly;
+  const key = `${getConfigScopeId()}|${category}|${untaggedOnly}|${normalizedFilter}|${start}|${sortby}|${order}`;
   const now = Date.now();
   const cached = archiveSearchResponseCache.get(key);
   if (cached && cached.expiresAt > now) {
@@ -24,7 +26,10 @@ function cachedArchiveSearch(filter, start, sortby, order, options) {
   }
   archiveSearchResponseCache.delete(key);
 
-  const promise = request(`/search?filter=${encodeURIComponent(normalizedFilter)}&start=${start}&sortby=${sortby}&order=${order}`)
+  const params = new URLSearchParams({ filter: normalizedFilter, start, sortby, order });
+  if (category) params.set('category', category);
+  if (untaggedOnly) params.set('untaggedonly', 'true');
+  const promise = request(`/search?${params}`)
     .catch((error) => {
       if (archiveSearchResponseCache.get(key)?.promise === promise) archiveSearchResponseCache.delete(key);
       throw error;
@@ -94,12 +99,19 @@ const request = async (endpoint, method = 'GET', body = null, options = {}) => {
   if (!base) throw new Error('未配置服务器地址');
 
   const headers = getAuthHeaders();
-  if (body) headers['Content-Type'] = 'application/json';
+  let requestBody = null;
+  if (body instanceof URLSearchParams) {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+    requestBody = body.toString();
+  } else if (body) {
+    headers['Content-Type'] = 'application/json';
+    requestBody = JSON.stringify(body);
+  }
 
   const res = await fetch(`${base}/api${endpoint}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : null,
+    body: requestBody,
     signal: options.signal,
     keepalive: !!options.keepalive,
   });
@@ -287,6 +299,15 @@ export const lrrApi = {
     options,
   ),
   getCategories: () => request('/categories'),
+  createCategory: (name) => request('/categories', 'PUT', new URLSearchParams({ name })),
+  addArchiveToCategory: (categoryId, archiveId) => request(
+    `/categories/${encodeURIComponent(categoryId)}/${encodeURIComponent(archiveId)}`,
+    'PUT',
+  ),
+  removeArchiveFromCategory: (categoryId, archiveId) => request(
+    `/categories/${encodeURIComponent(categoryId)}/${encodeURIComponent(archiveId)}`,
+    'DELETE',
+  ),
   getServerInfo: () => request('/info'),
 };
 
