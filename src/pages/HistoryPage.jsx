@@ -5,6 +5,7 @@ import ArchiveContextMenu from '../components/ArchiveContextMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ArchiveSearchBox from '../components/ArchiveSearchBox';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
+import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import { HomeSectionGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
 import { isArchiveMissingError, runHistoryExistenceCheck } from '../lib/historyMaintenance';
@@ -90,6 +91,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   const [archiveDeleteTarget, setArchiveDeleteTarget] = useState(null);
   const [archiveDeleting, setArchiveDeleting] = useState(false);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
+  const [archiveFailureReport, setArchiveFailureReport] = useState(null);
   const [notice, setNotice] = useState('');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState(null);
@@ -273,23 +275,41 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   const handleArchiveDelete = useCallback(async () => {
     if (!archiveDeleteTarget || archiveDeleting) return;
     const archiveId = archiveDeleteTarget.arcid || archiveDeleteTarget.id;
+    const title = archiveDeleteTarget.title || archiveId;
+    const ehFailures = [];
     setArchiveDeleting(true);
     try {
       await deleteArchiveWithFavoriteSync(archiveDeleteTarget, {
         syncEnabled: workerReady && getEhFavoriteDeleteSync(),
         confirmationEnabled: archiveDeleteSyncConfirmed,
+        continueOnFavoriteError: true,
+        onFavoriteError: ({ galleryUrl, error }) => {
+          ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+        },
       });
       await Promise.all([removeHistoryItems([archiveId]), removeWatchlistItem(archiveId)]);
       setHistoryState(getHistory());
       setArchiveDeleteTarget(null);
+      if (ehFailures.length > 0) {
+        setArchiveFailureReport({ ehFailures, lrrFailures: [], message: 'LANraragi 档案已删除，但 E-Hentai 收藏夹移除失败。' });
+      }
     } catch (error) {
       if (isArchiveMissingError(error)) {
         await removeHistoryItems([archiveId]);
         setHistoryState(getHistory());
         setArchiveDeleteTarget(null);
-        setNotice('档案已不存在于 LANraragi，相关历史记录已清理。');
+        if (ehFailures.length > 0) {
+          setArchiveFailureReport({ ehFailures, lrrFailures: [], message: '档案已不存在于 LANraragi，相关历史记录已清理；E-Hentai 收藏夹移除失败。' });
+        } else {
+          setNotice('档案已不存在于 LANraragi，相关历史记录已清理。');
+        }
       } else {
-        setNotice(`删除失败：${error?.message || '未知错误'}`);
+        setArchiveDeleteTarget(null);
+        setArchiveFailureReport({
+          ehFailures,
+          lrrFailures: [{ id: archiveId, title, message: error?.message || '未知错误' }],
+          message: '档案删除未全部完成，可稍后重试。',
+        });
       }
     } finally {
       setArchiveDeleting(false);
@@ -492,6 +512,11 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
           <EhFavoriteDeleteSwitch checked={archiveDeleteSyncConfirmed} onChange={setArchiveDeleteSyncConfirmed} disabled={archiveDeleting} />
         )}
       </ConfirmDialog>
+      <ArchiveDeletionFailureDialog
+        report={archiveFailureReport}
+        message={archiveFailureReport?.message}
+        onClose={() => setArchiveFailureReport(null)}
+      />
       <ConfirmDialog
         open={!!notice}
         title="操作提示"

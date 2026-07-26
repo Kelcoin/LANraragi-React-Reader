@@ -7,6 +7,7 @@ import TagSuggest from '../components/TagSuggest';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MetadataTagChip from '../components/MetadataTagChip';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
+import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
 import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
 import { rememberArchiveInCatalog } from '../lib/archiveMetadataCache';
@@ -81,6 +82,8 @@ export default function MetadataPage({ archiveId }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteSync, setDeleteSync] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [deleteFailureReport, setDeleteFailureReport] = useState(null);
+  const [deletedWithReport, setDeletedWithReport] = useState(false);
   const [busy, setBusy] = useState('');
   const [revealedTag, setRevealedTag] = useState('');
   const [, setTagDBRevision] = useState(0);
@@ -91,6 +94,49 @@ export default function MetadataPage({ archiveId }) {
   const operationControllerRef = useRef(null);
   const allowNavigationRef = useRef(false);
   const dirty = useMemo(() => !!baseline && metadataFingerprint({ ...form, tags: form.tags.join(',') }) !== baseline, [baseline, form]);
+
+  const handleArchiveDelete = useCallback(async () => {
+    const title = archive?.title || archiveId;
+    const ehFailures = [];
+    setDeleting(true);
+    try {
+      await deleteArchiveWithFavoriteSync({ ...archive, id: archiveId }, {
+        syncEnabled: getEhFavoriteDeleteSync(),
+        confirmationEnabled: deleteSync,
+        continueOnFavoriteError: true,
+        onFavoriteError: ({ galleryUrl, error }) => {
+          ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+        },
+      });
+      if (ehFailures.length > 0) {
+        setDeleteOpen(false);
+        setDeletedWithReport(true);
+        setDeleteFailureReport({ ehFailures, lrrFailures: [], message: 'LANraragi 档案已删除，但 E-Hentai 收藏夹移除失败。' });
+        setDeleting(false);
+        return;
+      }
+      allowNavigationRef.current = true;
+      navigateHome();
+    } catch (error) {
+      setDeleteOpen(false);
+      setDeletedWithReport(false);
+      setDeleteFailureReport({
+        ehFailures,
+        lrrFailures: [{ id: archiveId, title, message: error?.message || '删除失败' }],
+        message: '档案删除未全部完成，可稍后重试。',
+      });
+      setDeleting(false);
+    }
+  }, [archive, archiveId, deleteSync]);
+
+  const closeDeleteFailureReport = useCallback(() => {
+    setDeleteFailureReport(null);
+    if (deletedWithReport) {
+      setDeletedWithReport(false);
+      allowNavigationRef.current = true;
+      navigateHome();
+    }
+  }, [deletedWithReport]);
 
   useEffect(() => {
     let active = true;
@@ -224,8 +270,9 @@ export default function MetadataPage({ archiveId }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 14 }}><button className="btn" onClick={() => navigateToArchive(archiveId)} disabled={!!busy}>阅读档案</button><button className="btn metadata-delete-button" onClick={() => { setDeleteSync(true); setDeleteOpen(true); }} disabled={!!busy}>删除档案</button><button className="btn" onClick={save} disabled={!!busy}>{busy === 'save' ? '保存中…' : '保存元数据'}</button><button className="btn" disabled={!!busy} onClick={() => { if (window.history.length > 1) window.history.back(); else navigateHome(); }}>返回</button></div>
     </section>
-    <ConfirmDialog open={deleteOpen} title="确认删除档案" message={`将永久删除“${archive.title}”。`} confirmLabel={deleting ? '删除中…' : '确认删除'} confirmDisabled={deleting} onCancel={() => !deleting && setDeleteOpen(false)} onConfirm={async () => { setDeleting(true); try { await deleteArchiveWithFavoriteSync({ ...archive, id: archiveId }, { syncEnabled: getEhFavoriteDeleteSync(), confirmationEnabled: deleteSync }); allowNavigationRef.current = true; navigateHome(); } catch (error) { showStatus(error.message, 'error'); setDeleting(false); } }}>
+    <ConfirmDialog open={deleteOpen} title="确认删除档案" message={`将永久删除“${archive.title}”。`} confirmLabel={deleting ? '删除中…' : '确认删除'} confirmDisabled={deleting} onCancel={() => !deleting && setDeleteOpen(false)} onConfirm={handleArchiveDelete} dismissOnBackdrop={!deleting}>
       {getEhFavoriteDeleteSync() && <EhFavoriteDeleteSwitch checked={deleteSync} onChange={setDeleteSync} disabled={deleting} />}
     </ConfirmDialog>
+    <ArchiveDeletionFailureDialog report={deleteFailureReport} message={deleteFailureReport?.message} onClose={closeDeleteFailureReport} />
   </main>;
 }

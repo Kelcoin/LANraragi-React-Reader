@@ -6,11 +6,16 @@ import { navigateToArchive, navigateToMetadata } from '../lib/navigation';
 import ArchiveCard from './ArchiveCard';
 import ArchiveContextMenu from './ArchiveContextMenu';
 import ConfirmDialog from './ConfirmDialog';
+import EhFavoriteDeleteSwitch from './EhFavoriteDeleteSwitch';
+import ArchiveDeletionFailureDialog from './ArchiveDeletionFailureDialog';
 import { useViewportWidth } from '../lib/viewport';
 import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
 import { subscribeReadingProgressChanged } from '../lib/readingProgress';
 import { scopedStorageKey } from '../lib/configScope';
+import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
+import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
+import { hasValidWorkerConfig } from '../lib/worker-config';
 
 const CUSTOM_WEIGHT_TAGS = {
   'female:ahegao': 1.5, 'female:anal intercourse': 2, 'female:anal': 2,
@@ -107,6 +112,7 @@ function calculateSimilarity(sourceTagsLower, archive) {
 }
 
 export default function Recommendations({ currentArchive }) {
+  const workerReady = hasValidWorkerConfig();
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
   const showGlobalArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, false);
   const reserveGlobalProgressSpace = progressBarVisibility === ARCHIVE_PROGRESS_VISIBILITY.GLOBAL;
@@ -119,6 +125,9 @@ export default function Recommendations({ currentArchive }) {
   const [retryTick, setRetryTick] = useState(0);
   const [archiveMenu, setArchiveMenu] = useState(null);
   const [archiveDeleteTarget, setArchiveDeleteTarget] = useState(null);
+  const [archiveDeleting, setArchiveDeleting] = useState(false);
+  const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
+  const [archiveFailureReport, setArchiveFailureReport] = useState(null);
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
   const scroller = useHorizontalScroller();
@@ -378,17 +387,37 @@ export default function Recommendations({ currentArchive }) {
   const handleArchiveDelete = useCallback(async () => {
     const archiveId = archiveDeleteTarget?.arcid || archiveDeleteTarget?.id;
     if (!archiveId) return;
+    const title = archiveDeleteTarget?.title || archiveId;
+    const ehFailures = [];
+    setArchiveDeleting(true);
     try {
-      await lrrApi.deleteArchive(archiveId);
+      await deleteArchiveWithFavoriteSync(archiveDeleteTarget, {
+        syncEnabled: workerReady && getEhFavoriteDeleteSync(),
+        confirmationEnabled: archiveDeleteSyncConfirmed,
+        continueOnFavoriteError: true,
+        onFavoriteError: ({ galleryUrl, error }) => {
+          ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+        },
+      });
       setSimData((prev) => prev.filter((arc) => (arc.arcid || arc.id) !== archiveId));
       setArtistData((prev) => prev.filter((arc) => (arc.arcid || arc.id) !== archiveId));
       setArchiveDeleteTarget(null);
+      if (ehFailures.length > 0) {
+        setArchiveFailureReport({ ehFailures, lrrFailures: [], message: 'LANraragi 档案已删除，但 E-Hentai 收藏夹移除失败。' });
+      }
     } catch (err) {
-      alert(err.message || '删除失败');
+      setArchiveDeleteTarget(null);
+      setArchiveFailureReport({
+        ehFailures,
+        lrrFailures: [{ id: archiveId, title, message: err?.message || '删除失败' }],
+        message: '档案删除未全部完成，可稍后重试。',
+      });
+    } finally {
+      setArchiveDeleting(false);
     }
-  }, [archiveDeleteTarget]);
+  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, workerReady]);
 
-  if (!currentArchive || (!loading && simData.length === 0 && artistData.length === 0 && sameCreatorTags.length === 0)) return null;
+  if ((!currentArchive || (!loading && simData.length === 0 && artistData.length === 0 && sameCreatorTags.length === 0)) && !archiveDeleteTarget && !archiveFailureReport) return null;
 
   return (
     <>
@@ -509,16 +538,27 @@ export default function Recommendations({ currentArchive }) {
       onEditMetadata={(archive) => navigateToMetadata(archive.arcid || archive.id)}
       onDownload={handleArchiveDownload}
       onCopyLink={handleArchiveCopyLink}
-      onDelete={(archive) => setArchiveDeleteTarget(archive)}
+      onDelete={(archive) => { setArchiveDeleteSyncConfirmed(true); setArchiveDeleteTarget(archive); }}
     />
     <ConfirmDialog
       open={!!archiveDeleteTarget}
       title="确认删除档案"
       message={archiveDeleteTarget ? `将从 LANraragi 中删除“${archiveDeleteTarget.title || archiveDeleteTarget.arcid || archiveDeleteTarget.id}”。此操作不可撤销。` : ''}
-      confirmLabel="确认删除"
+      confirmLabel={archiveDeleting ? '删除中…' : '确认删除'}
       cancelLabel="取消"
       onConfirm={handleArchiveDelete}
-      onCancel={() => setArchiveDeleteTarget(null)}
+      onCancel={() => { if (!archiveDeleting) setArchiveDeleteTarget(null); }}
+      confirmDisabled={archiveDeleting}
+      dismissOnBackdrop={!archiveDeleting}
+    >
+      {workerReady && getEhFavoriteDeleteSync() && (
+        <EhFavoriteDeleteSwitch checked={archiveDeleteSyncConfirmed} onChange={setArchiveDeleteSyncConfirmed} disabled={archiveDeleting} />
+      )}
+    </ConfirmDialog>
+    <ArchiveDeletionFailureDialog
+      report={archiveFailureReport}
+      message={archiveFailureReport?.message}
+      onClose={() => setArchiveFailureReport(null)}
     />
     </>
   );

@@ -23,7 +23,13 @@ export async function deleteArchiveWithFavoriteSync(archive, {
       if (!continueOnFavoriteError) throw favoriteSetupError;
       onFavoriteError?.({ galleryUrl, error: favoriteSetupError });
     } else if (!galleryUrl) {
-      try { galleryUrl = extractEhGalleryUrl({ ...archive, ...await lrrApi.getArchive(archiveId) }); } catch {}
+      try {
+        galleryUrl = extractEhGalleryUrl({ ...archive, ...await lrrApi.getArchive(archiveId) });
+      } catch (error) {
+        favoriteSetupError = error;
+        if (!continueOnFavoriteError) throw error;
+        onFavoriteError?.({ galleryUrl, error });
+      }
     }
   }
   await runArchiveDeletionOperations({

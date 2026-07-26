@@ -540,7 +540,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
       {overlay}
       {/* ===== 卡片本体 ===== */}
       <div
-        className="glass-panel archive-card-shell"
+        className={`glass-panel archive-card-shell${selected ? ' is-selected' : ''}`}
         title={undefined}
         style={{
           minWidth: isWide ? '316px' : '150px',
@@ -550,15 +550,23 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
           transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: selected
-            ? '0 0 0 2px rgba(74,159,240,0.92), 0 12px 34px rgba(74,159,240,0.20)'
-            : (isPanelVisible ? '0 12px 40px 0 rgba(0, 0, 0, 0.5)' : 'var(--shadow)'),
+          boxShadow: isPanelVisible ? '0 12px 40px 0 rgba(0, 0, 0, 0.5)' : undefined,
           touchAction: 'pan-x pan-y pinch-zoom',
           WebkitTouchCallout: (selectionMode || onLongPress || onArchiveContextMenu) ? 'none' : undefined,
           WebkitUserSelect: 'none',
           userSelect: 'none',
         }}
         aria-disabled={disabled || undefined}
+        role={selectionMode ? 'checkbox' : undefined}
+        aria-checked={selectionMode ? selected : undefined}
+        tabIndex={selectionMode && !disabled ? 0 : undefined}
+        onKeyDown={(event) => {
+          if (!selectionMode || disabled || !onSelectToggle) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelectToggle(archive, event);
+          }
+        }}
         onPointerDown={(event) => {
           const nextTouchInteraction = event.pointerType === 'touch' || event.pointerType === 'pen';
           touchInteractionRef.current = nextTouchInteraction;
@@ -613,6 +621,9 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
           }}
           className="archive-cover-frame"
         >
+          {selectionMode && (
+            <span className={`archive-card-selection-checkbox${selected ? ' is-selected' : ''}`} aria-hidden="true" />
+          )}
           {thumbState === 'loading' && !thumbSrc && (
             <div
               className="reader-skeleton-fade"

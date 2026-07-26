@@ -81,7 +81,7 @@ test('dedupe results use compact persistence, interlocked selection, and wide-ca
   assert.match(page, /normalizeDuplicateSelection/);
   assert.match(page, /getDuplicateSelectionDisabledIds/);
   assert.match(page, /className="dedupe-groups-grid"/);
-  assert.match(css, /\.dedupe-groups-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;/s);
+  assert.match(css, /\.dedupe-groups-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;[^}]*align-items:\s*center;/s);
   assert.match(css, /\.dedupe-group\s*\{[^}]*width:\s*max-content;[^}]*max-width:\s*100%;/s);
   assert.match(css, /\.dedupe-group-cards\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;/s);
   assert.match(css, /\.dedupe-card-item\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*width:\s*max-content;[^}]*max-width:\s*100%;/s);
@@ -103,14 +103,16 @@ test('dedupe results use compact persistence, interlocked selection, and wide-ca
 test('dedupe execution combines actions, groups chains, reports progress, and preserves retry failures', () => {
   const page = read('src/pages/DeduplicatePage.jsx');
   const deletion = read('src/lib/archiveDeletion.js');
+  const progress = read('src/components/ExecutionProgressPanel.jsx');
+  const failure = read('src/components/ArchiveDeletionFailureDialog.jsx');
   const css = read('src/index.css');
   assert.match(page, /groupDuplicatePairsByChain/);
   assert.match(page, /className="dedupe-chain"/);
   assert.match(page, />\s*执行\s*</);
   assert.doesNotMatch(page, />\s*删除选中\s*</);
   assert.doesNotMatch(page, />\s*标记分组不重复\s*</);
-  assert.match(page, /aria-live="polite"/);
-  assert.match(page, /navigator\.clipboard\.writeText/);
+  assert.match(progress, /aria-live="polite"/);
+  assert.match(failure, /navigator\.clipboard\.writeText/);
   assert.match(page, /continueOnFavoriteError:\s*true/);
   assert.match(page, /deleteArchiveWithFavoriteSync/);
   assert.doesNotMatch(page, /\{status\}<\/div>/);
@@ -559,7 +561,8 @@ test('configuration transfer warning and settings layers stay concise and isolat
   assert.doesNotMatch(dialog, /Base64 编码，不是加密/);
   assert.doesNotMatch(dialog, /message=\{isExport/);
   assert.match(dialog, /className="config-transfer-warning"/);
-  assert.match(css, /\.confirm-dialog:has\(\.config-transfer-field\)\s+\.confirm-dialog-title\s*\{[^}]*text-align:\s*center;/s);
+  assert.match(css, /\.confirm-dialog-title\s*\{[^}]*text-align:\s*center;/s);
+  assert.doesNotMatch(css, /\.confirm-dialog:has\(\.config-transfer-field\)\s+\.confirm-dialog-title/);
   assert.match(css, /\.config-transfer-warning\s*\{[^}]*background:[^}]*text-align:\s*center;/s);
   assert.match(home, /className="settings-panel-footer"/);
   assert.match(css, /\.settings-panel-footer\s*\{[^}]*flex:\s*0 0 auto;[^}]*background:/s);
@@ -760,6 +763,7 @@ test('Worker-dependent controls are hidden without a valid Worker configuration'
   const watchlist = read('src/pages/WatchlistPage.jsx');
   const dedupe = read('src/pages/DeduplicatePage.jsx');
   const reader = read('src/pages/Reader.jsx');
+  const ehFavoriteSync = read('src/lib/ehFavoriteSync.js');
 
   for (const source of [home, history, watchlist, dedupe, reader]) {
     assert.match(source, /hasValidWorkerConfig/);
@@ -771,6 +775,8 @@ test('Worker-dependent controls are hidden without a valid Worker configuration'
   assert.match(dedupe, /showWorkerActions=\{workerReady\}/);
   assert.match(dedupe, /if \(workerReady\) \{[\s\S]*?getNonDuplicatePairKeys\(\)/);
   assert.match(reader, /ehWorker=\{workerReady \? getWorkerUrl\(\) : ''\}/);
+  assert.match(ehFavoriteSync, /import \{ hasValidWorkerConfig \} from '\.\/worker-config'/);
+  assert.match(ehFavoriteSync, /hasValidWorkerConfig\(\)/);
 });
 
 test('scheduled history cleanup force-validates cached records without UI feedback', () => {
@@ -797,6 +803,123 @@ test('manual history cleanup locks page interactions and reports removed records
   assert.match(history, /onClick=\{handleSyncHistory\}[\s\S]*?disabled=\{syncing \|\| checking\}/);
   assert.match(history, /<section[^>]*inert=\{checking \? '' : undefined\}[^>]*aria-busy=\{checking\}/);
   assert.match(history, /<button className="btn" onClick=\{onBack\}>返回<\/button>/);
+});
+
+test('archive multi-select exposes a checkbox indicator and keyboard semantics', () => {
+  const card = read('src/components/ArchiveCard.jsx');
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+
+  assert.match(card, /className=\{`archive-card-selection-checkbox\$\{selected \? ' is-selected' : ''\}`\}/);
+  assert.match(card, /className=\{`glass-panel archive-card-shell\$\{selected \? ' is-selected' : ''\}`\}/);
+  assert.match(card, /role=\{selectionMode \? 'checkbox' : undefined\}/);
+  assert.match(card, /aria-checked=\{selectionMode \? selected : undefined\}/);
+  assert.match(card, /onKeyDown=\{\(event\) => \{/);
+  assert.match(card, /event\.key === 'Enter' \|\| event\.key === ' '/);
+  assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:[^}]*inset 0 0 0/s);
+  assert.match(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:\s*drop-shadow/s);
+  assert.match(home, /className="archive-count-badge archive-selection-count-badge"/);
+});
+
+test('archive multi-select action row animates layout from open state', () => {
+  const css = read('src/index.css');
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(css, /\.archive-selection-actions\s*\{[^}]*transition:\s*grid-template-rows 0\.26s/s);
+  assert.match(css, /\.archive-selection-actions\[data-open="true"\]\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.doesNotMatch(css, /\.archive-selection-actions\[data-mounted="true"\]\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.archive-selection-actions[\s\S]*?transition:\s*none\s*!important/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.archive-card-selection-checkbox[\s\S]*?transition:\s*none\s*!important/);
+  assert.doesNotMatch(home, /archiveSelectionActionsMounted|data-mounted/);
+});
+
+test('dedupe operation feedback uses shared progress and failure components', () => {
+  const progressUrl = new URL('../src/components/ExecutionProgressPanel.jsx', import.meta.url);
+  const failureUrl = new URL('../src/components/ArchiveDeletionFailureDialog.jsx', import.meta.url);
+
+  assert.equal(fs.existsSync(progressUrl), true, 'shared execution progress component is missing');
+  assert.equal(fs.existsSync(failureUrl), true, 'shared deletion failure dialog is missing');
+
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const progress = fs.readFileSync(progressUrl, 'utf8');
+  const failure = fs.readFileSync(failureUrl, 'utf8');
+  assert.match(dedupe, /import ExecutionProgressPanel from '\.\.\/components\/ExecutionProgressPanel'/);
+  assert.match(dedupe, /import ArchiveDeletionFailureDialog from '\.\.\/components\/ArchiveDeletionFailureDialog'/);
+  assert.doesNotMatch(dedupe, /function ExecutionProgressPanel/);
+  assert.doesNotMatch(dedupe, /copyEhFailureUrls|copyStatus/);
+  assert.match(progress, /dedupe-execution-progress-track/);
+  assert.match(failure, /E-Hentai 收藏夹删除失败/);
+  assert.match(failure, /LANraragi 删除失败/);
+  assert.match(failure, /report\?\.lrrHeading \|\| 'LANraragi 删除失败'/);
+  assert.match(failure, /navigator\.clipboard\.writeText/);
+});
+
+test('home bulk actions favorite selected archives and report deletion progress', () => {
+  const home = read('src/pages/Home.jsx');
+  const actions = home.match(/<div className="archive-selection-actions-inner">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || '';
+  const favoriteHandler = home.match(/const handleBulkArchiveFavorite = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const deleteHandler = home.match(/const handleBulkArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(home, /import \{[^}]*setArchiveFavorite[^}]*\} from '\.\.\/lib\/categories'/);
+  assert.match(home, /import ExecutionProgressPanel from '\.\.\/components\/ExecutionProgressPanel'/);
+  assert.match(home, /import ArchiveDeletionFailureDialog from '\.\.\/components\/ArchiveDeletionFailureDialog'/);
+  assert.match(actions, /全选当前[\s\S]*收藏所选[\s\S]*删除所选/);
+  assert.match(favoriteHandler, /for \(const archive of selectedArchiveList\)/);
+  assert.match(favoriteHandler, /await setArchiveFavorite\(archiveId, true\)/);
+  assert.match(favoriteHandler, /setBulkFavoriteProgress/);
+  assert.doesNotMatch(favoriteHandler, /setSelectedArchiveIds/);
+  assert.match(deleteHandler, /continueOnFavoriteError:\s*true/);
+  assert.match(deleteHandler, /onFavoriteError:/);
+  assert.match(deleteHandler, /setBulkDeleteProgress/);
+  assert.match(home, /<ExecutionProgressPanel progress=\{bulkDeleteProgress\} \/>/);
+  assert.match(home, /dismissOnBackdrop=\{!archiveDeleting\}/);
+  assert.match(home, /<ArchiveDeletionFailureDialog/);
+});
+
+test('every single archive deletion surface continues after EH failures and reports them', () => {
+  const home = read('src/pages/Home.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const metadata = read('src/pages/MetadataPage.jsx');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const homeHelper = home.match(/const deleteArchiveWithSync = useCallback\(async \([\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const historyHandler = history.match(/const handleArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const metadataHandler = metadata.match(/const handleArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const recommendationHandler = recommendations.match(/const handleArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  for (const source of [homeHelper, historyHandler, metadataHandler, recommendationHandler]) {
+    assert.match(source, /continueOnFavoriteError:\s*true/);
+    assert.match(source, /onFavoriteError\s*[:,]/);
+  }
+  for (const source of [home, history, metadata, recommendations]) {
+    assert.match(source, /ArchiveDeletionFailureDialog/);
+  }
+  assert.doesNotMatch(recommendationHandler, /lrrApi\.deleteArchive/);
+  assert.match(recommendations, /EhFavoriteDeleteSwitch/);
+  assert.match(recommendations, /workerReady && getEhFavoriteDeleteSync\(\)/);
+  assert.match(metadata, /if \(deletedWithReport\)[\s\S]*?navigateHome\(\)/);
+});
+
+test('archive deletion reports metadata lookup failures before continuing LANraragi deletion', () => {
+  const deletion = read('src/lib/archiveDeletion.js');
+
+  assert.match(deletion, /catch \(error\) \{[\s\S]*?onFavoriteError\?\.\(\{ galleryUrl, error \}\)[\s\S]*?\}/);
+  assert.doesNotMatch(deletion, /catch \{\}/);
+});
+
+test('recommendation deletion dialogs survive removal of the final recommendation', () => {
+  const recommendations = read('src/components/Recommendations.jsx');
+  const earlyReturn = recommendations.match(/if \([^\n]+\) return null;/)?.[0] || '';
+
+  assert.match(earlyReturn, /archiveDeleteTarget/);
+  assert.match(earlyReturn, /archiveFailureReport/);
+});
+
+test('dedupe reports EH failures even when no gallery URL can be resolved', () => {
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const handler = dedupe.match(/const executeSelected = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[/)?.[0] || '';
+
+  assert.doesNotMatch(handler, /if \(galleryUrl\) ehFailuresByUrl\.set/);
+  assert.match(handler, /ehFailures\.push\(\{ url: galleryUrl/);
 });
 
 test('archive context menus toggle LANraragi Favorites and expose async status', () => {

@@ -13,6 +13,8 @@ import ArchiveCard from '../components/ArchiveCard';
 import ArchiveGrid from '../components/ArchiveGrid';
 import ArchiveContextMenu from '../components/ArchiveContextMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ExecutionProgressPanel from '../components/ExecutionProgressPanel';
+import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import TextInputDialog from '../components/TextInputDialog';
 import CustomSelect from '../components/CustomSelect';
 import TagSuggest from '../components/TagSuggest';
@@ -24,7 +26,7 @@ import ConfigTransferDialog from '../components/ConfigTransferDialog';
 import SettingHint from '../components/SettingHint';
 import { HomeSectionGlyph, ThemeModeGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { deleteFilterPreset, readFilterPresets, renameFilterPreset, saveFilterPreset } from '../lib/filterPresets';
-import { getCategoryDisplayName, getStoredCategories, loadCategories, sortCategoriesForDisplay, startCategoriesUpdateTimer, stopCategoriesUpdateTimer } from '../lib/categories';
+import { getCategoryDisplayName, getStoredCategories, loadCategories, setArchiveFavorite, sortCategoriesForDisplay, startCategoriesUpdateTimer, stopCategoriesUpdateTimer } from '../lib/categories';
 import { claimColdRestoreRoute, consumeHomeNavigationSnapshot, getBootState, loadHomeSnapshot, markBackground, saveHomeNavigationSnapshot, saveHomeSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
 import { useHorizontalScroller } from '../lib/horizontalScroller';
@@ -375,10 +377,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [archiveDeleteTarget, setArchiveDeleteTarget] = useState(null);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
   const [archiveSelectionMode, setArchiveSelectionMode] = useState(false);
-  const [archiveSelectionActionsMounted, setArchiveSelectionActionsMounted] = useState(false);
   const [selectedArchiveIds, setSelectedArchiveIds] = useState(() => new Set());
   const [bulkDeletePending, setBulkDeletePending] = useState(false);
   const [bulkDeleteSyncConfirmed, setBulkDeleteSyncConfirmed] = useState(true);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState(null);
+  const [bulkFavoritePending, setBulkFavoritePending] = useState(false);
+  const [bulkFavoriteRunning, setBulkFavoriteRunning] = useState(false);
+  const [bulkFavoriteProgress, setBulkFavoriteProgress] = useState(null);
+  const [archiveFailureReport, setArchiveFailureReport] = useState(null);
   const [archiveDeleting, setArchiveDeleting] = useState(false);
   const [ehFavoriteDeleteSync, setEhFavoriteDeleteSyncState] = useState(getEhFavoriteDeleteSync);
   const [historySyncing, setHistorySyncing] = useState(false);
@@ -688,20 +694,38 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, []);
 
-  const deleteArchiveWithSync = useCallback(async (archive, confirmationEnabled) => {
-    return deleteArchiveWithFavoriteSync(archive, { syncEnabled: workerReady && ehFavoriteDeleteSync, confirmationEnabled });
+  const deleteArchiveWithSync = useCallback(async (archive, confirmationEnabled, onFavoriteError) => {
+    return deleteArchiveWithFavoriteSync(archive, {
+      syncEnabled: workerReady && ehFavoriteDeleteSync,
+      confirmationEnabled,
+      continueOnFavoriteError: true,
+      onFavoriteError,
+    });
   }, [ehFavoriteDeleteSync, workerReady]);
 
   const handleArchiveDelete = useCallback(async () => {
     if (!archiveDeleteTarget) return;
+    const archiveId = archiveDeleteTarget.arcid || archiveDeleteTarget.id;
+    const title = archiveDeleteTarget.title || archiveId;
+    const ehFailures = [];
     setArchiveDeleting(true);
     try {
-      const archiveId = await deleteArchiveWithSync(archiveDeleteTarget, archiveDeleteSyncConfirmed);
-      removeWatchlistItem(archiveId).catch(() => {});
-      removeDeletedArchiveIds([archiveId]);
+      const deletedId = await deleteArchiveWithSync(archiveDeleteTarget, archiveDeleteSyncConfirmed, ({ galleryUrl, error }) => {
+        ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+      });
+      removeWatchlistItem(deletedId).catch(() => {});
+      removeDeletedArchiveIds([deletedId]);
       setArchiveDeleteTarget(null);
+      if (ehFailures.length > 0) {
+        setArchiveFailureReport({ ehFailures, lrrFailures: [], message: 'LANraragi 档案已删除，但 E-Hentai 收藏夹移除失败。' });
+      }
     } catch (err) {
-      alert(err.message || '删除失败');
+      setArchiveDeleteTarget(null);
+      setArchiveFailureReport({
+        ehFailures,
+        lrrFailures: [{ id: archiveId, title, message: err?.message || '删除失败' }],
+        message: '档案删除未全部完成，可稍后重试。',
+      });
     } finally {
       setArchiveDeleting(false);
     }
@@ -1487,16 +1511,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setArchiveMenu(null);
     setArchiveSelectionMode((prev) => {
       if (prev) setSelectedArchiveIds(new Set());
-      else setArchiveSelectionActionsMounted(true);
       return !prev;
     });
   }, []);
-
-  useEffect(() => {
-    if (archiveSelectionMode || !archiveSelectionActionsMounted) return undefined;
-    const timer = setTimeout(() => setArchiveSelectionActionsMounted(false), 260);
-    return () => clearTimeout(timer);
-  }, [archiveSelectionActionsMounted, archiveSelectionMode]);
 
   const toggleArchiveSelection = useCallback((archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -1516,6 +1533,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   const requestBulkArchiveDelete = useCallback(() => {
     setBulkDeleteSyncConfirmed(true);
+    setBulkDeleteProgress(null);
     setBulkDeletePending(true);
   }, []);
 
@@ -1532,34 +1550,103 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, [visibleArchiveIds]);
 
+  const handleBulkArchiveFavorite = useCallback(async () => {
+    if (selectedArchiveList.length === 0) return;
+    const total = selectedArchiveList.length;
+    const failures = [];
+    setBulkFavoritePending(true);
+    setBulkFavoriteRunning(true);
+    setBulkFavoriteProgress({ label: '准备收藏', current: 0, total, detail: '正在整理所选档案' });
+    for (const archive of selectedArchiveList) {
+      const archiveId = archive?.arcid || archive?.id;
+      const title = archive?.title || archiveId;
+      setBulkFavoriteProgress((current) => ({
+        label: '正在收藏',
+        current: current?.current || 0,
+        total,
+        detail: title,
+      }));
+      try {
+        await setArchiveFavorite(archiveId, true);
+      } catch (error) {
+        failures.push({ id: archiveId, title, message: error?.message || '收藏失败' });
+      }
+      setBulkFavoriteProgress((current) => ({
+        label: '正在收藏',
+        current: Math.min(total, (current?.current || 0) + 1),
+        total,
+        detail: title,
+      }));
+    }
+    setBulkFavoriteRunning(false);
+    setBulkFavoriteProgress({
+      label: failures.length > 0 ? '收藏完成，部分失败' : '收藏完成',
+      current: total,
+      total,
+      detail: failures.length > 0 ? `${failures.length} 个档案收藏失败` : `已收藏 ${total} 个档案`,
+    });
+    if (failures.length > 0) {
+      setBulkFavoritePending(false);
+      setArchiveFailureReport({
+        ehFailures: [],
+        lrrFailures: failures,
+        lrrHeading: 'LANraragi 收藏失败',
+        message: '其余档案已加入收藏夹。失败项可稍后重试。',
+      });
+    }
+  }, [selectedArchiveList]);
+
   const handleBulkArchiveDelete = useCallback(async () => {
     if (selectedArchiveList.length === 0) return;
     setArchiveDeleting(true);
+    const total = selectedArchiveList.length;
     const deletedIds = [];
-    const failures = [];
+    const ehFailures = [];
+    const lrrFailures = [];
+    setBulkDeleteProgress({ label: '准备删除', current: 0, total, detail: '正在整理所选档案' });
     for (const archive of selectedArchiveList) {
       const archiveId = archive?.arcid || archive?.id;
+      const title = archive?.title || archiveId;
+      setBulkDeleteProgress({ label: '正在删除', current: deletedIds.length + lrrFailures.length, total, detail: title });
       try {
-        const deletedId = await deleteArchiveWithSync(archive, bulkDeleteSyncConfirmed);
+        const deletedId = await deleteArchiveWithFavoriteSync(archive, {
+          syncEnabled: workerReady && ehFavoriteDeleteSync,
+          confirmationEnabled: bulkDeleteSyncConfirmed,
+          continueOnFavoriteError: true,
+          onFavoriteError: ({ galleryUrl, error }) => {
+            ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+          },
+        });
         deletedIds.push(deletedId);
       } catch (err) {
-        failures.push({ id: archiveId, title: archive?.title || archiveId, message: err.message || '删除失败' });
+        lrrFailures.push({ id: archiveId, title, message: err.message || '删除失败' });
       }
+      setBulkDeleteProgress({ label: '正在删除', current: deletedIds.length + lrrFailures.length, total, detail: title });
     }
     if (deletedIds.length > 0) {
       removeWatchlistItems(deletedIds).catch(() => {});
       removeDeletedArchiveIds(deletedIds);
     }
-    setBulkDeletePending(false);
+    setBulkDeleteProgress({
+      label: ehFailures.length > 0 || lrrFailures.length > 0 ? '删除完成，部分失败' : '删除完成',
+      current: total,
+      total,
+      detail: `已删除 ${deletedIds.length} 个档案`,
+    });
+    await waitForPaint();
     setArchiveDeleting(false);
-    if (failures.length === 0) {
+    setBulkDeletePending(false);
+    if (ehFailures.length === 0 && lrrFailures.length === 0) {
       setArchiveSelectionMode(false);
       setSelectedArchiveIds(new Set());
       return;
     }
-    const preview = failures.slice(0, 5).map((item) => '- ' + item.title + ': ' + item.message).join('\n');
-    alert('已删除 ' + deletedIds.length + ' 个，' + failures.length + ' 个失败：\n' + preview + (failures.length > 5 ? '\n...' : ''));
-  }, [bulkDeleteSyncConfirmed, deleteArchiveWithSync, removeDeletedArchiveIds, removeWatchlistItems, selectedArchiveList]);
+    setArchiveFailureReport({
+      ehFailures,
+      lrrFailures,
+      message: '已完成其余删除操作。失败档案仍保持选中，可稍后重试。',
+    });
+  }, [bulkDeleteSyncConfirmed, ehFavoriteDeleteSync, removeDeletedArchiveIds, removeWatchlistItems, selectedArchiveList, workerReady]);
 
   const archiveCountLabel = useMemo(() => {
     if (loading) return '正在获取结果...';
@@ -2140,11 +2227,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             </div>
           </div>
 
-          <div className="archive-selection-actions" data-mounted={archiveSelectionActionsMounted ? 'true' : 'false'} data-open={archiveSelectionMode ? 'true' : 'false'} aria-hidden={!archiveSelectionMode}>
+          <div className="archive-selection-actions" data-open={archiveSelectionMode ? 'true' : 'false'} aria-hidden={!archiveSelectionMode}>
             <div className="archive-selection-actions-inner">
-              <span aria-live="polite" style={{ color: 'var(--accent)', fontSize: '12px', whiteSpace: 'nowrap' }}>已选 {selectedArchiveIds.size} 个</span>
+              <span className="archive-count-badge archive-selection-count-badge" aria-live="polite">已选 {selectedArchiveIds.size} 个</span>
               <button className="btn archive-selection-primary" tabIndex={archiveSelectionMode ? 0 : -1} style={{ padding: '6px 12px', fontSize: '12px' }} onClick={toggleSelectAllVisibleArchives} disabled={visibleArchiveIds.length === 0 || archiveDeleting}>
                 {allVisibleSelected ? '取消全选' : '全选当前'}
+              </button>
+              <button className="btn" tabIndex={archiveSelectionMode ? 0 : -1} style={{ padding: '6px 12px', fontSize: '12px' }} onClick={handleBulkArchiveFavorite} disabled={selectedArchiveIds.size === 0 || archiveDeleting || bulkFavoriteRunning}>
+                {bulkFavoriteRunning ? '收藏中…' : '收藏所选'}
               </button>
               <button className="btn archive-selection-delete" tabIndex={archiveSelectionMode ? 0 : -1} onClick={requestBulkArchiveDelete} disabled={selectedArchiveIds.size === 0 || archiveDeleting}>
                 {archiveDeleting ? '删除中…' : '删除所选'}
@@ -2658,6 +2748,20 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       )}
     </ConfirmDialog>
     <ConfirmDialog
+      open={bulkFavoritePending}
+      title="收藏所选档案"
+      message={bulkFavoriteRunning ? '正在将所选档案加入 LANraragi 收藏夹。' : '所选档案收藏操作已完成。'}
+      confirmLabel={bulkFavoriteRunning ? '收藏中…' : '关闭'}
+      showCancel={false}
+      destructive={false}
+      onConfirm={() => { if (!bulkFavoriteRunning) setBulkFavoritePending(false); }}
+      onCancel={() => { if (!bulkFavoriteRunning) setBulkFavoritePending(false); }}
+      confirmDisabled={bulkFavoriteRunning}
+      dismissOnBackdrop={!bulkFavoriteRunning}
+    >
+      <ExecutionProgressPanel progress={bulkFavoriteProgress} />
+    </ConfirmDialog>
+    <ConfirmDialog
       open={bulkDeletePending}
       title="确认批量删除档案"
       message={`将从 LANraragi 中删除选中的 ${selectedArchiveIds.size} 个档案。此操作不可撤销。`}
@@ -2666,11 +2770,18 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       onConfirm={handleBulkArchiveDelete}
       onCancel={() => { if (!archiveDeleting) setBulkDeletePending(false); }}
       confirmDisabled={archiveDeleting}
+      dismissOnBackdrop={!archiveDeleting}
     >
       {workerReady && ehFavoriteDeleteSync && (
         <EhFavoriteDeleteSwitch checked={bulkDeleteSyncConfirmed} onChange={setBulkDeleteSyncConfirmed} disabled={archiveDeleting} />
       )}
+      <ExecutionProgressPanel progress={bulkDeleteProgress} />
     </ConfirmDialog>
+    <ArchiveDeletionFailureDialog
+      report={archiveFailureReport}
+      message={archiveFailureReport?.message}
+      onClose={() => setArchiveFailureReport(null)}
+    />
     <TextInputDialog
       open={!!presetNameDialog}
       title={presetNameDialog?.mode === 'rename' ? '重命名筛选方案' : '为当前筛选方案命名'}

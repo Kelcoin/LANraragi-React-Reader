@@ -1,3 +1,5 @@
+import { hasValidWorkerConfig } from './worker-config';
+
 const EH_FAVORITE_DELETE_SYNC_KEY = 'lrr_eh_favorite_delete_sync';
 
 export function shouldSyncEhFavorite(globalEnabled, confirmationEnabled) {
@@ -42,8 +44,7 @@ export function hasValidEhCookie(cookie = getEhCookie()) {
 export function hasReadyEhFavoriteSync() {
   try {
     return hasValidEhCookie()
-      && !!String(localStorage.getItem('lrr_worker_url') || '').trim()
-      && !!String(localStorage.getItem('lrr_sync_token') || '').trim();
+      && hasValidWorkerConfig();
   } catch {
     return false;
   }

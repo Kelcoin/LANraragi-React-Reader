@@ -1610,6 +1610,7 @@ textarea:focus-visible,
   color: var(--text-main);
   font-size: 20px;
   font-weight: 750;
+  text-align: center;
   text-wrap: balance;
 }
 
@@ -1626,10 +1627,6 @@ textarea:focus-visible,
   color: var(--text-main);
   font-size: 13px;
   font-weight: 650;
-}
-
-.confirm-dialog:has(.config-transfer-field) .confirm-dialog-title {
-  text-align: center;
 }
 
 .config-transfer-warning {
@@ -2519,9 +2516,9 @@ textarea:focus-visible,
   display: grid;
   grid-template-rows: 0fr;
   pointer-events: none;
+  transition: grid-template-rows 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.archive-selection-actions[data-mounted="true"] { grid-template-rows: 1fr; }
-.archive-selection-actions[data-open="true"] { pointer-events: auto; }
+.archive-selection-actions[data-open="true"] { grid-template-rows: 1fr; pointer-events: auto; }
 .archive-selection-actions-inner {
   min-height: 0;
   overflow: hidden;
@@ -2535,6 +2532,45 @@ textarea:focus-visible,
   transition: opacity 0.2s ease, transform 0.26s ease;
 }
 .archive-selection-actions[data-open="true"] .archive-selection-actions-inner { opacity: 1; transform: translateY(0) scaleY(1); }
+.archive-card-selection-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255,255,255,0.9);
+  border-radius: 5px;
+  background: rgba(15,17,21,0.72);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.34);
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.archive-card-selection-checkbox.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.archive-card-selection-checkbox.is-selected::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.9));
+}
+.archive-card-shell.is-selected {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    0 6px 20px rgba(74,159,240,0.18);
+}
+.archive-card-shell[role="checkbox"]:focus-visible {
+  outline: 2px solid rgba(141,216,255,0.82);
+  outline-offset: 3px;
+}
 .archive-selection-primary { margin-left: auto; }
 .archive-selection-delete {
   padding: 6px 12px;
@@ -2834,7 +2870,7 @@ textarea:focus-visible,
   flex-wrap: wrap;
   justify-content: center;
   gap: 24px 18px;
-  align-items: start;
+  align-items: center;
 }
 
 .dedupe-chain {
@@ -3291,7 +3327,9 @@ textarea:focus-visible,
   }
 
   .archive-grid,
+  .archive-selection-actions,
   .archive-selection-actions-inner,
+  .archive-card-selection-checkbox,
   .metadata-status-wrap,
   .metadata-status-card,
   .reader-toolbar-button,

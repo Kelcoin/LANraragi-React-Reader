@@ -5,6 +5,8 @@ import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import DedupeArchiveContextMenu from '../components/DedupeArchiveContextMenu';
 import ArchiveThumbnailDialog from '../components/ArchiveThumbnailDialog';
 import DatePicker from '../components/DatePicker';
+import ExecutionProgressPanel from '../components/ExecutionProgressPanel';
+import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import { lrrApi, waitForMinionJob } from '../lib/api';
 import { rememberArchiveMetadata } from '../lib/archiveMetadataCache';
 import {
@@ -366,25 +368,6 @@ function EmptyState({ title, detail }) {
   );
 }
 
-function ExecutionProgressPanel({ progress }) {
-  if (!progress) return null;
-  const total = Math.max(1, Number(progress.total) || 1);
-  const current = Math.max(0, Math.min(total, Number(progress.current) || 0));
-  const percent = current / total * 100;
-  return (
-    <div className="dedupe-execution-progress" aria-live="polite">
-      <div className="dedupe-execution-progress-heading">
-        <strong>{progress.label}</strong>
-        <span>{current} / {total}</span>
-      </div>
-      {progress.detail && <div className="dedupe-execution-progress-detail">{progress.detail}</div>}
-      <div className="dedupe-execution-progress-track" aria-hidden="true">
-        <span style={{ transform: `scaleX(${percent / 100})` }} />
-      </div>
-    </div>
-  );
-}
-
 export default function DeduplicatePage({ onBack }) {
   const workerReady = hasValidWorkerConfig();
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
@@ -407,7 +390,6 @@ export default function DeduplicatePage({ onBack }) {
   const [deleteSyncConfirmed, setDeleteSyncConfirmed] = useState(true);
   const [executionProgress, setExecutionProgress] = useState(null);
   const [failureReport, setFailureReport] = useState(null);
-  const [copyStatus, setCopyStatus] = useState('');
   const [archiveMenu, setArchiveMenu] = useState(null);
   const [thumbnailArchive, setThumbnailArchive] = useState(null);
   const [dateRange, setDateRange] = useState(() => ({
@@ -637,7 +619,6 @@ export default function DeduplicatePage({ onBack }) {
   const requestExecuteSelected = useCallback(() => {
     setDeleteSyncConfirmed(true);
     setExecutionProgress(null);
-    setCopyStatus('');
     setExecutePending(true);
   }, []);
 
@@ -684,7 +665,7 @@ export default function DeduplicatePage({ onBack }) {
     const total = selectedGroups.length + selectedArchives.length;
     const markedGroupKeys = new Set();
     const deletedIds = [];
-    const ehFailuresByUrl = new Map();
+    const ehFailures = [];
     const lrrFailures = [];
     let markFailure = '';
     let completed = 0;
@@ -724,7 +705,7 @@ export default function DeduplicatePage({ onBack }) {
           confirmationEnabled: deleteSyncConfirmed,
           continueOnFavoriteError: true,
           onFavoriteError: ({ galleryUrl, error }) => {
-            if (galleryUrl) ehFailuresByUrl.set(galleryUrl, error?.message || 'E-Hentai 收藏夹删除失败');
+            ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
           },
         });
         deletedIds.push(id);
@@ -751,7 +732,7 @@ export default function DeduplicatePage({ onBack }) {
       .filter((id) => !deletedSet.has(id) && visibleArchiveIds.has(id));
     const nextSelectedGroupKeys = Array.from(selectedGroupKeys)
       .filter((key) => !markedGroupKeys.has(key) && visibleGroupKeys.has(key));
-    const failureCount = ehFailuresByUrl.size + lrrFailures.length + (markFailure ? 1 : 0);
+    const failureCount = ehFailures.length + lrrFailures.length + (markFailure ? 1 : 0);
     const nextStatus = failureCount > 0
       ? `执行完成，${failureCount} 项失败`
       : `执行完成：删除 ${deletedIds.length} 个，标记 ${markedGroupKeys.size} 组`;
@@ -768,7 +749,7 @@ export default function DeduplicatePage({ onBack }) {
     setExecutePending(false);
     if (failureCount > 0) {
       setFailureReport({
-        ehFailures: Array.from(ehFailuresByUrl, ([url, message]) => ({ url, message })),
+        ehFailures,
         lrrFailures,
         markFailure,
       });
@@ -783,17 +764,6 @@ export default function DeduplicatePage({ onBack }) {
     syncSavedResult,
     workerReady,
   ]);
-
-  const copyEhFailureUrls = useCallback(async () => {
-    const urls = (failureReport?.ehFailures || []).map((item) => item.url);
-    if (urls.length === 0) return;
-    try {
-      await navigator.clipboard.writeText(urls.join('\n'));
-      setCopyStatus('已复制');
-    } catch {
-      setCopyStatus('复制失败，请手动复制链接');
-    }
-  }, [failureReport]);
 
   const saveResult = useCallback(() => {
     const payload = createDedupeSavedResultPayload({
@@ -1039,50 +1009,11 @@ export default function DeduplicatePage({ onBack }) {
         )}
         <ExecutionProgressPanel progress={executionProgress} />
       </ConfirmDialog>
-      <ConfirmDialog
-        open={!!failureReport}
-        title="部分操作失败"
+      <ArchiveDeletionFailureDialog
+        report={failureReport}
         message="已完成其余操作。失败项保留在当前结果中，可稍后重试。"
-        confirmLabel="关闭"
-        showCancel={false}
-        destructive={false}
-        onConfirm={() => { setFailureReport(null); setCopyStatus(''); }}
-        onCancel={() => { setFailureReport(null); setCopyStatus(''); }}
-      >
-        {failureReport?.ehFailures?.length > 0 && (
-          <div className="dedupe-failure-section">
-            <div className="dedupe-failure-heading">
-              <strong>E-Hentai 收藏夹删除失败</strong>
-              <button type="button" className="btn" onClick={copyEhFailureUrls}>一键复制</button>
-            </div>
-            <div className="dedupe-failure-copy-status" aria-live="polite">{copyStatus}</div>
-            <ul className="dedupe-failure-list">
-              {failureReport.ehFailures.map(({ url, message }) => (
-                <li key={url}>
-                  <a href={url} target="_blank" rel="noreferrer" translate="no">{url}</a>
-                  <span>{message}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {failureReport?.lrrFailures?.length > 0 && (
-          <div className="dedupe-failure-section">
-            <strong>LANraragi 删除失败</strong>
-            <ul className="dedupe-failure-list">
-              {failureReport.lrrFailures.map(({ id, title, message }) => (
-                <li key={id}><span>{title}</span><span>{message}</span></li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {failureReport?.markFailure && (
-          <div className="dedupe-failure-section">
-            <strong>标记分组失败</strong>
-            <div className="dedupe-failure-message">{failureReport.markFailure}</div>
-          </div>
-        )}
-      </ConfirmDialog>
+        onClose={() => setFailureReport(null)}
+      />
     </div>
   );
 }
