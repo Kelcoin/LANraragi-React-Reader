@@ -631,13 +631,20 @@ test('home carousels use compact shared vertical padding', () => {
 
 test('watchlist glow stays inside compact carousel padding', () => {
   const css = read('src/index.css');
-  const glowStart = css.indexOf('.watchlist-card:not(.watchlist-card-plain) .archive-card-shell::before');
+  const glowStart = css.indexOf('.watchlist-card:not(.watchlist-card-plain) .archive-card-shell');
   const glowEnd = css.indexOf('.archive-cover-image', glowStart);
   const glowCss = css.slice(glowStart, glowEnd);
 
   assert.match(glowCss, /0 0 6px[\s\S]*0 0 10px/);
   assert.match(glowCss, /:hover[\s\S]*0 0 8px[\s\S]*0 0 12px/);
   assert.doesNotMatch(glowCss, /0 0 (?:14|16|18|20|30|34|38|42)px/);
+  assert.doesNotMatch(glowCss, /\.archive-card-shell::before/);
+  assert.doesNotMatch(glowCss, /var\(--shadow\)/);
+});
+
+test('archive cards avoid square outer shadow corners', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.archive-card-shell\s*\{[^}]*box-shadow:\s*none;/s);
 });
 
 test('image cache falls back to IndexedDB when Cache Storage is unavailable', () => {
@@ -1023,6 +1030,47 @@ test('website branding uses one adaptive SVG while install icons stay PNG', () =
 test('touch surfaces suppress native WebKit tap highlight globally', () => {
   const css = read('src/index.css');
   assert.match(css, /\*\s*\{[^}]*-webkit-tap-highlight-color:\s*transparent;/s);
+});
+
+test('ordinary UI controls use semantic colors in both themes', () => {
+  const css = read('src/index.css');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const customSelect = read('src/components/CustomSelect.jsx');
+  const toggle = read('src/components/ToggleSwitch.jsx');
+  const ehSwitch = read('src/components/EhFavoriteDeleteSwitch.jsx');
+  const comments = read('src/components/EhComments.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  const home = read('src/pages/Home.jsx');
+  const archiveCard = read('src/components/ArchiveCard.jsx');
+  const tagSuggest = read('src/components/TagSuggest.jsx');
+
+  assert.match(css, /--warning-text:/);
+  assert.match(css, /--warning-surface:/);
+  assert.match(css, /--warning-border:/);
+  assert.match(css, /--good-text:/);
+  assert.match(css, /--good-surface:/);
+  assert.match(css, /--good-border:/);
+  assert.doesNotMatch(css, /#ffd2d0|#fbbf24|#fca5a5|#6ee7b7|#62d48b|#80dca2|#ff8e8e|#5fcf8b/);
+  assert.doesNotMatch(recommendations, /#e3e9f3|#a7b1c2|#ccc|rgba\(255,255,255/);
+  assert.doesNotMatch(history, /#e8edf5|linear-gradient\(90deg, rgba\(255,255,255/);
+  assert.doesNotMatch(dedupe, /#fbbf24|rgba\(251,191,36|rgba\(255,255,255,0\.025\)/);
+  assert.doesNotMatch(customSelect, /rgba\(255, 255, 255, 0\.08\)/);
+  assert.match(toggle, /className=\{`toggle-switch-track/);
+  assert.doesNotMatch(toggle, /transition:\s*'all/);
+  assert.match(css, /\.toggle-switch-track\s*\{[^}]*min-width:\s*38px;[^}]*max-width:\s*38px;[^}]*flex:\s*0 0 38px;/s);
+  assert.doesNotMatch(ehSwitch, /rgba\(255,255,255/);
+  assert.doesNotMatch(comments, /#69f0ae/);
+  assert.doesNotMatch(reader, /rgba\(255,180,180/);
+  assert.doesNotMatch(home, /rgba\(255,255,255,0\.0[34568]\)/);
+  assert.doesNotMatch(dedupe, /rgba\(255,255,255,0\.035\)|rgba\(148,163,184,0\.16\)/);
+  assert.doesNotMatch(archiveCard, /rgba\(255,255,255,0\.0[25]\)|transition:\s*'all/);
+  assert.match(archiveCard, /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-main\)\)/);
+  assert.match(tagSuggest, /color-mix\(in srgb, \$\{nsColor\} 40%, var\(--text-main\)\)/);
+  assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-sub\)/s);
+  assert.match(css, /\.upload-notice\s*\{[^}]*background:\s*var\(--warning-surface\)[^}]*border:\s*1px solid var\(--warning-border\)/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toggle-switch-track[\s\S]*?\.archive-card-selection-checkbox/);
 });
 
 test('home uses automatic archive loading or the manual fallback, never both', () => {

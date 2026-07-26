@@ -56,8 +56,8 @@ export default function CustomSelect({ value, options, onChange, style, compact,
           cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
           userSelect: 'none',
           padding: compact && isNarrow ? '6px 8px' : undefined,
-          background: isOpen ? 'rgba(88, 183, 255, 0.14)' : undefined,
-          borderColor: isOpen ? 'rgba(141,216,255,0.68)' : undefined
+          background: isOpen ? 'var(--accent-soft)' : undefined,
+          borderColor: isOpen ? 'var(--accent)' : undefined
         }}
         onClick={() => {
             if (!isOpen && triggerRef.current) {
@@ -76,7 +76,7 @@ export default function CustomSelect({ value, options, onChange, style, compact,
         <span style={{ flex: 1, minWidth: 0, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {selectedOption ? selectedOption.label : '请选择…'}
         </span>
-        <span style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s', fontSize: '10px', color: 'var(--text-sub)', flexShrink: 0 }}>▼</span>
+        <span className="custom-select-chevron" style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s', fontSize: '10px', color: 'var(--text-sub)', flexShrink: 0 }}>▼</span>
       </div>
 
       {isOpen && createPortal(
@@ -90,15 +90,15 @@ export default function CustomSelect({ value, options, onChange, style, compact,
           {options.map(opt => (
             <div
               key={opt.value}
+              className="custom-select-option"
+              data-selected={opt.value === value}
               style={{
                 minHeight: '40px', padding: '0 12px', margin: '3px 8px', borderRadius: '9px', cursor: 'pointer', fontSize: '14px',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                background: opt.value === value ? 'rgba(88, 183, 255, 0.16)' : 'transparent',
+                background: opt.value === value ? 'var(--accent-soft)' : 'transparent',
                 color: opt.value === value ? 'var(--accent-strong)' : 'var(--text-main)',
                 transition: 'background 0.2s'
               }}
-              onMouseEnter={(e) => { if(opt.value !== value) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)' }}
-              onMouseLeave={(e) => { if(opt.value !== value) e.currentTarget.style.background = 'transparent' }}
               onClick={() => { onChange(opt.value); setIsOpen(false); }}
             >
               <span>{opt.label}</span>

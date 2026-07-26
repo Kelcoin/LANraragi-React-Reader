@@ -162,7 +162,7 @@ function ProgressPanel({ progress, running }) {
           padding: '7px 10px',
           borderRadius: '10px',
           border: '1px solid var(--glass-border)',
-          background: 'rgba(255,255,255,0.035)',
+          background: 'var(--surface-2)',
           color: 'var(--text-main)',
           fontSize: '13px',
           fontWeight: 750,
@@ -174,7 +174,7 @@ function ProgressPanel({ progress, running }) {
       <div style={{
         height: '12px',
         borderRadius: '999px',
-        background: 'rgba(148,163,184,0.16)',
+        background: 'var(--surface-3)',
         overflow: 'hidden',
         boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.28)',
       }}>
@@ -239,7 +239,7 @@ function StatsPanel({
               padding: '10px 12px',
               borderRadius: '10px',
               border: '1px solid var(--glass-border)',
-              background: 'rgba(255,255,255,0.035)',
+              background: 'var(--surface-2)',
               minWidth: 0,
             }}
           >
@@ -862,13 +862,13 @@ export default function DeduplicatePage({ onBack }) {
         style={{
           position: 'relative',
           border: selected
-            ? '1px solid rgba(251,191,36,0.72)'
+            ? '1px solid var(--warning-border)'
             : '1px solid var(--glass-border)',
           borderRadius: '14px',
           padding: '26px 16px 18px',
           background: selected
-            ? 'rgba(251,191,36,0.08)'
-            : 'rgba(255,255,255,0.025)',
+            ? 'var(--warning-surface)'
+            : 'var(--surface-1)',
         }}
       >
         {workerReady && <button
@@ -933,7 +933,7 @@ export default function DeduplicatePage({ onBack }) {
       <ProgressPanel progress={progress} running={running} />
 
       {!running && workerWarning && (
-        <div className="glass-panel" style={{ padding: '12px 14px', marginBottom: '16px', borderColor: 'rgba(251,191,36,0.45)', color: '#fbbf24', fontSize: '13px' }}>
+        <div className="glass-panel" style={{ padding: '12px 14px', marginBottom: '16px', borderColor: 'var(--warning-border)', color: 'var(--warning-text)', fontSize: '13px' }}>
           {workerWarning}
         </div>
       )}

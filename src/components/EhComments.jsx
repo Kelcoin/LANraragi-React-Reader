@@ -620,7 +620,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px', fontSize: '12px', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
-                      <span style={{ color: c.isEditable ? '#69f0ae' : 'var(--accent)', fontWeight: 'bold', fontSize: '13px' }}>
+                      <span style={{ color: c.isEditable ? 'var(--good-text)' : 'var(--accent)', fontWeight: 'bold', fontSize: '13px' }}>
                         {c.user}{c.isEditable ? ' (你)' : ''}
                       </span>
                     </div>

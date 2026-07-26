@@ -405,9 +405,9 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                     color: 'var(--text-sub)',
                   }}>
                     <div style={{ minWidth: 0 }}>
-                      <span style={{ color: '#e8edf5', fontSize: '15px', fontWeight: 700 }}>{group.title}</span>
+                      <span style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: 700 }}>{group.title}</span>
                     </div>
-                    <div style={{ height: '1px', background: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04))' }} />
+                    <div style={{ height: '1px', background: 'var(--glass-border)' }} />
                     <div style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
                       {group.items.length} 条
                     </div>

@@ -216,14 +216,14 @@ function SkeletonCard({ showProgress = false }) {
       flexShrink: 0, minWidth: '150px', width: '150px',
       background: 'var(--surface-1)',
       borderRadius: '14px',
-      border: '1px solid rgba(255,255,255,0.08)',
+      border: '1px solid var(--glass-border)',
       display: 'flex', flexDirection: 'column', padding: '12px',
       overflow: 'hidden',
     }}>
       <div style={{
         width: '100%', height: '210px',
         borderRadius: '8px',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))',
+        background: 'var(--reader-skeleton-base)',
         position: 'relative',
         overflow: 'hidden',
       }}>
@@ -234,12 +234,12 @@ function SkeletonCard({ showProgress = false }) {
       )}
       <div style={{
         height: '12px', borderRadius: '4px',
-        background: 'rgba(255,255,255,0.05)',
+        background: 'var(--reader-skeleton-base)',
         width: '84%', marginTop: '12px',
       }} />
       <div style={{
         height: '12px', borderRadius: '4px',
-        background: 'rgba(255,255,255,0.04)',
+        background: 'var(--reader-skeleton-base)',
         width: '66%', marginTop: '8px',
       }} />
       <div style={{
@@ -247,12 +247,12 @@ function SkeletonCard({ showProgress = false }) {
       }}>
         <div style={{
           height: '8px', borderRadius: '4px',
-          background: 'rgba(255,255,255,0.04)',
+          background: 'var(--reader-skeleton-base)',
           width: '36%',
         }} />
         <div style={{
           height: '8px', borderRadius: '4px',
-          background: 'rgba(255,255,255,0.04)',
+          background: 'var(--reader-skeleton-base)',
           width: '30%',
         }} />
       </div>
@@ -1889,7 +1889,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         100% { transform: scale(1.95); opacity: 0; }
       }
       .history-view-all-arrow {
-        color: rgba(255,255,255,0.34);
+        color: var(--text-muted);
         transform: translateY(0);
         transition: color 0.18s ease, transform 0.18s ease;
       }

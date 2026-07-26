@@ -432,8 +432,8 @@ export default function Recommendations({ currentArchive }) {
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: isNarrow ? '0 14px' : '0 20px', height: '46px', minHeight: '46px',
-          borderBottom: collapsed ? '1px solid transparent' : '1px solid rgba(255,255,255,0.06)',
-          fontSize: '14px', color: '#e3e9f3', userSelect: 'none',
+          borderBottom: collapsed ? '1px solid transparent' : '1px solid var(--glass-border)',
+          fontSize: '14px', color: 'var(--text-main)', userSelect: 'none',
         }}>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button
@@ -441,8 +441,8 @@ export default function Recommendations({ currentArchive }) {
               className="btn"
               style={{
                 background: tab === 'sim' ? 'var(--accent)' : 'transparent',
-                border: tab === 'sim' ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.15)',
-                color: tab === 'sim' ? '#fff' : '#a7b1c2',
+                border: tab === 'sim' ? '1px solid var(--accent)' : '1px solid var(--glass-border)',
+                color: tab === 'sim' ? '#fff' : 'var(--text-sub)',
                 fontSize: '13px', fontWeight: 600, cursor: 'pointer',
                 padding: '5px 12px', borderRadius: '6px', transition: 'background-color 0.2s, border-color 0.2s, color 0.2s',
               }}
@@ -453,8 +453,8 @@ export default function Recommendations({ currentArchive }) {
                 className="btn"
                 style={{
                   background: tab === 'artist' ? 'var(--accent)' : 'transparent',
-                  border: tab === 'artist' ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.15)',
-                  color: tab === 'artist' ? '#fff' : '#a7b1c2',
+                  border: tab === 'artist' ? '1px solid var(--accent)' : '1px solid var(--glass-border)',
+                  color: tab === 'artist' ? '#fff' : 'var(--text-sub)',
                   fontSize: '13px', fontWeight: 600, cursor: 'pointer',
                   padding: '5px 12px', borderRadius: '6px', transition: 'background-color 0.2s, border-color 0.2s, color 0.2s',
                 }}
@@ -472,7 +472,7 @@ export default function Recommendations({ currentArchive }) {
             >
               {loading ? '刷新中' : '刷新'}
             </button>
-            <button onClick={toggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', opacity: 0.8, padding: '4px', borderRadius: '4px', display: 'flex' }}>
+            <button aria-label={collapsed ? '展开推荐' : '收起推荐'} onClick={toggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-sub)', opacity: 0.8, padding: '4px', borderRadius: '4px', display: 'flex' }}>
               <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style={{ transition: 'transform 0.3s', transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}><path d="M6 15l6-6 6 6z"/></svg>
             </button>
           </div>
@@ -501,20 +501,20 @@ export default function Recommendations({ currentArchive }) {
               {Array.from({ length: skeletonCount }).map((_, i) => (
                 <div key={`rsk-${i}`} style={{
                   flexShrink: 0, width: '150px', minWidth: '150px',
-                  background: 'rgba(255,255,255,0.04)', borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  background: 'var(--surface-2)', borderRadius: '12px',
+                  border: '1px solid var(--glass-border)',
                   overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '12px',
                 }}>
                   <div style={{
                     width: '100%', height: '210px',
-                    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    background: 'linear-gradient(90deg, var(--reader-skeleton-base) 25%, var(--reader-skeleton-highlight) 50%, var(--reader-skeleton-base) 75%)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.5s infinite',
                   }} />
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ height: '12px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', width: '84%', marginTop: '12px' }} />
-                    <div style={{ height: '12px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', width: '66%', marginTop: '8px' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}><span style={{ height: '8px', width: '36%', borderRadius: '4px', background: 'rgba(255,255,255,0.04)' }} /><span style={{ height: '8px', width: '30%', borderRadius: '4px', background: 'rgba(255,255,255,0.04)' }} /></div>
+                    <div style={{ height: '12px', borderRadius: '4px', background: 'var(--reader-skeleton-base)', width: '84%', marginTop: '12px' }} />
+                    <div style={{ height: '12px', borderRadius: '4px', background: 'var(--reader-skeleton-base)', width: '66%', marginTop: '8px' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}><span style={{ height: '8px', width: '36%', borderRadius: '4px', background: 'var(--reader-skeleton-base)' }} /><span style={{ height: '8px', width: '30%', borderRadius: '4px', background: 'var(--reader-skeleton-base)' }} /></div>
                   </div>
                 </div>
               ))}
