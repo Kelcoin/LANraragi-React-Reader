@@ -21,6 +21,14 @@ Clicking a category clears the current text filter and resets archive pagination
 - Re-click selected category: clear category selection and restore the full archive catalog.
 - Untagged: retain its existing `/api/archives/untagged` path.
 
+After a category is active, applying a text filter keeps that category selected and adds the input as a narrower condition:
+
+- Static or dynamic category: call `/api/search` with both `category=<id>` and `filter=<input>`.
+- Untagged: call `/api/search` with `untaggedonly=true` and `filter=<input>`.
+- Clearing the input restores the full active category instead of clearing category selection.
+
+The archive search response cache includes the category and untagged restriction so results cannot leak between scopes.
+
 Favorites is sorted before every other category in the button row. Other category order remains unchanged.
 
 ## Context Menu
@@ -44,5 +52,6 @@ Only destructive archive/history actions use danger styling. Loading text replac
 - Category helper distinguishes static and dynamic loading data.
 - Favorites sorts first without mutating the source list.
 - Home routes static categories through archive IDs and dynamic categories through `search`.
+- Active category searches preserve category selection and send the documented category or untagged restriction.
 - Context-menu contracts enforce unified labels, neutral removal styling, conditional error status, and no idle status spacing.
 - Run full unit tests, lint, production build, and browser layout checks.
