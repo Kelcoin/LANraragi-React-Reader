@@ -2559,13 +2559,25 @@ textarea:focus-visible,
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.9));
+  filter:
+    drop-shadow(0 1px 1px rgba(0,0,0,0.95))
+    drop-shadow(0 0 1px rgba(0,0,0,0.95));
 }
 .archive-card-shell.is-selected {
+  position: relative;
   border-color: var(--accent);
   box-shadow:
     inset 0 0 0 1px var(--accent),
     0 6px 20px rgba(74,159,240,0.18);
+}
+.archive-card-shell.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: 2px solid var(--accent);
+  border-radius: inherit;
+  pointer-events: none;
 }
 .archive-card-shell[role="checkbox"]:focus-visible {
   outline: 2px solid rgba(141,216,255,0.82);

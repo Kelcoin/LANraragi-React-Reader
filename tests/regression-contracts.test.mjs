@@ -817,7 +817,8 @@ test('archive multi-select exposes a checkbox indicator and keyboard semantics',
   assert.match(card, /onKeyDown=\{\(event\) => \{/);
   assert.match(card, /event\.key === 'Enter' \|\| event\.key === ' '/);
   assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:[^}]*inset 0 0 0/s);
-  assert.match(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:\s*drop-shadow/s);
+  assert.match(css, /\.archive-card-shell\.is-selected::after\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*border:\s*2px solid var\(--accent\);[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:\s*drop-shadow\([^\n]+\)\s+drop-shadow/s);
   assert.match(home, /className="archive-count-badge archive-selection-count-badge"/);
 });
 
