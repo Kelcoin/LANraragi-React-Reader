@@ -149,6 +149,21 @@ test('dedupe cards own a focused context menu and progress-free central thumbnai
   assert.match(css, /\.archive-thumbnail-dialog-preview-image/);
 });
 
+test('dedupe groups expose broad group selection and visible smart-selection tags', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const css = read('src/index.css');
+
+  assert.match(page, /getDedupeSmartSelectionSignals/);
+  assert.match(page, /className=\{`dedupe-group\$\{selected \? ' is-selected' : ''\}`\}[\s\S]*?onClick=\{workerReady \? \(\) => toggleGroupSelection\(group\) : undefined\}/);
+  assert.match(page, /className="dedupe-group-toggle"[\s\S]*?onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*toggleGroupSelection\(group\);/);
+  assert.match(page, /className=\{`dedupe-card-item[\s\S]*?onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(page, /smartSignals\.roughTranslation[\s\S]*?>渣翻</);
+  assert.match(page, /smartSignals\.extraneousAds[\s\S]*?>外部广告</);
+  assert.match(page, /smartSignals\.uncensored[\s\S]*?>无修正</);
+  assert.match(css, /\.dedupe-card-smart-tag\.is-warning/);
+  assert.match(css, /\.dedupe-card-smart-tag\.is-positive/);
+});
+
 test('dedupe date range uses an adaptive styled calendar instead of the native picker', () => {
   const page = read('src/pages/DeduplicatePage.jsx');
   const picker = read('src/components/DatePicker.jsx');
@@ -758,6 +773,32 @@ test('Worker-dependent controls are hidden without a valid Worker configuration'
   assert.match(reader, /ehWorker=\{workerReady \? getWorkerUrl\(\) : ''\}/);
 });
 
+test('scheduled history cleanup force-validates cached records without UI feedback', () => {
+  const maintenance = read('src/lib/historyMaintenance.js');
+  const watchlist = read('src/lib/watchlist.js');
+  const timer = maintenance.match(/export function startHistoryExistenceCheckTimer\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+
+  assert.match(maintenance, /loadHistoryState\(\{ force: true \}\)/);
+  assert.match(maintenance, /loadWatchlistState\(\{ force: true \}\)/);
+  assert.match(watchlist, /hydrateArchiveRecords\(items, \{ force \}\)/);
+  assert.equal((timer.match(/runHistoryExistenceCheck\(\)\.catch\(\(\) => \{\}\)/g) || []).length, 2);
+  assert.doesNotMatch(timer, /alert|notice|dialog/i);
+});
+
+test('manual history cleanup locks page interactions and reports removed records', () => {
+  const history = read('src/pages/HistoryPage.jsx');
+  const handler = history.match(/const handleCheckHistory = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(handler, /setMenu\(null\)/);
+  assert.match(handler, /const removed = await runHistoryExistenceCheck\(\{ force: true \}\)/);
+  assert.match(handler, /if \(removed > 0\) setNotice\(`已清理 \$\{removed\} 条失效记录。`\)/);
+  assert.match(handler, /catch \(error\)[\s\S]*setNotice\(`清理失败：\$\{error\?\.message \|\| '未知错误'\}`\)/);
+  assert.match(handler, /finally \{\s*setChecking\(false\)/);
+  assert.match(history, /onClick=\{handleSyncHistory\}[\s\S]*?disabled=\{syncing \|\| checking\}/);
+  assert.match(history, /<section[^>]*inert=\{checking \? '' : undefined\}[^>]*aria-busy=\{checking\}/);
+  assert.match(history, /<button className="btn" onClick=\{onBack\}>返回<\/button>/);
+});
+
 test('archive context menus toggle LANraragi Favorites and expose async status', () => {
   const home = read('src/pages/Home.jsx');
   const menu = read('src/components/ArchiveContextMenu.jsx');
@@ -769,7 +810,8 @@ test('archive context menus toggle LANraragi Favorites and expose async status',
   assert.match(home, /selectedCategoryOverride\.archives/);
   assert.match(home, /selectedCategoryOverride\?\.search/);
   assert.doesNotMatch(home, /category:\$\{cat\.name\}/);
-  assert.match(home, /handleCategoryClick[\s\S]*?writeFilter\(cleared\)[\s\S]*?setFilter\(cleared\)/);
+  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  assert.doesNotMatch(categoryClick, /writeFilter\(cleared\)[\s\S]*?setFilter\(cleared\)/);
   assert.match(home, /syncChangedCategory[\s\S]*?setCategories\([\s\S]*?setSelectedCategory\(current => \(current\?\.id === changed\.id \? changed : current\)\)[\s\S]*?lrr:categories-changed/);
   for (const source of [menu, dedupeMenu]) {
     assert.match(source, /getFavoriteState/);
@@ -797,10 +839,24 @@ test('active categories remain selected while applying and clearing text filters
   assert.doesNotMatch(clearFilter, /setSelectedCategory\(null\)/);
 });
 
+test('category clicks preserve and activate the current text filter', () => {
+  const home = read('src/pages/Home.jsx');
+  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(categoryClick, /const query = filter\.query \|\| ''/);
+  assert.match(categoryClick, /const nextFilter = \{ \.\.\.filter, active: !!query\.trim\(\) \}/);
+  assert.match(categoryClick, /writeFilter\(nextFilter\)/);
+  assert.match(categoryClick, /setFilter\(nextFilter\)/);
+  assert.match(categoryClick, /setSelectedCategory\(nextCategory\)/);
+  assert.match(categoryClick, /navigateHome\(\{ query: query\.trim\(\), replace: true \}\)/);
+  assert.doesNotMatch(categoryClick, /DEFAULT_FILTER|cleared/);
+  assert.match(categoryClick, /\}, \[filter, selectedCategory\]\);/);
+});
+
 test('category switches show a loading count instead of stale archive totals', () => {
   const home = read('src/pages/Home.jsx');
   const countLabel = home.match(/const archiveCountLabel = useMemo\(\(\) => \{[\s\S]*?\n  \}, \[/)?.[0] || '';
-  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[selectedCategory\]\);/)?.[0] || '';
+  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
 
   assert.match(countLabel, /if \(loading\) return '正在获取结果\.\.\.';/);
   assert.match(categoryClick, /setLoading\(true\)/);
@@ -812,6 +868,32 @@ test('README documents category-scoped filtering and LANraragi Favorites', () =>
   assert.match(readme, /静态和动态分类/);
   assert.match(readme, /`🔖 Favorites`[\s\S]*?`⭐收藏夹`/);
   assert.match(readme, /加入或移出 LANraragi 收藏夹/);
+});
+
+test('website branding uses one adaptive SVG while install icons stay PNG', () => {
+  const app = read('src/App.jsx');
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  const html = read('index.html');
+  const manifest = read('public/manifest.json');
+  const logoUrl = new URL('../public/logo.svg', import.meta.url);
+  const logoExists = fs.existsSync(logoUrl);
+
+  assert.equal(logoExists, true);
+  const logo = logoExists ? read('public/logo.svg') : '';
+  assert.doesNotMatch(app, /logo-(?:black|white)\.png/);
+  assert.doesNotMatch(home, /logo-(?:black|white)\.png/);
+  assert.match(app, /<span className="login-brand-logo" aria-hidden="true" \/>/);
+  assert.match(home, /<span className="home-brand-logo" aria-hidden="true" \/>/);
+  assert.match(css, /mask:\s*url\('\/logo\.svg'\) center \/ contain no-repeat/);
+  assert.match(css, /-webkit-mask:\s*url\('\/logo\.svg'\) center \/ contain no-repeat/);
+  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\/logo\.svg" \/>/);
+  assert.match(html, /<link rel="apple-touch-icon" href="\/icons\/icon-180\.png" \/>/);
+  assert.match(manifest, /"src": "\/icons\/icon-192\.png"/);
+  assert.match(manifest, /"src": "\/icons\/icon-512\.png"/);
+  assert.match(logo, /viewBox="0 0 1254 1254"/);
+  assert.match(logo, /prefers-color-scheme:\s*dark/);
+  assert.ok((logo.match(/<path\b/g) || []).length >= 4);
 });
 
 test('touch surfaces suppress native WebKit tap highlight globally', () => {

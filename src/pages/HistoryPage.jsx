@@ -162,10 +162,14 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
 
   const handleCheckHistory = useCallback(async () => {
     if (checking) return;
+    setMenu(null);
     setChecking(true);
     try {
-      await runHistoryExistenceCheck({ force: true });
+      const removed = await runHistoryExistenceCheck({ force: true });
       setHistoryState(getHistory());
+      if (removed > 0) setNotice(`已清理 ${removed} 条失效记录。`);
+    } catch (error) {
+      setNotice(`清理失败：${error?.message || '未知错误'}`);
     } finally {
       setChecking(false);
     }
@@ -315,7 +319,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
             <button
               className="btn"
               onClick={handleSyncHistory}
-              disabled={syncing}
+              disabled={syncing || checking}
               title="从 Worker 刷新阅读历史"
             >
               {syncing ? '刷新中' : '刷新'}
@@ -327,7 +331,12 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
           </div>
         </div>
 
-        <section className="glass-panel section-reveal section-reveal-delay-1" style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}>
+        <section
+          className="glass-panel section-reveal section-reveal-delay-1"
+          inert={checking ? '' : undefined}
+          aria-busy={checking}
+          style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}
+        >
           <div className="history-section-header">
             <div className="history-section-title">
               <HeaderGlyph />

@@ -166,8 +166,7 @@ export default function App() {
           <div className="login-stack">
           <form onSubmit={handleConnect} className={`glass-panel login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
             <div className="login-brand-lockup">
-              <img className="login-brand-logo is-dark" src="/logo-white.png" alt="" aria-hidden="true" />
-              <img className="login-brand-logo is-light" src="/logo-black.png" alt="" aria-hidden="true" />
+              <span className="login-brand-logo" aria-hidden="true" />
               <h2 className="login-title">Readoshi</h2>
             </div>
             

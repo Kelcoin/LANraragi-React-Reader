@@ -46,7 +46,10 @@ export async function runHistoryExistenceCheck({ force = false } = {}) {
 
   checkInFlight = (async () => {
     const before = getHistory().length + getWatchlist().length;
-    const [historyState, watchlistState] = await Promise.all([loadHistoryState(), loadWatchlistState()]);
+    const [historyState, watchlistState] = await Promise.all([
+      loadHistoryState({ force: true }),
+      loadWatchlistState({ force: true }),
+    ]);
     const after = historyState.histories.length + watchlistState.items.length;
     writeLastCheckedAt();
     return Math.max(0, before - after);

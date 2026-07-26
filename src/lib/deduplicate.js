@@ -252,6 +252,15 @@ function tagSet(archive) {
     .filter(Boolean));
 }
 
+export function getDedupeSmartSelectionSignals(archive) {
+  const tags = tagSet(archive);
+  return {
+    roughTranslation: tags.has('other:rough translation'),
+    extraneousAds: tags.has('other:extraneous ads'),
+    uncensored: tags.has('other:uncensored'),
+  };
+}
+
 function archiveId(archive) {
   return String(archive?.arcid || archive?.id || '');
 }
@@ -263,11 +272,11 @@ function archiveSize(archive) {
 }
 
 function keepScore(archive, index) {
-  const tags = tagSet(archive);
+  const signals = getDedupeSmartSelectionSignals(archive);
   return {
-    notRoughTranslation: tags.has('other:rough translation') ? 0 : 1,
-    uncensored: tags.has('other:uncensored') ? 1 : 0,
-    noAds: tags.has('other:extraneous ads') ? 0 : 1,
+    notRoughTranslation: signals.roughTranslation ? 0 : 1,
+    uncensored: signals.uncensored ? 1 : 0,
+    noAds: signals.extraneousAds ? 0 : 1,
     size: archiveSize(archive),
     index: -index,
   };

@@ -20,8 +20,7 @@ test('project branding is consistently Readoshi', () => {
   assert.equal(manifest.short_name, 'Readoshi');
   assert.match(manifest.description, /A LANraragi Reader/);
   assert.match(html, /<title>Readoshi<\/title>/);
-  assert.match(html, /media="\(prefers-color-scheme: light\)"[^>]+href="\/icons\/favicon-black-32\.png"/);
-  assert.match(html, /media="\(prefers-color-scheme: dark\)"[^>]+href="\/icons\/favicon-white-32\.png"/);
+  assert.match(html, /type="image\/svg\+xml"[^>]+href="\/logo\.svg"/);
   assert.match(readme, /<h1 align="center">Readoshi<\/h1>/);
   assert.doesNotMatch(readme, /A LANraragi Reader/);
   assert.match(readme, /public\/logo-black\.png/);
@@ -31,16 +30,14 @@ test('project branding is consistently Readoshi', () => {
   assert.match(workflow, /appName: 'Readoshi'/);
   assert.match(workflow, /public\/logo-white\.png/);
   assert.match(app, /className="login-brand-lockup"/);
-  assert.match(app, /src="\/logo-white\.png"/);
-  assert.match(app, /src="\/logo-black\.png"/);
+  assert.match(app, /<span className="login-brand-logo" aria-hidden="true" \/>/);
   assert.match(app, /className="login-title">Readoshi<\/h2>/);
   assert.match(app, />LANraragi 地址 \*<\/label>/);
   assert.match(app, />LANraragi API Key \*<\/label>/);
   assert.doesNotMatch(app, />配置 LANraragi<\/h2>|>服务器地址 \*<\/label>|>API Key \*<\/label>/);
-  assert.match(css, /:root\[data-theme="light"\] \.login-brand-logo\.is-light/);
-  assert.match(home, /className="home-brand-logo is-dark"[^>]+src="\/logo-white\.png"/);
-  assert.match(home, /className="home-brand-logo is-light"[^>]+src="\/logo-black\.png"/);
-  assert.match(css, /:root\[data-theme="light"\] \.home-brand-logo\.is-light/);
+  assert.match(css, /\.login-brand-logo\s*\{[^}]*mask:\s*url\('\/logo\.svg'\)/s);
+  assert.match(home, /<span className="home-brand-logo" aria-hidden="true" \/>/);
+  assert.match(css, /\.home-brand-logo\s*\{[^}]*mask:\s*url\('\/logo\.svg'\)/s);
 });
 
 test('all logo image assets live under public', () => {

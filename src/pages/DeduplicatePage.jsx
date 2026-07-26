@@ -15,6 +15,7 @@ import {
   filterArchivesByDateRange,
   filterDuplicateGroupsForSavedState,
   findDuplicatePairsAsync,
+  getDedupeSmartSelectionSignals,
   getDuplicateSelectionDisabledIds,
   getTodayDateString,
   groupDuplicatePairsByChain,
@@ -312,6 +313,7 @@ function DedupeArchiveItem({
   onContextMenu,
 }) {
   const pageCount = Number(archive.pagecount ?? archive.total) || 0;
+  const smartSignals = getDedupeSmartSelectionSignals(archive);
   return (
     <div
       className={`dedupe-card-item${selectionDisabled ? ' is-selection-disabled' : ''}`}
@@ -337,6 +339,9 @@ function DedupeArchiveItem({
         <div className="dedupe-card-size">
           {formatBytes(archive.size) || '体积未知'} · {pageCount > 0 ? `${pageCount}页` : '页数未知'}
         </div>
+        {smartSignals.roughTranslation && <div className="dedupe-card-smart-tag is-warning">渣翻</div>}
+        {smartSignals.extraneousAds && <div className="dedupe-card-smart-tag is-warning">外部广告</div>}
+        {smartSignals.uncensored && <div className="dedupe-card-smart-tag is-positive">无修正</div>}
       </div>
     </div>
   );
@@ -883,6 +888,7 @@ export default function DeduplicatePage({ onBack }) {
       <section
         key={key}
         className={`dedupe-group${selected ? ' is-selected' : ''}`}
+        onClick={workerReady ? () => toggleGroupSelection(group) : undefined}
         style={{
           position: 'relative',
           border: selected
@@ -899,7 +905,10 @@ export default function DeduplicatePage({ onBack }) {
           type="button"
           className="dedupe-group-toggle"
           aria-pressed={selected}
-          onClick={() => toggleGroupSelection(group)}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleGroupSelection(group);
+          }}
         >
           疑似重复 {groupNumberByKey.get(key)}
         </button>}

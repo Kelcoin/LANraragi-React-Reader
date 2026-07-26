@@ -156,7 +156,7 @@ async function loadWatchlistStateNow({ force = false } = {}) {
     items = getStoredWatchlist();
     writeWatchlistCache(items, { notify: false });
   }
-  const hydrated = await hydrateArchiveRecords(items);
+  const hydrated = await hydrateArchiveRecords(items, { force });
   if (hydrated.missingIds.length > 0) await removeWatchlistItems(hydrated.missingIds);
   emitWatchlistChanged();
   return { items: hydrated.items, remote, lastSync };

@@ -715,22 +715,13 @@ textarea:focus-visible,
 }
 
 .home-brand-logo {
+  display: block;
   width: 38px;
   height: 38px;
-  object-fit: contain;
   flex: 0 0 auto;
-}
-
-.home-brand-logo.is-light {
-  display: none;
-}
-
-:root[data-theme="light"] .home-brand-logo.is-dark {
-  display: none;
-}
-
-:root[data-theme="light"] .home-brand-logo.is-light {
-  display: block;
+  background-color: var(--text-main);
+  -webkit-mask: url('/logo.svg') center / contain no-repeat;
+  mask: url('/logo.svg') center / contain no-repeat;
 }
 
 .archive-toolbar-summary > span {
@@ -984,22 +975,13 @@ textarea:focus-visible,
 }
 
 .login-brand-logo {
+  display: block;
   width: 58px;
   height: 58px;
-  object-fit: contain;
   flex: 0 0 auto;
-}
-
-.login-brand-logo.is-light {
-  display: none;
-}
-
-:root[data-theme="light"] .login-brand-logo.is-dark {
-  display: none;
-}
-
-:root[data-theme="light"] .login-brand-logo.is-light {
-  display: block;
+  background-color: var(--text-main);
+  -webkit-mask: url('/logo.svg') center / contain no-repeat;
+  mask: url('/logo.svg') center / contain no-repeat;
 }
 
 .login-title {
@@ -2954,6 +2936,8 @@ textarea:focus-visible,
 .dedupe-card-size-row {
   width: 100%;
   display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
   justify-content: center;
 }
 
@@ -2967,6 +2951,27 @@ textarea:focus-visible,
   font-size: 12px;
   line-height: 1.2;
   text-align: center;
+}
+
+.dedupe-card-smart-tag {
+  min-height: 18px;
+  padding: 3px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.dedupe-card-smart-tag.is-warning {
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+}
+
+.dedupe-card-smart-tag.is-positive {
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
 }
 
 .dedupe-card-selected-mark {
