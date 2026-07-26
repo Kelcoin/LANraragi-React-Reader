@@ -635,16 +635,20 @@ test('watchlist glow stays inside compact carousel padding', () => {
   const glowEnd = css.indexOf('.archive-cover-image', glowStart);
   const glowCss = css.slice(glowStart, glowEnd);
 
-  assert.match(glowCss, /0 0 6px[\s\S]*0 0 10px/);
-  assert.match(glowCss, /:hover[\s\S]*0 0 8px[\s\S]*0 0 12px/);
-  assert.doesNotMatch(glowCss, /0 0 (?:14|16|18|20|30|34|38|42)px/);
+  assert.match(glowCss, /inset 0 0 0 1px[\s\S]*inset 0 0 8px/);
+  assert.match(glowCss, /:hover[\s\S]*inset 0 0 0 2px[\s\S]*inset 0 0 10px/);
+  assert.doesNotMatch(glowCss, /^ {4}(?!inset\s)[^\n]*0 0 \d+px/gm);
   assert.doesNotMatch(glowCss, /\.archive-card-shell::before/);
   assert.doesNotMatch(glowCss, /var\(--shadow\)/);
 });
 
-test('archive cards avoid square outer shadow corners', () => {
+test('archive cards never paint shadows outside their rounded bounds', () => {
   const css = read('src/index.css');
+  const card = read('src/components/ArchiveCard.jsx');
   assert.match(css, /\.archive-card-shell\s*\{[^}]*box-shadow:\s*none;/s);
+  assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:\s*inset/s);
+  assert.doesNotMatch(css, /\.archive-card-shell\.is-selected\s*\{[^}]*\n\s*(?!inset)0 \d+px \d+px/s);
+  assert.doesNotMatch(card, /boxShadow:\s*isPanelVisible/);
 });
 
 test('image cache falls back to IndexedDB when Cache Storage is unavailable', () => {
@@ -825,7 +829,8 @@ test('archive multi-select exposes a checkbox indicator and keyboard semantics',
   assert.match(card, /event\.key === 'Enter' \|\| event\.key === ' '/);
   assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:[^}]*inset 0 0 0/s);
   assert.match(css, /\.archive-card-shell\.is-selected::after\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*border:\s*2px solid var\(--accent\);[^}]*pointer-events:\s*none;/s);
-  assert.match(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:\s*drop-shadow\([^\n]+\)\s+drop-shadow/s);
+  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:[^}]*0 0 0 1px rgba\(255,255,255,0\.82\)[^}]*0 3px 10px rgba\(0,0,0,0\.9\)/s);
+  assert.doesNotMatch(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:/s);
   assert.match(home, /className="archive-count-badge archive-selection-count-badge"/);
 });
 
