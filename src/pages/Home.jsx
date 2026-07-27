@@ -39,6 +39,7 @@ import { subscribeReadingProgressChanged } from '../lib/readingProgress';
 import { migrateLegacyStorageKey } from '../lib/configScope';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings } from '../lib/readerSettings';
 import { getArchiveSearchTotal } from '../lib/archiveSearch';
+import { filterRandomArchives, getRandomHideRead, setRandomHideRead } from '../lib/randomArchiveFilter';
 
 const FILTER_KEY = 'lrr_filter';
 const RANDOMS_RECENT_KEY = 'lrr_random_recent_v1';
@@ -57,6 +58,7 @@ const FILTER_INPUT_MIN_WIDTH = 400;
 const FILTER_ACTIONS_MIN_WIDTH = 320;
 const FILTER_LAYOUT_GAP = 12;
 const FILTER_STACK_BREAKPOINT = FILTER_INPUT_MIN_WIDTH + FILTER_ACTIONS_MIN_WIDTH + FILTER_LAYOUT_GAP;
+const HOME_NARROW_MAX_WIDTH = 720;
 const HOME_CAROUSEL_EXPANDED_HEIGHT = '420px';
 const UNTAGGED_CATEGORY_ID = '__untagged__';
 const UNTAGGED_CATEGORY = Object.freeze({ id: UNTAGGED_CATEGORY_ID, name: '无标签' });
@@ -367,6 +369,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [history, setHistory] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [hideRead, setHideReadState] = useState(getHideRead);
+  const [randomHideRead, setRandomHideReadState] = useState(getRandomHideRead);
   const [cropCover, setCropCoverState] = useState(getCropCover);
   const [archiveBrowseMode, setArchiveBrowseModeState] = useState(() => getArchiveBrowseMode());
   const [showConfig, setShowConfig] = useState(false);
@@ -476,7 +479,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const archiveFetchSeqRef = useRef(0);
   const archiveAbortControllerRef = useRef(null);
   const archiveRequestInFlightRef = useRef(false);
-  const [isNarrow, setIsNarrow] = useState(window.innerWidth < 600);
+  const [isNarrow, setIsNarrow] = useState(window.innerWidth <= HOME_NARROW_MAX_WIDTH);
   const [serverOnline, setServerOnline] = useState(null);
   const [serverProbeRunning, setServerProbeRunning] = useState(false);
   const [pageReady, setPageReady] = useState(() => !!homeSnapshot || coldRestoreBoot || !bootState.isFreshRuntime);
@@ -514,7 +517,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, []);
 
   useEffect(() => {
-    const check = () => setIsNarrow(window.innerWidth < 600);
+    const check = () => setIsNarrow(window.innerWidth <= HOME_NARROW_MAX_WIDTH);
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
@@ -1031,7 +1034,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   useEffect(() => {
     const update = () => {
       const gridWidth = gridRef.current?.clientWidth || window.innerWidth - 32;
-      const gap = window.innerWidth < 600 ? 10 : 16;
+      const gap = window.innerWidth <= HOME_NARROW_MAX_WIDTH ? 10 : 16;
       const cols = Math.max(1, Math.floor((gridWidth + gap) / (150 + gap)));
       const nextPageSize = getSmartArchivePageSize({ columns: cols, rows: 4, minimum: 20 });
       if (nextPageSize === archivePageSizeRef.current) return;
@@ -1312,7 +1315,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             (signal) => lrrApi.getRandom(requestCount, { signal }),
             RANDOMS_REQUEST_TIMEOUT_MS,
           );
-          batch = Array.isArray(res?.data) ? res.data : [];
+          batch = filterRandomArchives(Array.isArray(res?.data) ? res.data : [], history, randomHideRead);
         } catch (e) {
           if (attempt >= RANDOMS_FETCH_ATTEMPTS - 1) throw e;
           await delay(RANDOMS_RETRY_DELAY_MS);
@@ -1368,7 +1371,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       if (background && !silent) setRandomsRefreshing(false);
       else if (!background) setRandomsLoading(false);
     }
-  }, [exitColdRestoreMode]);
+  }, [exitColdRestoreMode, history, randomHideRead]);
 
   useEffect(() => {
     if (
@@ -1786,6 +1789,19 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, []);
 
+  const handleToggleRandomHideRead = useCallback(() => {
+    setRandomHideReadState((value) => {
+      const next = !value;
+      setRandomHideRead(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!randomHideRead) return;
+    setRandoms((items) => filterRandomArchives(items, history, true));
+  }, [history, randomHideRead]);
+
   const handleToggleCropCover = useCallback(() => {
     setCropCoverState(v => {
       const next = !v;
@@ -2197,7 +2213,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         </section>
       )}
 
-      <section ref={archivesSectionRef} className="glass-panel section-reveal section-reveal-delay-3" style={{ padding: isNarrow ? '20px 14px' : '24px' }}>
+      <section ref={archivesSectionRef} className="glass-panel section-reveal section-reveal-delay-3" style={{ padding: isNarrow ? '20px 8px' : '24px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
           <div className="archive-toolbar-primary" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
             <div className="archive-toolbar-summary" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
@@ -2568,6 +2584,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="settings-row">
             <SettingHint text={'作用：隐藏已读至最后一页的档案。\n影响：只精简阅读历史列表，不会删除阅读记录。'}>历史记录中隐藏已读完</SettingHint>
             <div className="settings-control settings-toggle-control"><ToggleSwitch checked={hideRead} onChange={handleToggleHideRead} label="历史记录中隐藏已读完" /></div>
+          </div>
+          <div className="settings-row">
+            <SettingHint text={'作用：随机漫游时隐藏已读至最后一页的档案。\n影响：首页和快速跳转使用同一筛选，不会删除阅读记录。'}>随机漫游中隐藏已读完</SettingHint>
+            <div className="settings-control settings-toggle-control"><ToggleSwitch checked={randomHideRead} onChange={handleToggleRandomHideRead} label="随机漫游中隐藏已读完" /></div>
           </div>
             </div>
           </div>

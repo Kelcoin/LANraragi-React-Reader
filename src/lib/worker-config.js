@@ -42,6 +42,7 @@ export const CONFIG_KEYS = [
   'lrr_eh_sort_order',
   'lrr_reader_settings',
   'lrr_hide_read',
+  'lrr_random_hide_read',
   'lrr_filter',
   'lrr_crop_cover',
   'lrr_archive_browse_mode',

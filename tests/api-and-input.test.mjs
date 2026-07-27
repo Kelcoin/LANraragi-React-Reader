@@ -169,16 +169,25 @@ test('config import ignores non-string field values', () => {
     removeItem: (key) => values.delete(key),
   };
   try {
-    const payload = { lrr_server_url: { unsafe: true }, lrr_api_key: 'ok' };
+    const payload = {
+      lrr_server_url: { unsafe: true },
+      lrr_api_key: 'ok',
+      lrr_random_hide_read: '1',
+    };
     const bytes = new TextEncoder().encode(JSON.stringify(payload));
     let binary = '';
     for (const byte of bytes) binary += String.fromCharCode(byte);
-    assert.equal(workerConfig.importConfig(btoa(binary)), 1);
+    assert.equal(workerConfig.importConfig(btoa(binary)), 2);
     assert.equal(values.has('lrr_server_url'), false);
     assert.equal(values.get('lrr_api_key'), 'ok');
+    assert.equal(values.get('lrr_random_hide_read'), '1');
   } finally {
     globalThis.localStorage = previousStorage;
   }
+});
+
+test('config transfer includes the random hide-read setting', () => {
+  assert.ok(workerConfig.CONFIG_KEYS.includes('lrr_random_hide_read'));
 });
 
 test('Worker features require a valid HTTP URL and a non-empty token', () => {

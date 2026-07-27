@@ -393,7 +393,7 @@ test('archive grids use native flex wrapping with shared card sizing', () => {
   const grid = read('src/components/ArchiveGrid.jsx');
   const pagination = read('src/lib/archivePagination.js');
   assert.match(css, /\.archive-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;/s);
-  assert.match(css, /\.archive-grid\s*>\s*\.archive-card-wrap\.is-wide\s*\{[^}]*flex:\s*0\s+1\s+316px;[^}]*width:\s*min\(316px,\s*100%\);[^}]*max-width:\s*100%;/s);
+  assert.match(css, /\.archive-grid\s*>\s*\.archive-card-wrap\.is-wide\s*\{[^}]*flex:\s*0\s+1\s+var\(--archive-wide-card-width,\s*316px\);[^}]*width:\s*min\(var\(--archive-wide-card-width,\s*316px\),\s*100%\);[^}]*max-width:\s*100%;/s);
   assert.match(css, /\.archive-grid\s*>\s*\.archive-card-wrap\.is-wide\s*>\s*\.archive-card-shell\s*\{[^}]*width:\s*100%\s*!important;/s);
   assert.doesNotMatch(css, /grid-auto-flow/);
   assert.doesNotMatch(css, /grid-column:\s*span 2/);
@@ -402,6 +402,17 @@ test('archive grids use native flex wrapping with shared card sizing', () => {
   assert.match(home, /<ArchiveGrid/);
   assert.match(history, /<ArchiveGrid/);
   assert.match(watchlist, /<ArchiveGrid/);
+});
+
+test('home uses its 720px tablet breakpoint for archive spacing and pagination', () => {
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(home, /const HOME_NARROW_MAX_WIDTH = 720;/);
+  assert.equal(
+    (home.match(/window\.innerWidth <= HOME_NARROW_MAX_WIDTH/g) || []).length,
+    3,
+  );
+  assert.doesNotMatch(home, /window\.innerWidth < 600/);
 });
 
 test('history page header has ordered narrow-screen layout hooks', () => {
@@ -545,6 +556,9 @@ test('reader overlays do not mutate background geometry and settings use remaini
   assert.match(reader, /showSettingsPanel\s*&&\s*createPortal\(/s);
   assert.match(reader, /const settingsPanelTop = Math\.ceil\(toolbarRef\.current\?\.getBoundingClientRect\(\)\.bottom \|\| 0\)/);
   assert.match(reader, /data-panel="settings"[\s\S]*position:\s*'fixed'[\s\S]*top:\s*`\$\{settingsPanelTop \+ 8\}px`[\s\S]*maxHeight:\s*`calc\(100dvh - \$\{settingsPanelTop \+ 8\}px - max\(12px, calc\(var\(--app-safe-area-bottom\) \+ 8px\)\)\)`/s);
+  assert.match(reader, /showArchivePanel\s*&&\s*createPortal\(/s);
+  assert.match(reader, /<ReaderArchiveListPanel[\s\S]*top=\{settingsPanelTop \+ 8\}/s);
+  assert.match(reader, /data-panel=\{type\}[\s\S]*position:\s*'fixed'[\s\S]*top:\s*`\$\{top\}px`[\s\S]*maxHeight:\s*`calc\(100dvh - \$\{top\}px - max\(12px, calc\(var\(--app-safe-area-bottom\) \+ 8px\)\)\)`/s);
   assert.doesNotMatch(reader, /data-panel="settings"[\s\S]{0,500}bottom:\s*'max\(12px, calc\(var\(--app-safe-area-bottom\) \+ 8px\)\)'/s);
   assert.match(reader, /READER_OVERLAY_SCROLL_SELECTOR\s*=\s*'\[data-reader-overlay-scroll\], \[data-select-dropdown="true"\]'/);
   assert.match(reader, /document\.addEventListener\('wheel', containReaderOverlayScroll, \{ capture: true, passive: false \}\)/);
@@ -584,6 +598,14 @@ test('progress regression is configured only from the general settings section',
   assert.match(css, /\.settings-control\s*\{[^}]*width:\s*148px/s);
   assert.match(css, /\.settings-toggle-control\s*\{[^}]*justify-content:\s*flex-end/s);
   assert.doesNotMatch(reader, />允许阅读进度回溯</);
+});
+
+test('random hide-read setting filters Home and Reader quick-jump through one helper', () => {
+  const home = read('src/pages/Home.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(home, /随机漫游中隐藏已读完/);
+  assert.match(home, /filterRandomArchives/);
+  assert.match(reader, /filterRandomArchives/);
 });
 
 test('history list is the only persisted reading progress source', () => {

@@ -9,6 +9,7 @@ import './metadata-tag-layout.test.mjs';
 import './archive-layout.test.mjs';
 import './archive-progress.test.mjs';
 import './reading-progress.test.mjs';
+import './random-archive-filter.test.mjs';
 import './reader-layout.test.mjs';
 import './reader-ui-state.test.mjs';
 import './deduplicate-selection.test.mjs';

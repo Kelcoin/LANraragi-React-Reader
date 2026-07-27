@@ -1,5 +1,11 @@
 export const ARCHIVE_CARD_WIDTH = 150;
-export const WIDE_ARCHIVE_CARD_WIDTH = 316;
+
+export function getWideArchiveCardWidth(gap = 16) {
+  const safeGap = Number.isFinite(gap) && gap >= 0 ? gap : 16;
+  return ARCHIVE_CARD_WIDTH * 2 + safeGap;
+}
+
+export const WIDE_ARCHIVE_CARD_WIDTH = getWideArchiveCardWidth();
 
 export function getArchiveCardMove(previousRect, nextRect, animationOffset = null) {
   if (!previousRect || !nextRect) return null;
