@@ -1,11 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import Reader from './pages/Reader';
-import Home from './pages/Home';
-import HistoryPage from './pages/HistoryPage';
-import WatchlistPage from './pages/WatchlistPage';
-import DeduplicatePage from './pages/DeduplicatePage';
-import MetadataPage from './pages/MetadataPage';
-import UploadPage from './pages/UploadPage';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { loadTagDB } from './lib/tags';
 import { checkServerStatus } from './lib/api';
 import { canNavigate, navigateHome, navigateToArchive, parseRouteFromLocation } from './lib/navigation';
@@ -18,6 +11,18 @@ import ConfigTransferDialog from './components/ConfigTransferDialog';
 import { cacheServerInfo } from './lib/serverInfoCache';
 import { resolveInitialRoute } from './lib/sessionState';
 import './index.css';
+
+const Reader = lazy(() => import('./pages/Reader'));
+const Home = lazy(() => import('./pages/Home'));
+const HistoryPage = lazy(() => import('./pages/HistoryPage'));
+const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
+const DeduplicatePage = lazy(() => import('./pages/DeduplicatePage'));
+const MetadataPage = lazy(() => import('./pages/MetadataPage'));
+const UploadPage = lazy(() => import('./pages/UploadPage'));
+
+function AppRouteFallback() {
+  return <div className="metadata-loading-state" role="status">正在加载页面…</div>;
+}
 
 export default function App() {
   const [route, setRoute] = useState(() => resolveInitialRoute(parseRouteFromLocation()));
@@ -161,8 +166,7 @@ export default function App() {
           <div className="login-stack">
           <form onSubmit={handleConnect} className={`glass-panel login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
             <div className="login-brand-lockup">
-              <img className="login-brand-logo is-dark" src="/logo-white.png" alt="" aria-hidden="true" />
-              <img className="login-brand-logo is-light" src="/logo-black.png" alt="" aria-hidden="true" />
+              <span className="login-brand-logo" aria-hidden="true" />
               <h2 className="login-title">Readoshi</h2>
             </div>
             
@@ -242,49 +246,21 @@ export default function App() {
     );
   }
 
+  let routeContent;
   if (route.kind === 'reader') {
-    return (
-      <>
-        <Reader key={route.archiveId} archiveId={route.archiveId} onBack={() => navigateHome()} />
-        <PwaStatus />
-      </>
-    );
-  }
-
-  if (route.kind === 'metadata') return <><MetadataPage archiveId={route.archiveId} /><PwaStatus /></>;
-
-  if (route.kind === 'history') {
-    return (
-      <>
-        <HistoryPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />
-        <PwaStatus />
-      </>
-    );
-  }
-
-  if (route.kind === 'watchlist') {
-    return (
-      <>
-        <WatchlistPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />
-        <PwaStatus />
-      </>
-    );
-  }
-
-  if (route.kind === 'dedupe') {
-    return (
-      <>
-        <DeduplicatePage onBack={() => navigateHome()} />
-        <PwaStatus />
-      </>
-    );
-  }
-
-  if (route.kind === 'upload') return <><UploadPage /><PwaStatus /></>;
-
-  return (
-    <>
-      <Home onSelectArchive={(id) => {
+    routeContent = <Reader key={route.archiveId} archiveId={route.archiveId} onBack={() => navigateHome()} />;
+  } else if (route.kind === 'metadata') {
+    routeContent = <MetadataPage archiveId={route.archiveId} />;
+  } else if (route.kind === 'history') {
+    routeContent = <HistoryPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />;
+  } else if (route.kind === 'watchlist') {
+    routeContent = <WatchlistPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />;
+  } else if (route.kind === 'dedupe') {
+    routeContent = <DeduplicatePage onBack={() => navigateHome()} />;
+  } else if (route.kind === 'upload') {
+    routeContent = <UploadPage />;
+  } else {
+    routeContent = <Home onSelectArchive={(id) => {
         navigateToArchive(id);
       }} onLogout={() => {
         setSavedConfig({ url: '', key: '' });
@@ -295,7 +271,14 @@ export default function App() {
           syncToken: getSyncToken(),
         });
         navigateHome({ replace: true });
-      }} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />
+      }} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />;
+  }
+
+  return (
+    <>
+      <Suspense fallback={<AppRouteFallback />}>
+        {routeContent}
+      </Suspense>
       <PwaStatus />
     </>
   );

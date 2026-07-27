@@ -13,11 +13,11 @@ const oldIconHashes = new Set([
   'E31DFC509F215B852FBE4CADC0EFF26A4229B384BB656CEEB49B9A015D040D0B',
 ]);
 
-test('web and mobile builds use Readoshi monochrome icon sources', () => {
+test('web uses the SVG logo while mobile builds keep monochrome PNG sources', () => {
   const html = text('index.html');
-  assert.match(html, /rel="icon"[^>]+media="\(prefers-color-scheme: light\)"[^>]+href="\/icons\/favicon-black-32\.png"/);
-  assert.match(html, /rel="icon"[^>]+media="\(prefers-color-scheme: dark\)"[^>]+href="\/icons\/favicon-white-32\.png"/);
+  assert.match(html, /rel="icon"[^>]+type="image\/svg\+xml"[^>]+href="\/logo\.svg"/);
   assert.match(html, /rel="apple-touch-icon"[^>]+href="\/icons\/icon-180\.png"/);
+  assert.match(text('public/logo.svg'), /viewBox="0 0 1254 1254"/);
 
   for (const name of ['favicon-black-32.png', 'favicon-white-32.png']) {
     const favicon = file(`public/icons/${name}`);

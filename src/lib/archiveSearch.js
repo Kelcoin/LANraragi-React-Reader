@@ -22,6 +22,22 @@ export function replaceCurrentArchiveSearchToken(query, token) {
   return formatArchiveSearchTokens(tokens, { trailingComma: true });
 }
 
+export function getArchiveSearchTotal(response, dataLength, previousTotal = null) {
+  const candidates = [
+    response?.recordsFiltered,
+    response?.recordsTotal,
+    response?.total,
+    response?.filtered,
+    response?.count,
+  ];
+  const found = candidates.find((value) => (
+    value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value))
+  ));
+  if (found !== undefined) return Number(found);
+  if (dataLength === 0 && !Number.isFinite(previousTotal)) return 0;
+  return Number.isFinite(previousTotal) ? previousTotal : null;
+}
+
 function normalizeSearchToken(token) {
   return String(token || '').trim().replace(/\$$/, '').toLowerCase();
 }

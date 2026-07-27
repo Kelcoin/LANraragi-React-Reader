@@ -540,25 +540,32 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
       {overlay}
       {/* ===== 卡片本体 ===== */}
       <div
-        className="glass-panel archive-card-shell"
+        className={`glass-panel archive-card-shell${selected ? ' is-selected' : ''}`}
         title={undefined}
         style={{
           minWidth: isWide ? '316px' : '150px',
           width: isWide ? '316px' : '150px',
           padding: '12px',
           cursor: disabled ? 'not-allowed' : 'pointer',
-          transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease',
+          transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: selected
-            ? '0 0 0 2px rgba(74,159,240,0.92), 0 12px 34px rgba(74,159,240,0.20)'
-            : (isPanelVisible ? '0 12px 40px 0 rgba(0, 0, 0, 0.5)' : 'var(--shadow)'),
           touchAction: 'pan-x pan-y pinch-zoom',
           WebkitTouchCallout: (selectionMode || onLongPress || onArchiveContextMenu) ? 'none' : undefined,
           WebkitUserSelect: 'none',
           userSelect: 'none',
         }}
         aria-disabled={disabled || undefined}
+        role={selectionMode ? 'checkbox' : undefined}
+        aria-checked={selectionMode ? selected : undefined}
+        tabIndex={selectionMode && !disabled ? 0 : undefined}
+        onKeyDown={(event) => {
+          if (!selectionMode || disabled || !onSelectToggle) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelectToggle(archive, event);
+          }
+        }}
         onPointerDown={(event) => {
           const nextTouchInteraction = event.pointerType === 'touch' || event.pointerType === 'pen';
           touchInteractionRef.current = nextTouchInteraction;
@@ -613,13 +620,16 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
           }}
           className="archive-cover-frame"
         >
+          {selectionMode && (
+            <span className={`archive-card-selection-checkbox${selected ? ' is-selected' : ''}`} aria-hidden="true" />
+          )}
           {thumbState === 'loading' && !thumbSrc && (
             <div
               className="reader-skeleton-fade"
               style={{
                 position: 'absolute',
                 inset: 0,
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))',
+                background: 'var(--reader-skeleton-base)',
                 overflow: 'hidden',
                 zIndex: 1,
               }}
@@ -787,7 +797,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
             background: 'var(--tag-panel-bg)',
             backdropFilter: 'blur(24px)',
             WebkitBackdropFilter: 'blur(24px)',
-            border: '1px solid rgba(140, 160, 190, 0.25)',
+            border: '1px solid var(--glass-border-hover)',
             borderRadius: '14px',
             padding: '16px 18px',
             minWidth: '260px',
@@ -823,7 +833,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
                       fontSize: '11px',
                       fontWeight: 600,
                       '--tag-ns-color': group.color,
-                      color: 'var(--tag-ns-color)',
+                      color: 'color-mix(in srgb, var(--tag-ns-color) 40%, var(--text-main))',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
                       marginRight: '5px',
@@ -838,6 +848,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
                     <button
                       key={raw}
                       type="button"
+                      className="archive-tag-button"
                       onClick={(e) => handleTagClick(e, raw)}
                       style={{
                         display: 'inline-flex',
@@ -850,7 +861,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
                         fontSize: '11px',
                         cursor: 'pointer',
                         whiteSpace: 'nowrap',
-                        transition: 'all 0.15s ease',
+                        transition: 'background-color 0.15s ease, border-color 0.15s ease',
                         lineHeight: '1.4',
                       }}
                       onMouseEnter={(e) => {

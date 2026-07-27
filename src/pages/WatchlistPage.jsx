@@ -9,7 +9,7 @@ import { HomeSectionGlyph, getSectionGlyphColor } from '../components/AppGlyphs'
 import { getCropCover, getHistory, loadHistoryState } from '../lib/history';
 import { lrrApi } from '../lib/api';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
-import { getSyncToken, getWorkerUrl } from '../lib/worker-config';
+import { hasValidWorkerConfig } from '../lib/worker-config';
 import { getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItems } from '../lib/watchlist';
 import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
@@ -19,6 +19,7 @@ function HeaderGlyph() {
 }
 
 export default function WatchlistPage({ onSelectArchive, onBack }) {
+  const workerReady = hasValidWorkerConfig();
   const [items, setItems] = useState(() => getWatchlist());
   const [history, setHistory] = useState(() => getHistory());
   const [cropCover] = useState(getCropCover);
@@ -75,7 +76,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
   }, [autoRemoveIds]);
 
   const handleSync = useCallback(async () => {
-    if (!getWorkerUrl() || !getSyncToken() || syncing) return;
+    if (!workerReady || syncing) return;
     setSyncing(true);
     try {
       const state = await loadWatchlistState({ force: true });
@@ -83,7 +84,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
     } finally {
       setSyncing(false);
     }
-  }, [syncing]);
+  }, [syncing, workerReady]);
 
   const toggleSelectionMode = useCallback(() => {
     setSelectionMode((value) => {
@@ -208,15 +209,16 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
           </div>
           <div className="history-page-actions">
             <button className="btn" onClick={onBack}>返回</button>
+            {workerReady && (
             <button
               className="btn"
               onClick={handleSync}
-              disabled={!getWorkerUrl() || !getSyncToken() || syncing}
-              style={{ opacity: !getWorkerUrl() || !getSyncToken() ? 0.5 : 1 }}
-              title={!getWorkerUrl() || !getSyncToken() ? '配置 Worker 后可从远端读取待看档案' : '从 Worker 刷新待看档案'}
+              disabled={syncing}
+              title="从 Worker 刷新待看档案"
             >
               {syncing ? '刷新中' : '刷新'}
             </button>
+            )}
           </div>
         </div>
 

@@ -4,7 +4,7 @@ import { loadArchiveMetadataBatch, lrrApi } from '../lib/api';
 import { getHistory, getHideRead, setHideRead, getCropCover, setCropCover, getArchiveBrowseMode, setArchiveBrowseMode, removeHistoryItem, loadHistoryState } from '../lib/history';
 import { addWatchlistItem, getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItem, removeWatchlistItems } from '../lib/watchlist';
 import { loadTagDB, startTagDBUpdateTimer, stopTagDBUpdateTimer } from '../lib/tags';
-import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, exportConfig, importConfig } from '../lib/worker-config';
+import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, exportConfig, importConfig, hasValidWorkerConfig } from '../lib/worker-config';
 import { runHistoryExistenceCheck } from '../lib/historyMaintenance';
 import { getEhCookie, getEhFavoriteDeleteSync, hasValidEhCookie, setEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
 import { acquireBodyScrollLock } from '../lib/bodyScrollLock';
@@ -13,6 +13,8 @@ import ArchiveCard from '../components/ArchiveCard';
 import ArchiveGrid from '../components/ArchiveGrid';
 import ArchiveContextMenu from '../components/ArchiveContextMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ExecutionProgressPanel from '../components/ExecutionProgressPanel';
+import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import TextInputDialog from '../components/TextInputDialog';
 import CustomSelect from '../components/CustomSelect';
 import TagSuggest from '../components/TagSuggest';
@@ -24,7 +26,7 @@ import ConfigTransferDialog from '../components/ConfigTransferDialog';
 import SettingHint from '../components/SettingHint';
 import { HomeSectionGlyph, ThemeModeGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { deleteFilterPreset, readFilterPresets, renameFilterPreset, saveFilterPreset } from '../lib/filterPresets';
-import { getStoredCategories, loadCategories, startCategoriesUpdateTimer, stopCategoriesUpdateTimer } from '../lib/categories';
+import { getCategoryDisplayName, getStoredCategories, loadCategories, setArchiveFavorite, sortCategoriesForDisplay, startCategoriesUpdateTimer, stopCategoriesUpdateTimer } from '../lib/categories';
 import { claimColdRestoreRoute, consumeHomeNavigationSnapshot, getBootState, loadHomeSnapshot, markBackground, saveHomeNavigationSnapshot, saveHomeSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
 import { useHorizontalScroller } from '../lib/horizontalScroller';
@@ -36,6 +38,7 @@ import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressAct
 import { subscribeReadingProgressChanged } from '../lib/readingProgress';
 import { migrateLegacyStorageKey } from '../lib/configScope';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings } from '../lib/readerSettings';
+import { getArchiveSearchTotal } from '../lib/archiveSearch';
 
 const FILTER_KEY = 'lrr_filter';
 const RANDOMS_RECENT_KEY = 'lrr_random_recent_v1';
@@ -207,34 +210,20 @@ function shouldRevalidateHydratedRandoms(snapshot, boot) {
 const DEFAULT_FILTER = { query: '', sortBy: 'date_added', order: 'desc', active: false };
 const bootState = getBootState();
 
-function getSearchTotal(res, dataLength, previousTotal = null) {
-  const candidates = [
-    res?.recordsFiltered,
-    res?.recordsTotal,
-    res?.total,
-    res?.filtered,
-    res?.count,
-  ];
-  const found = candidates.find((value) => Number.isFinite(Number(value)));
-  if (found !== undefined) return Number(found);
-  if (dataLength === 0) return 0;
-  return Number.isFinite(Number(previousTotal)) ? Number(previousTotal) : null;
-}
-
 function SkeletonCard({ showProgress = false }) {
   return (
     <div style={{
       flexShrink: 0, minWidth: '150px', width: '150px',
       background: 'var(--surface-1)',
       borderRadius: '14px',
-      border: '1px solid rgba(255,255,255,0.08)',
+      border: '1px solid var(--glass-border)',
       display: 'flex', flexDirection: 'column', padding: '12px',
       overflow: 'hidden',
     }}>
       <div style={{
         width: '100%', height: '210px',
         borderRadius: '8px',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))',
+        background: 'var(--reader-skeleton-base)',
         position: 'relative',
         overflow: 'hidden',
       }}>
@@ -245,12 +234,12 @@ function SkeletonCard({ showProgress = false }) {
       )}
       <div style={{
         height: '12px', borderRadius: '4px',
-        background: 'rgba(255,255,255,0.05)',
+        background: 'var(--reader-skeleton-base)',
         width: '84%', marginTop: '12px',
       }} />
       <div style={{
         height: '12px', borderRadius: '4px',
-        background: 'rgba(255,255,255,0.04)',
+        background: 'var(--reader-skeleton-base)',
         width: '66%', marginTop: '8px',
       }} />
       <div style={{
@@ -258,12 +247,12 @@ function SkeletonCard({ showProgress = false }) {
       }}>
         <div style={{
           height: '8px', borderRadius: '4px',
-          background: 'rgba(255,255,255,0.04)',
+          background: 'var(--reader-skeleton-base)',
           width: '36%',
         }} />
         <div style={{
           height: '8px', borderRadius: '4px',
-          background: 'rgba(255,255,255,0.04)',
+          background: 'var(--reader-skeleton-base)',
           width: '30%',
         }} />
       </div>
@@ -341,6 +330,7 @@ function writeReaderSettings(settings) {
 
 export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', onThemeModeChange }) {
   const supportsAutomaticArchiveLoading = typeof IntersectionObserver !== 'undefined';
+  const workerReady = hasValidWorkerConfig();
   const [navSnapshot] = useState(() => consumeHomeNavigationSnapshot());
   const [coldRestoreBoot] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -387,10 +377,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [archiveDeleteTarget, setArchiveDeleteTarget] = useState(null);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
   const [archiveSelectionMode, setArchiveSelectionMode] = useState(false);
-  const [archiveSelectionActionsMounted, setArchiveSelectionActionsMounted] = useState(false);
   const [selectedArchiveIds, setSelectedArchiveIds] = useState(() => new Set());
   const [bulkDeletePending, setBulkDeletePending] = useState(false);
   const [bulkDeleteSyncConfirmed, setBulkDeleteSyncConfirmed] = useState(true);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState(null);
+  const [bulkFavoritePending, setBulkFavoritePending] = useState(false);
+  const [bulkFavoriteRunning, setBulkFavoriteRunning] = useState(false);
+  const [bulkFavoriteProgress, setBulkFavoriteProgress] = useState(null);
+  const [archiveFailureReport, setArchiveFailureReport] = useState(null);
   const [archiveDeleting, setArchiveDeleting] = useState(false);
   const [ehFavoriteDeleteSync, setEhFavoriteDeleteSyncState] = useState(getEhFavoriteDeleteSync);
   const [historySyncing, setHistorySyncing] = useState(false);
@@ -432,7 +426,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   });
   const [archiveTotal, setArchiveTotal] = useState(() => {
     const ps = homeSnapshot;
-    return Number.isFinite(Number(ps?.archiveTotal)) ? Number(ps.archiveTotal) : null;
+    return Number.isFinite(ps?.archiveTotal) ? ps.archiveTotal : null;
   });
   const [archivePage, setArchivePage] = useState(() => {
     const ps = homeSnapshot;
@@ -456,6 +450,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [presetDeleteTarget, setPresetDeleteTarget] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(() => homeSnapshot?.selectedCategory || null);
   const [categories, setCategories] = useState([]);
+  const displayCategories = useMemo(() => sortCategoriesForDisplay(categories), [categories]);
   const [stackFilterControls, setStackFilterControls] = useState(window.innerWidth < FILTER_STACK_BREAKPOINT);
   const didFetchArchivesRef = useRef(false);
   const didApplyUrlFilterRef = useRef(false);
@@ -699,20 +694,38 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, []);
 
-  const deleteArchiveWithSync = useCallback(async (archive, confirmationEnabled) => {
-    return deleteArchiveWithFavoriteSync(archive, { syncEnabled: ehFavoriteDeleteSync, confirmationEnabled });
-  }, [ehFavoriteDeleteSync]);
+  const deleteArchiveWithSync = useCallback(async (archive, confirmationEnabled, onFavoriteError) => {
+    return deleteArchiveWithFavoriteSync(archive, {
+      syncEnabled: workerReady && ehFavoriteDeleteSync,
+      confirmationEnabled,
+      continueOnFavoriteError: true,
+      onFavoriteError,
+    });
+  }, [ehFavoriteDeleteSync, workerReady]);
 
   const handleArchiveDelete = useCallback(async () => {
     if (!archiveDeleteTarget) return;
+    const archiveId = archiveDeleteTarget.arcid || archiveDeleteTarget.id;
+    const title = archiveDeleteTarget.title || archiveId;
+    const ehFailures = [];
     setArchiveDeleting(true);
     try {
-      const archiveId = await deleteArchiveWithSync(archiveDeleteTarget, archiveDeleteSyncConfirmed);
-      removeWatchlistItem(archiveId).catch(() => {});
-      removeDeletedArchiveIds([archiveId]);
+      const deletedId = await deleteArchiveWithSync(archiveDeleteTarget, archiveDeleteSyncConfirmed, ({ galleryUrl, error }) => {
+        ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+      });
+      removeWatchlistItem(deletedId).catch(() => {});
+      removeDeletedArchiveIds([deletedId]);
       setArchiveDeleteTarget(null);
+      if (ehFailures.length > 0) {
+        setArchiveFailureReport({ ehFailures, lrrFailures: [], message: 'LANraragi 档案已删除，但 E-Hentai 收藏夹移除失败。' });
+      }
     } catch (err) {
-      alert(err.message || '删除失败');
+      setArchiveDeleteTarget(null);
+      setArchiveFailureReport({
+        ehFailures,
+        lrrFailures: [{ id: archiveId, title, message: err?.message || '删除失败' }],
+        message: '档案删除未全部完成，可稍后重试。',
+      });
     } finally {
       setArchiveDeleting(false);
     }
@@ -862,6 +875,19 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     startTagDBUpdateTimer();
     startCategoriesUpdateTimer();
     return () => { stopTagDBUpdateTimer(); stopCategoriesUpdateTimer(); };
+  }, []);
+
+  useEffect(() => {
+    const syncChangedCategory = (event) => {
+      const changed = event.detail?.category;
+      if (!changed?.id) return;
+      setCategories(current => current.some(category => category.id === changed.id)
+        ? current.map(category => (category.id === changed.id ? changed : category))
+        : [...current, changed]);
+      setSelectedCategory(current => (current?.id === changed.id ? changed : current));
+    };
+    window.addEventListener('lrr:categories-changed', syncChangedCategory);
+    return () => window.removeEventListener('lrr:categories-changed', syncChangedCategory);
   }, []);
 
   // Sync filter to localStorage whenever it changes
@@ -1039,12 +1065,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       : current.selectedCategory;
     const effectiveFilter = filterOverride || current.filter;
     const isUntaggedMode = selectedCategoryOverride?.id === UNTAGGED_CATEGORY_ID;
+    const isStaticCategoryMode = !!selectedCategoryOverride && !isUntaggedMode && !String(selectedCategoryOverride.search || '').trim();
+    const hasActiveTextFilter = effectiveFilter.active && !!String(effectiveFilter.query || '').trim();
     archiveSideEffectsRef.current.exitColdRestoreMode();
     const now = Date.now();
     const isPagedMode = mode === ARCHIVE_BROWSE_MODES.paged;
     const pageSize = isPagedMode ? current.archivePageSize : ARCHIVE_PAGE_SIZE;
     const requestedPage = clampArchivePage(pageIndex, current.archiveTotal, current.archivePageSize);
-    const filterKey = `${isUntaggedMode ? UNTAGGED_CATEGORY_ID : ''}|${effectiveFilter.query}|${effectiveFilter.sortBy}|${effectiveFilter.order}|${effectiveFilter.active}|${mode}|${pageSize}|${isPagedMode ? requestedPage : 'scroll'}`;
+    const filterKey = `${selectedCategoryOverride?.id || ''}|${effectiveFilter.query}|${effectiveFilter.sortBy}|${effectiveFilter.order}|${effectiveFilter.active}|${mode}|${pageSize}|${isPagedMode ? requestedPage : 'scroll'}`;
     if (isReset && !force && lastFetchedFilterRef.current === filterKey && now - lastFetchedRef.current < 2500) return;
     if (!isReset && archiveRequestInFlightRef.current) return false;
 
@@ -1057,7 +1085,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     const controller = new AbortController();
     archiveAbortControllerRef.current = controller;
     const fetchSeq = ++archiveFetchSeqRef.current;
-    if (isReset && isUntaggedMode && !background) {
+    if (isReset && !hasActiveTextFilter && (isUntaggedMode || isStaticCategoryMode) && !background) {
       setArchives([]);
       setStartOffset(0);
       setArchiveTotal(null);
@@ -1075,8 +1103,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       if (clearSearchCache) {
         try { await lrrApi.clearSearchCache(); } catch (e) { console.warn('清理搜索缓存失败，继续刷新档案列表', e); }
       }
-      if (isUntaggedMode) {
-        const ids = await lrrApi.getUntaggedArchives({ signal: controller.signal });
+      if (!hasActiveTextFilter && (isUntaggedMode || isStaticCategoryMode)) {
+        const ids = isUntaggedMode
+          ? await lrrApi.getUntaggedArchives({ signal: controller.signal })
+          : (selectedCategoryOverride.archives || []).filter((id) => !String(id).startsWith('TANK_'));
         if (fetchSeq !== archiveFetchSeqRef.current) return false;
         if (ids.length === 0) {
           setArchiveTotal(0);
@@ -1107,26 +1137,33 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         markArchiveFetchCompleted();
         return true;
       }
-      const query = effectiveFilter.active ? (effectiveFilter.query || '').trim() : '';
+      const query = hasActiveTextFilter
+        ? String(effectiveFilter.query || '').trim()
+        : (selectedCategoryOverride?.search || '');
+      const searchOptions = {
+        signal: controller.signal,
+        category: !isUntaggedMode ? selectedCategoryOverride?.id : '',
+        untaggedOnly: isUntaggedMode,
+      };
       const start = isPagedMode ? getArchivePageStart(requestedPage, pageSize) : (isReset ? 0 : current.startOffset);
-      let res = await lrrApi.search(query, start, effectiveFilter.sortBy, effectiveFilter.order, { signal: controller.signal });
+      let res = await lrrApi.search(query, start, effectiveFilter.sortBy, effectiveFilter.order, searchOptions);
       let data = res.data || [];
       if (isPagedMode && data.length > 0 && data.length < pageSize) {
         let nextStart = start + data.length;
         while (data.length < pageSize) {
-          const nextRes = await lrrApi.search(query, nextStart, effectiveFilter.sortBy, effectiveFilter.order, { signal: controller.signal });
+          const nextRes = await lrrApi.search(query, nextStart, effectiveFilter.sortBy, effectiveFilter.order, searchOptions);
           const nextData = nextRes.data || [];
           if (nextData.length === 0) break;
           data = [...data, ...nextData].slice(0, pageSize);
           nextStart += nextData.length;
           res = nextRes;
-          const nextTotal = getSearchTotal(nextRes, nextData.length, null);
+          const nextTotal = getArchiveSearchTotal(nextRes, nextData.length, null);
           if (Number.isFinite(nextTotal) && nextStart >= nextTotal) break;
         }
       }
       if (isPagedMode && data.length > pageSize) data = data.slice(0, pageSize);
       if (fetchSeq !== archiveFetchSeqRef.current) return false;
-      const total = getSearchTotal(res, data.length, isReset ? null : current.archiveTotal);
+      const total = getArchiveSearchTotal(res, data.length, isReset ? null : current.archiveTotal);
       setArchiveTotal(total);
       if (isPagedMode) {
         const nextPage = clampArchivePage(requestedPage, total, pageSize);
@@ -1134,17 +1171,17 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         setArchivePageInput(String(nextPage + 1));
         setArchives(data);
         setStartOffset(start + data.length);
-        setHasMore(Number.isFinite(Number(total)) ? nextPage < getArchivePageCount(total, pageSize) - 1 : data.length > 0);
+        setHasMore(Number.isFinite(total) ? nextPage < getArchivePageCount(total, pageSize) - 1 : data.length > 0);
       } else if (isReset) {
         setArchivePage(0);
         setArchivePageInput('1');
         setArchives(data);
         setStartOffset(data.length);
-        setHasMore(Number.isFinite(Number(total)) ? data.length < Number(total) : data.length > 0);
+        setHasMore(Number.isFinite(total) ? data.length < total : data.length > 0);
       } else {
         setArchives(prev => [...prev, ...data]);
         setStartOffset(start + data.length);
-        setHasMore(Number.isFinite(Number(total)) ? start + data.length < Number(total) : data.length > 0);
+        setHasMore(Number.isFinite(total) ? start + data.length < total : data.length > 0);
       }
       markArchiveFetchCompleted();
       return true;
@@ -1474,16 +1511,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setArchiveMenu(null);
     setArchiveSelectionMode((prev) => {
       if (prev) setSelectedArchiveIds(new Set());
-      else setArchiveSelectionActionsMounted(true);
       return !prev;
     });
   }, []);
-
-  useEffect(() => {
-    if (archiveSelectionMode || !archiveSelectionActionsMounted) return undefined;
-    const timer = setTimeout(() => setArchiveSelectionActionsMounted(false), 260);
-    return () => clearTimeout(timer);
-  }, [archiveSelectionActionsMounted, archiveSelectionMode]);
 
   const toggleArchiveSelection = useCallback((archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -1503,6 +1533,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   const requestBulkArchiveDelete = useCallback(() => {
     setBulkDeleteSyncConfirmed(true);
+    setBulkDeleteProgress(null);
     setBulkDeletePending(true);
   }, []);
 
@@ -1519,45 +1550,114 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, [visibleArchiveIds]);
 
+  const handleBulkArchiveFavorite = useCallback(async () => {
+    if (selectedArchiveList.length === 0) return;
+    const total = selectedArchiveList.length;
+    const failures = [];
+    setBulkFavoritePending(true);
+    setBulkFavoriteRunning(true);
+    setBulkFavoriteProgress({ label: '准备收藏', current: 0, total, detail: '正在整理所选档案' });
+    for (const archive of selectedArchiveList) {
+      const archiveId = archive?.arcid || archive?.id;
+      const title = archive?.title || archiveId;
+      setBulkFavoriteProgress((current) => ({
+        label: '正在收藏',
+        current: current?.current || 0,
+        total,
+        detail: title,
+      }));
+      try {
+        await setArchiveFavorite(archiveId, true);
+      } catch (error) {
+        failures.push({ id: archiveId, title, message: error?.message || '收藏失败' });
+      }
+      setBulkFavoriteProgress((current) => ({
+        label: '正在收藏',
+        current: Math.min(total, (current?.current || 0) + 1),
+        total,
+        detail: title,
+      }));
+    }
+    setBulkFavoriteRunning(false);
+    setBulkFavoriteProgress({
+      label: failures.length > 0 ? '收藏完成，部分失败' : '收藏完成',
+      current: total,
+      total,
+      detail: failures.length > 0 ? `${failures.length} 个档案收藏失败` : `已收藏 ${total} 个档案`,
+    });
+    if (failures.length > 0) {
+      setBulkFavoritePending(false);
+      setArchiveFailureReport({
+        ehFailures: [],
+        lrrFailures: failures,
+        lrrHeading: 'LANraragi 收藏失败',
+        message: '其余档案已加入收藏夹。失败项可稍后重试。',
+      });
+    }
+  }, [selectedArchiveList]);
+
   const handleBulkArchiveDelete = useCallback(async () => {
     if (selectedArchiveList.length === 0) return;
     setArchiveDeleting(true);
+    const total = selectedArchiveList.length;
     const deletedIds = [];
-    const failures = [];
+    const ehFailures = [];
+    const lrrFailures = [];
+    setBulkDeleteProgress({ label: '准备删除', current: 0, total, detail: '正在整理所选档案' });
     for (const archive of selectedArchiveList) {
       const archiveId = archive?.arcid || archive?.id;
+      const title = archive?.title || archiveId;
+      setBulkDeleteProgress({ label: '正在删除', current: deletedIds.length + lrrFailures.length, total, detail: title });
       try {
-        const deletedId = await deleteArchiveWithSync(archive, bulkDeleteSyncConfirmed);
+        const deletedId = await deleteArchiveWithFavoriteSync(archive, {
+          syncEnabled: workerReady && ehFavoriteDeleteSync,
+          confirmationEnabled: bulkDeleteSyncConfirmed,
+          continueOnFavoriteError: true,
+          onFavoriteError: ({ galleryUrl, error }) => {
+            ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+          },
+        });
         deletedIds.push(deletedId);
       } catch (err) {
-        failures.push({ id: archiveId, title: archive?.title || archiveId, message: err.message || '删除失败' });
+        lrrFailures.push({ id: archiveId, title, message: err.message || '删除失败' });
       }
+      setBulkDeleteProgress({ label: '正在删除', current: deletedIds.length + lrrFailures.length, total, detail: title });
     }
     if (deletedIds.length > 0) {
       removeWatchlistItems(deletedIds).catch(() => {});
       removeDeletedArchiveIds(deletedIds);
     }
-    setBulkDeletePending(false);
+    setBulkDeleteProgress({
+      label: ehFailures.length > 0 || lrrFailures.length > 0 ? '删除完成，部分失败' : '删除完成',
+      current: total,
+      total,
+      detail: `已删除 ${deletedIds.length} 个档案`,
+    });
+    await waitForPaint();
     setArchiveDeleting(false);
-    if (failures.length === 0) {
+    setBulkDeletePending(false);
+    if (ehFailures.length === 0 && lrrFailures.length === 0) {
       setArchiveSelectionMode(false);
       setSelectedArchiveIds(new Set());
       return;
     }
-    const preview = failures.slice(0, 5).map((item) => '- ' + item.title + ': ' + item.message).join('\n');
-    alert('已删除 ' + deletedIds.length + ' 个，' + failures.length + ' 个失败：\n' + preview + (failures.length > 5 ? '\n...' : ''));
-  }, [bulkDeleteSyncConfirmed, deleteArchiveWithSync, removeDeletedArchiveIds, removeWatchlistItems, selectedArchiveList]);
+    setArchiveFailureReport({
+      ehFailures,
+      lrrFailures,
+      message: '已完成其余删除操作。失败档案仍保持选中，可稍后重试。',
+    });
+  }, [bulkDeleteSyncConfirmed, ehFavoriteDeleteSync, removeDeletedArchiveIds, removeWatchlistItems, selectedArchiveList, workerReady]);
 
   const archiveCountLabel = useMemo(() => {
-    if (loading && archives.length === 0) return '正在获取结果...';
-    if (selectedCategory?.id === UNTAGGED_CATEGORY_ID && Number.isFinite(Number(archiveTotal))) return `无标签 ${Number(archiveTotal).toLocaleString()} 个`;
+    if (loading) return '正在获取结果...';
+    if (selectedCategory?.id === UNTAGGED_CATEGORY_ID && Number.isFinite(archiveTotal)) return `无标签 ${archiveTotal.toLocaleString()} 个`;
     if (archiveBrowseMode === ARCHIVE_BROWSE_MODES.paged) {
-      if (Number.isFinite(Number(archiveTotal))) {
+      if (Number.isFinite(archiveTotal)) {
         return `${archivePage + 1}/${getArchivePageCount(archiveTotal, archivePageSize)}页 · ${Number(archiveTotal).toLocaleString()}个`;
       }
       return archives.length > 0 ? `${archivePage + 1}页 · ${archives.length}个` : `${archivePage + 1}页`;
     }
-    if (Number.isFinite(Number(archiveTotal))) {
+    if (Number.isFinite(archiveTotal)) {
       return filter.active
         ? `筛选结果 ${Number(archiveTotal).toLocaleString()} 个`
         : `共 ${Number(archiveTotal).toLocaleString()} 个档案`;
@@ -1573,7 +1673,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const archivePageCount = useMemo(() => getArchivePageCount(archiveTotal, archivePageSize), [archivePageSize, archiveTotal]);
   const archiveRequestBusy = loading || archivesRefreshing;
   const canGoPrevArchivePage = archiveBrowseMode === ARCHIVE_BROWSE_MODES.paged && archivePage > 0 && !archiveRequestBusy;
-  const canGoNextArchivePage = archiveBrowseMode === ARCHIVE_BROWSE_MODES.paged && !archiveRequestBusy && (Number.isFinite(Number(archiveTotal)) ? archivePage < archivePageCount - 1 : hasMore);
+  const canGoNextArchivePage = archiveBrowseMode === ARCHIVE_BROWSE_MODES.paged && !archiveRequestBusy && (Number.isFinite(archiveTotal) ? archivePage < archivePageCount - 1 : hasMore);
   const goArchivePage = useCallback((page) => {
     if (archiveRequestBusy) return;
     const nextPage = clampArchivePage(page, archiveTotal, archivePageSize);
@@ -1617,35 +1717,25 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, []);
 
   const handleCategoryClick = useCallback((cat) => {
-    const tag = cat.search || `category:${cat.name}$`;
-    if (selectedCategory?.id === cat.id) {
-      const newQuery = removeFilterToken(filter.query, tag);
-      applyFilter(newQuery, filter.sortBy, filter.order, null);
-    } else {
-      const newQuery = appendFilterToken(filter.query, tag);
-      applyFilter(newQuery, filter.sortBy, filter.order, cat);
-    }
-  }, [filter.query, filter.sortBy, filter.order, selectedCategory]);
-
-  const handleUntaggedCategoryClick = useCallback(() => {
-    const nextCategory = selectedCategory?.id === UNTAGGED_CATEGORY_ID ? null : UNTAGGED_CATEGORY;
-    const cleared = { ...DEFAULT_FILTER };
+    const nextCategory = selectedCategory?.id === cat.id ? null : cat;
+    const query = filter.query || '';
+    const nextFilter = { ...filter, active: !!query.trim() };
     lastFetchedFilterRef.current = '';
     lastFetchedRef.current = 0;
-    writeFilter(cleared);
-    setFilter(cleared);
+    writeFilter(nextFilter);
+    setFilter(nextFilter);
     setSelectedCategory(nextCategory);
+    setLoading(true);
     setArchiveTotal(null);
     setArchivePage(0);
     setArchivePageInput('1');
-    navigateHome({ replace: true });
-  }, [selectedCategory]);
+    navigateHome({ query: query.trim(), replace: true });
+  }, [filter, selectedCategory]);
 
   const clearFilter = () => {
     const cleared = { ...DEFAULT_FILTER };
     writeFilter(cleared);
     setFilter(cleared);
-    setSelectedCategory(null);
     setArchiveTotal(null);
     setArchivePage(0);
     setArchivePageInput('1');
@@ -1666,7 +1756,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   };
 
   const handleSearch = () => {
-    applyFilter(filter.query, filter.sortBy, filter.order);
+    applyFilter(filter.query, filter.sortBy, filter.order, selectedCategory);
   };
 
   const handleKeyDown = (e) => {
@@ -1679,7 +1769,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const savePreset = () => setPresetNameDialog({ mode: 'create', value: '' });
 
   const loadPreset = (p) => {
-    applyFilter(p.query, p.sortBy, p.order);
+    applyFilter(p.query, p.sortBy, p.order, selectedCategory);
     setShowPresets(false);
   };
 
@@ -1715,7 +1805,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, []);
 
   const ehFavoriteCookieValid = hasValidEhCookie(readerSettings.ehCookie || getEhCookie());
-  const ehFavoriteSyncReady = ehFavoriteCookieValid && !!getWorkerUrl() && !!getSyncToken();
+  const ehFavoriteSyncReady = ehFavoriteCookieValid && workerReady;
 
   useEffect(() => {
     if (!ehFavoriteSyncReady && ehFavoriteDeleteSync) {
@@ -1738,7 +1828,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, [ehFavoriteSyncReady]);
 
   const handleSyncHistory = useCallback(async () => {
-    if (!getWorkerUrl() || !getSyncToken() || historySyncing) return;
+    if (!workerReady || historySyncing) return;
     setHistorySyncing(true);
     try {
       const state = await loadHistoryState({ force: true });
@@ -1747,7 +1837,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     } finally {
       setHistorySyncing(false);
     }
-  }, [historySyncing]);
+  }, [historySyncing, workerReady]);
 
   const handleCheckWatchlist = useCallback(async () => {
     if (watchlistChecking) return;
@@ -1799,7 +1889,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         100% { transform: scale(1.95); opacity: 0; }
       }
       .history-view-all-arrow {
-        color: rgba(255,255,255,0.34);
+        color: var(--text-muted);
         transform: translateY(0);
         transition: color 0.18s ease, transform 0.18s ease;
       }
@@ -1833,8 +1923,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       <div className="home-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '18px', marginBottom: '32px', flexWrap: 'wrap' }}>
         <div className="home-brand">
           <h1 className="home-brand-title" translate="no" aria-label="Readoshi" style={{ fontWeight: 600, margin: '0 0 8px 0', fontSize: '28px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <img className="home-brand-logo is-dark" src="/logo-white.png" alt="" aria-hidden="true" />
-            <img className="home-brand-logo is-light" src="/logo-black.png" alt="" aria-hidden="true" />
+            <span className="home-brand-logo" aria-hidden="true" />
             <span className="home-project-name" aria-hidden="true">Readoshi</span>
             {serverOnline !== null && (
               <button
@@ -1919,16 +2008,18 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="home-carousel-header">
             <SectionHeading glyph="continue" onClick={handleNavigateHistory} title="查看全部历史记录">继续阅读</SectionHeading>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {workerReady && (
               <button
                 type="button"
                 className="btn"
                 onClick={handleSyncHistory}
-                disabled={!getWorkerUrl() || !getSyncToken() || historySyncing}
-                style={{ padding: '6px 12px', fontSize: '12px', opacity: !getWorkerUrl() || !getSyncToken() ? 0.5 : 1 }}
-                title={!getWorkerUrl() || !getSyncToken() ? '配置 Worker 后可从远端读取历史记录' : '从 Worker 刷新阅读历史'}
+                disabled={historySyncing}
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+                title="从 Worker 刷新阅读历史"
               >
                 {historySyncing ? '刷新中' : '刷新'}
               </button>
+              )}
               <CollapseButton
                 collapsed={historyCollapsed}
                 onClick={() => setHistoryCollapsed(v => !v)}
@@ -2136,11 +2227,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             </div>
           </div>
 
-          <div className="archive-selection-actions" data-mounted={archiveSelectionActionsMounted ? 'true' : 'false'} data-open={archiveSelectionMode ? 'true' : 'false'} aria-hidden={!archiveSelectionMode}>
+          <div className="archive-selection-actions" data-open={archiveSelectionMode ? 'true' : 'false'} aria-hidden={!archiveSelectionMode}>
             <div className="archive-selection-actions-inner">
-              <span aria-live="polite" style={{ color: 'var(--accent)', fontSize: '12px', whiteSpace: 'nowrap' }}>已选 {selectedArchiveIds.size} 个</span>
+              <span className="archive-count-badge archive-selection-count-badge" aria-live="polite">已选 {selectedArchiveIds.size} 个</span>
               <button className="btn archive-selection-primary" tabIndex={archiveSelectionMode ? 0 : -1} style={{ padding: '6px 12px', fontSize: '12px' }} onClick={toggleSelectAllVisibleArchives} disabled={visibleArchiveIds.length === 0 || archiveDeleting}>
                 {allVisibleSelected ? '取消全选' : '全选当前'}
+              </button>
+              <button className="btn" tabIndex={archiveSelectionMode ? 0 : -1} style={{ padding: '6px 12px', fontSize: '12px' }} onClick={handleBulkArchiveFavorite} disabled={selectedArchiveIds.size === 0 || archiveDeleting || bulkFavoriteRunning}>
+                {bulkFavoriteRunning ? '收藏中…' : '收藏所选'}
               </button>
               <button className="btn archive-selection-delete" tabIndex={archiveSelectionMode ? 0 : -1} onClick={requestBulkArchiveDelete} disabled={selectedArchiveIds.size === 0 || archiveDeleting}>
                 {archiveDeleting ? '删除中…' : '删除所选'}
@@ -2284,9 +2378,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         </div>
 
         <div className="archive-category-list" style={{ display: 'flex', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'center', justifyContent: 'center' }}>
-          {categories.map(cat => {
+          {displayCategories.map(cat => {
             const isActive = selectedCategory?.id === cat.id;
-            const label = cat.name || cat.id;
+            const label = getCategoryDisplayName(cat);
             return (
               <button
                 key={cat.id}
@@ -2314,7 +2408,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               <button
                 key={UNTAGGED_CATEGORY_ID}
                 className="btn archive-category-button"
-                onClick={handleUntaggedCategoryClick}
+              onClick={() => handleCategoryClick(UNTAGGED_CATEGORY)}
                 style={{
                   fontWeight: isActive ? 600 : 400,
                   borderRadius: '18px',
@@ -2373,7 +2467,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   disabled={archiveRequestBusy}
                 />
                 页
-                {Number.isFinite(Number(archiveTotal)) && <span className="archive-pagination-total">/ {archivePageCount}</span>}
+                {Number.isFinite(archiveTotal) && <span className="archive-pagination-total">/ {archivePageCount}</span>}
               </span>
               <button className="btn" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={submitArchivePageInput} disabled={archiveRequestBusy}>跳转</button>
               <button className="btn" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => goArchivePage(archivePage + 1)} disabled={!canGoNextArchivePage}>下一页</button>
@@ -2553,10 +2647,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             </div>
           </div>
 
-          <div className="settings-row">
+          {workerReady && <div className="settings-row">
             <SettingHint text={ehFavoriteSyncReady ? '作用：删除档案时，同时移除 source 指向的 E-Hentai 收藏。\n控制：仍可在每次删除确认时单独取消同步。' : '当前不可用。\n条件：配置 Worker、访问 Token，并提供含 ipb_member_id 与 ipb_pass_hash 的 E-Hentai Cookie。'}>同步删除 E-Hentai 收藏夹</SettingHint>
             <ToggleSwitch checked={ehFavoriteDeleteSync && ehFavoriteSyncReady} onChange={handleToggleEhFavoriteDeleteSync} disabled={!ehFavoriteSyncReady} label="同步删除 E-Hentai 收藏夹" />
-          </div>
+          </div>}
 
           <div className="settings-section">
             <div className="settings-section-title">Worker 设置</div>
@@ -2649,9 +2743,23 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       onCancel={() => { if (!archiveDeleting) setArchiveDeleteTarget(null); }}
       confirmDisabled={archiveDeleting}
     >
-      {ehFavoriteDeleteSync && (
+      {workerReady && ehFavoriteDeleteSync && (
         <EhFavoriteDeleteSwitch checked={archiveDeleteSyncConfirmed} onChange={setArchiveDeleteSyncConfirmed} disabled={archiveDeleting} />
       )}
+    </ConfirmDialog>
+    <ConfirmDialog
+      open={bulkFavoritePending}
+      title="收藏所选档案"
+      message={bulkFavoriteRunning ? '正在将所选档案加入 LANraragi 收藏夹。' : '所选档案收藏操作已完成。'}
+      confirmLabel={bulkFavoriteRunning ? '收藏中…' : '关闭'}
+      showCancel={false}
+      destructive={false}
+      onConfirm={() => { if (!bulkFavoriteRunning) setBulkFavoritePending(false); }}
+      onCancel={() => { if (!bulkFavoriteRunning) setBulkFavoritePending(false); }}
+      confirmDisabled={bulkFavoriteRunning}
+      dismissOnBackdrop={!bulkFavoriteRunning}
+    >
+      <ExecutionProgressPanel progress={bulkFavoriteProgress} />
     </ConfirmDialog>
     <ConfirmDialog
       open={bulkDeletePending}
@@ -2662,11 +2770,18 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       onConfirm={handleBulkArchiveDelete}
       onCancel={() => { if (!archiveDeleting) setBulkDeletePending(false); }}
       confirmDisabled={archiveDeleting}
+      dismissOnBackdrop={!archiveDeleting}
     >
-      {ehFavoriteDeleteSync && (
+      {workerReady && ehFavoriteDeleteSync && (
         <EhFavoriteDeleteSwitch checked={bulkDeleteSyncConfirmed} onChange={setBulkDeleteSyncConfirmed} disabled={archiveDeleting} />
       )}
+      <ExecutionProgressPanel progress={bulkDeleteProgress} />
     </ConfirmDialog>
+    <ArchiveDeletionFailureDialog
+      report={archiveFailureReport}
+      message={archiveFailureReport?.message}
+      onClose={() => setArchiveFailureReport(null)}
+    />
     <TextInputDialog
       open={!!presetNameDialog}
       title={presetNameDialog?.mode === 'rename' ? '重命名筛选方案' : '为当前筛选方案命名'}

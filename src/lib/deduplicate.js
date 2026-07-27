@@ -150,12 +150,23 @@ function buildDuplicateSelectionModel(groups) {
 
 function canAddDuplicateSelection(model, selected, id) {
   if (!id || selected.has(id) || !model.groupsById.has(id)) return false;
-  const conflictsWithGroup = model.groupsById.get(id)
-    .some((group) => group.some((otherId) => otherId !== id && selected.has(otherId)));
-  if (conflictsWithGroup) return false;
   const component = model.componentById.get(id);
   const selectedInComponent = Array.from(component || []).filter((item) => selected.has(item)).length;
   return !component || selectedInComponent < component.size - 1;
+}
+
+export function groupDuplicatePairsByChain(groups) {
+  const model = buildDuplicateSelectionModel(groups);
+  const chains = new Map();
+  (groups || []).forEach((group) => {
+    const ids = duplicateGroupIds(group);
+    if (ids.length < 2) return;
+    const component = model.componentById.get(ids[0]);
+    if (!component) return;
+    if (!chains.has(component)) chains.set(component, []);
+    chains.get(component).push(group);
+  });
+  return Array.from(chains.values());
 }
 
 export function normalizeDuplicateSelection(groups, requestedIds) {
@@ -241,6 +252,15 @@ function tagSet(archive) {
     .filter(Boolean));
 }
 
+export function getDedupeSmartSelectionSignals(archive) {
+  const tags = tagSet(archive);
+  return {
+    roughTranslation: tags.has('other:rough translation'),
+    extraneousAds: tags.has('other:extraneous ads'),
+    uncensored: tags.has('other:uncensored'),
+  };
+}
+
 function archiveId(archive) {
   return String(archive?.arcid || archive?.id || '');
 }
@@ -252,10 +272,11 @@ function archiveSize(archive) {
 }
 
 function keepScore(archive, index) {
-  const tags = tagSet(archive);
+  const signals = getDedupeSmartSelectionSignals(archive);
   return {
-    uncensored: tags.has('other:uncensored') ? 1 : 0,
-    noAds: tags.has('other:extraneous ads') ? 0 : 1,
+    notRoughTranslation: signals.roughTranslation ? 0 : 1,
+    uncensored: signals.uncensored ? 1 : 0,
+    noAds: signals.extraneousAds ? 0 : 1,
     size: archiveSize(archive),
     index: -index,
   };
@@ -270,10 +291,11 @@ export function selectDuplicateDeletionIds(archives) {
   for (let i = 1; i < items.length; i += 1) {
     const score = keepScore(items[i], i);
     if (
-      score.uncensored > best.uncensored ||
-      (score.uncensored === best.uncensored && score.noAds > best.noAds) ||
-      (score.uncensored === best.uncensored && score.noAds === best.noAds && score.size > best.size) ||
-      (score.uncensored === best.uncensored && score.noAds === best.noAds && score.size === best.size && score.index > best.index)
+      score.notRoughTranslation > best.notRoughTranslation ||
+      (score.notRoughTranslation === best.notRoughTranslation && score.uncensored > best.uncensored) ||
+      (score.notRoughTranslation === best.notRoughTranslation && score.uncensored === best.uncensored && score.noAds > best.noAds) ||
+      (score.notRoughTranslation === best.notRoughTranslation && score.uncensored === best.uncensored && score.noAds === best.noAds && score.size > best.size) ||
+      (score.notRoughTranslation === best.notRoughTranslation && score.uncensored === best.uncensored && score.noAds === best.noAds && score.size === best.size && score.index > best.index)
     ) {
       keepIndex = i;
       best = score;

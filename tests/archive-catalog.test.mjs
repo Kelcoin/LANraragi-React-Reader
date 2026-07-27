@@ -6,6 +6,7 @@ import {
   sliceArchiveCatalog,
   sortArchiveCatalog,
 } from '../src/lib/archiveCatalog.js';
+import * as archiveSearch from '../src/lib/archiveSearch.js';
 
 test('archive catalog sorts stably by added date and title without mutating input', () => {
   const items = [
@@ -43,4 +44,13 @@ test('archive catalog progress updates preserve metadata', () => {
   assert.equal(updated.progress, 5);
   assert.equal(updated.lastreadtime, 123);
   assert.equal(updated.isnew, false);
+});
+
+test('archive search total ignores empty API values and preserves a known total', () => {
+  assert.equal(typeof archiveSearch.getArchiveSearchTotal, 'function');
+  assert.equal(archiveSearch.getArchiveSearchTotal({ recordsFiltered: null }, 20, 48), 48);
+  assert.equal(archiveSearch.getArchiveSearchTotal({ recordsFiltered: '' }, 20, 48), 48);
+  assert.equal(archiveSearch.getArchiveSearchTotal({ recordsFiltered: 0 }, 0, 48), 0);
+  assert.equal(archiveSearch.getArchiveSearchTotal({}, 0), 0);
+  assert.equal(archiveSearch.getArchiveSearchTotal({}, 20), null);
 });

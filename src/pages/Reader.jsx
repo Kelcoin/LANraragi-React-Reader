@@ -37,7 +37,7 @@ import {
 import { computeContainedImageRect } from '../lib/pageIndicatorLayout';
 import { classifyWebtoonSeams, compareSeamPixels, sampleImageSeam } from '../lib/webtoonDetector';
 import { detectImageBorderInsets } from '../lib/readerImageTransform';
-import { getWorkerUrl, getSyncToken } from '../lib/worker-config';
+import { getWorkerUrl, getSyncToken, hasValidWorkerConfig } from '../lib/worker-config';
 import { getBootState, markBackground, loadReaderSnapshot, saveReaderSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
 import { navigateHistory, navigateHome, navigateToArchive, navigateToMetadata, navigateWatchlist, parseRouteFromLocation } from '../lib/navigation';
@@ -457,7 +457,7 @@ const PageImage = React.forwardRef(({
           <div style={{ fontSize: 'clamp(18px, 2.2vw, 28px)', lineHeight: 1.35, fontWeight: 750, letterSpacing: '0.3px', textWrap: 'balance' }}>
             {loadState === 'error' ? (errorLabel || '图片加载失败') : (loadingLabel || '正在加载图像…')}
           </div>
-          <div style={{ fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 600, color: loadState === 'error' ? 'rgba(255,180,180,0.84)' : 'var(--text-sub)' }}>
+          <div style={{ fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 600, color: loadState === 'error' ? 'var(--danger-text)' : 'var(--text-sub)' }}>
             {loadState === 'error' ? '稍后可再次翻页重试' : (loadingHint || '图像就绪后会立即显示')}
           </div>
         </div>
@@ -1081,6 +1081,7 @@ function ReaderStageSlot({ status, onRetry }) {
 }
 
 export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
+  const workerReady = hasValidWorkerConfig();
   const bootState = getBootState();
   const readerSnapshotRef = useRef(null);
   if (readerSnapshotRef.current === null) {
@@ -4057,7 +4058,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               sourceUrl={sourceUrl}
               ehEnabled={settings.ehEnabled}
               ehCookie={settings.ehCookie}
-              ehWorker={getWorkerUrl()}
+              ehWorker={workerReady ? getWorkerUrl() : ''}
               ehToken={getSyncToken()}
               ehMinScore={settings.ehMinScore}
               ehMaxComments={settings.ehMaxComments}

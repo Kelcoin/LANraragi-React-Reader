@@ -5,10 +5,11 @@ import ArchiveContextMenu from '../components/ArchiveContextMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ArchiveSearchBox from '../components/ArchiveSearchBox';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
+import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import { HomeSectionGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
 import { isArchiveMissingError, runHistoryExistenceCheck } from '../lib/historyMaintenance';
-import { getSyncToken, getWorkerUrl } from '../lib/worker-config';
+import { hasValidWorkerConfig } from '../lib/worker-config';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
 import { lrrApi } from '../lib/api';
 import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
@@ -78,6 +79,7 @@ function groupHistoryByPeriod(items) {
 }
 
 export default function HistoryPage({ onSelectArchive, onBack }) {
+  const workerReady = hasValidWorkerConfig();
   const [history, setHistoryState] = useState(() => getHistory());
   const [hideRead, setHideReadState] = useState(getHideRead);
   const [cropCover] = useState(getCropCover);
@@ -89,6 +91,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   const [archiveDeleteTarget, setArchiveDeleteTarget] = useState(null);
   const [archiveDeleting, setArchiveDeleting] = useState(false);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
+  const [archiveFailureReport, setArchiveFailureReport] = useState(null);
   const [notice, setNotice] = useState('');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState(null);
@@ -148,7 +151,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   }, []);
 
   const handleSyncHistory = useCallback(async () => {
-    if (!getWorkerUrl() || !getSyncToken() || syncing) return;
+    if (!workerReady || syncing) return;
     setSyncing(true);
     try {
       const state = await loadHistoryState({ force: true });
@@ -157,14 +160,18 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     } finally {
       setSyncing(false);
     }
-  }, [syncing]);
+  }, [syncing, workerReady]);
 
   const handleCheckHistory = useCallback(async () => {
     if (checking) return;
+    setMenu(null);
     setChecking(true);
     try {
-      await runHistoryExistenceCheck({ force: true });
+      const removed = await runHistoryExistenceCheck({ force: true });
       setHistoryState(getHistory());
+      if (removed > 0) setNotice(`已清理 ${removed} 条失效记录。`);
+    } catch (error) {
+      setNotice(`清理失败：${error?.message || '未知错误'}`);
     } finally {
       setChecking(false);
     }
@@ -268,28 +275,46 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   const handleArchiveDelete = useCallback(async () => {
     if (!archiveDeleteTarget || archiveDeleting) return;
     const archiveId = archiveDeleteTarget.arcid || archiveDeleteTarget.id;
+    const title = archiveDeleteTarget.title || archiveId;
+    const ehFailures = [];
     setArchiveDeleting(true);
     try {
       await deleteArchiveWithFavoriteSync(archiveDeleteTarget, {
-        syncEnabled: getEhFavoriteDeleteSync(),
+        syncEnabled: workerReady && getEhFavoriteDeleteSync(),
         confirmationEnabled: archiveDeleteSyncConfirmed,
+        continueOnFavoriteError: true,
+        onFavoriteError: ({ galleryUrl, error }) => {
+          ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+        },
       });
       await Promise.all([removeHistoryItems([archiveId]), removeWatchlistItem(archiveId)]);
       setHistoryState(getHistory());
       setArchiveDeleteTarget(null);
+      if (ehFailures.length > 0) {
+        setArchiveFailureReport({ ehFailures, lrrFailures: [], message: 'LANraragi 档案已删除，但 E-Hentai 收藏夹移除失败。' });
+      }
     } catch (error) {
       if (isArchiveMissingError(error)) {
         await removeHistoryItems([archiveId]);
         setHistoryState(getHistory());
         setArchiveDeleteTarget(null);
-        setNotice('档案已不存在于 LANraragi，相关历史记录已清理。');
+        if (ehFailures.length > 0) {
+          setArchiveFailureReport({ ehFailures, lrrFailures: [], message: '档案已不存在于 LANraragi，相关历史记录已清理；E-Hentai 收藏夹移除失败。' });
+        } else {
+          setNotice('档案已不存在于 LANraragi，相关历史记录已清理。');
+        }
       } else {
-        setNotice(`删除失败：${error?.message || '未知错误'}`);
+        setArchiveDeleteTarget(null);
+        setArchiveFailureReport({
+          ehFailures,
+          lrrFailures: [{ id: archiveId, title, message: error?.message || '未知错误' }],
+          message: '档案删除未全部完成，可稍后重试。',
+        });
       }
     } finally {
       setArchiveDeleting(false);
     }
-  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting]);
+  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting, workerReady]);
 
   return (
     <>
@@ -310,22 +335,28 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
           </div>
           <div className="history-page-actions">
             <button className="btn" onClick={onBack}>返回</button>
+            {workerReady && (
             <button
               className="btn"
               onClick={handleSyncHistory}
-              disabled={!getWorkerUrl() || !getSyncToken() || syncing}
-              style={{ opacity: !getWorkerUrl() || !getSyncToken() ? 0.5 : 1 }}
-              title={!getWorkerUrl() || !getSyncToken() ? '配置 Worker 后可从远端读取历史记录' : '从 Worker 刷新阅读历史'}
+              disabled={syncing || checking}
+              title="从 Worker 刷新阅读历史"
             >
               {syncing ? '刷新中' : '刷新'}
             </button>
+            )}
             <button className="btn" onClick={handleCheckHistory} disabled={checking}>
               {checking ? '检查中' : '清理失效'}
             </button>
           </div>
         </div>
 
-        <section className="glass-panel section-reveal section-reveal-delay-1" style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}>
+        <section
+          className="glass-panel section-reveal section-reveal-delay-1"
+          inert={checking ? '' : undefined}
+          aria-busy={checking}
+          style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}
+        >
           <div className="history-section-header">
             <div className="history-section-title">
               <HeaderGlyph />
@@ -374,9 +405,9 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                     color: 'var(--text-sub)',
                   }}>
                     <div style={{ minWidth: 0 }}>
-                      <span style={{ color: '#e8edf5', fontSize: '15px', fontWeight: 700 }}>{group.title}</span>
+                      <span style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: 700 }}>{group.title}</span>
                     </div>
-                    <div style={{ height: '1px', background: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04))' }} />
+                    <div style={{ height: '1px', background: 'var(--glass-border)' }} />
                     <div style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
                       {group.items.length} 条
                     </div>
@@ -477,10 +508,15 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         onCancel={() => { if (!archiveDeleting) setArchiveDeleteTarget(null); }}
         confirmDisabled={archiveDeleting}
       >
-        {getEhFavoriteDeleteSync() && (
+        {workerReady && getEhFavoriteDeleteSync() && (
           <EhFavoriteDeleteSwitch checked={archiveDeleteSyncConfirmed} onChange={setArchiveDeleteSyncConfirmed} disabled={archiveDeleting} />
         )}
       </ConfirmDialog>
+      <ArchiveDeletionFailureDialog
+        report={archiveFailureReport}
+        message={archiveFailureReport?.message}
+        onClose={() => setArchiveFailureReport(null)}
+      />
       <ConfirmDialog
         open={!!notice}
         title="操作提示"

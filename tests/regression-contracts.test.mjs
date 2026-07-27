@@ -81,7 +81,7 @@ test('dedupe results use compact persistence, interlocked selection, and wide-ca
   assert.match(page, /normalizeDuplicateSelection/);
   assert.match(page, /getDuplicateSelectionDisabledIds/);
   assert.match(page, /className="dedupe-groups-grid"/);
-  assert.match(css, /\.dedupe-groups-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;/s);
+  assert.match(css, /\.dedupe-groups-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;[^}]*align-items:\s*center;/s);
   assert.match(css, /\.dedupe-group\s*\{[^}]*width:\s*max-content;[^}]*max-width:\s*100%;/s);
   assert.match(css, /\.dedupe-group-cards\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;/s);
   assert.match(css, /\.dedupe-card-item\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*width:\s*max-content;[^}]*max-width:\s*100%;/s);
@@ -95,8 +95,29 @@ test('dedupe results use compact persistence, interlocked selection, and wide-ca
   assert.match(page, /pagecount \?\? archive\.total/);
   assert.match(css, /\.dedupe-groups-grid\s*\{/);
   assert.match(css, /\.dedupe-card-item\s*>\s*\.archive-card-wrap\.is-wide/);
-  assert.match(css, /\.dedupe-group-selection-message\s*\{[^}]*grid-template-rows:\s*0fr/s);
-  assert.match(css, /\.dedupe-group\.is-selected\s+\.dedupe-group-selection-message\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.match(css, /\.dedupe-group-selection-message\s*\{[^}]*min-height:\s*\d+px;[^}]*opacity:\s*0;/s);
+  assert.doesNotMatch(css, /\.dedupe-group-selection-message\s*\{[^}]*grid-template-rows/s);
+  assert.match(css, /\.dedupe-group\.is-selected\s+\.dedupe-group-selection-message\s*\{[^}]*opacity:\s*1;/s);
+});
+
+test('dedupe execution combines actions, groups chains, reports progress, and preserves retry failures', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const deletion = read('src/lib/archiveDeletion.js');
+  const progress = read('src/components/ExecutionProgressPanel.jsx');
+  const failure = read('src/components/ArchiveDeletionFailureDialog.jsx');
+  const css = read('src/index.css');
+  assert.match(page, /groupDuplicatePairsByChain/);
+  assert.match(page, /className="dedupe-chain"/);
+  assert.match(page, />\s*执行\s*</);
+  assert.doesNotMatch(page, />\s*删除选中\s*</);
+  assert.doesNotMatch(page, />\s*标记分组不重复\s*</);
+  assert.match(progress, /aria-live="polite"/);
+  assert.match(failure, /navigator\.clipboard\.writeText/);
+  assert.match(page, /continueOnFavoriteError:\s*true/);
+  assert.match(page, /deleteArchiveWithFavoriteSync/);
+  assert.doesNotMatch(page, /\{status\}<\/div>/);
+  assert.match(deletion, /runArchiveDeletionOperations/);
+  assert.match(css, /\.dedupe-chain\s*\{/);
 });
 
 test('dedupe cards own a focused context menu and progress-free central thumbnail preview', () => {
@@ -128,6 +149,21 @@ test('dedupe cards own a focused context menu and progress-free central thumbnai
   assert.match(css, /\.archive-thumbnail-dialog-overlay/);
   assert.match(css, /\.archive-thumbnail-dialog-grid/);
   assert.match(css, /\.archive-thumbnail-dialog-preview-image/);
+});
+
+test('dedupe groups expose broad group selection and visible smart-selection tags', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const css = read('src/index.css');
+
+  assert.match(page, /getDedupeSmartSelectionSignals/);
+  assert.match(page, /className=\{`dedupe-group\$\{selected \? ' is-selected' : ''\}`\}[\s\S]*?onClick=\{workerReady \? \(\) => toggleGroupSelection\(group\) : undefined\}/);
+  assert.match(page, /className="dedupe-group-toggle"[\s\S]*?onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*toggleGroupSelection\(group\);/);
+  assert.match(page, /className=\{`dedupe-card-item[\s\S]*?onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(page, /smartSignals\.roughTranslation[\s\S]*?>渣翻</);
+  assert.match(page, /smartSignals\.extraneousAds[\s\S]*?>外部广告</);
+  assert.match(page, /smartSignals\.uncensored[\s\S]*?>无修正</);
+  assert.match(css, /\.dedupe-card-smart-tag\.is-warning/);
+  assert.match(css, /\.dedupe-card-smart-tag\.is-positive/);
 });
 
 test('dedupe date range uses an adaptive styled calendar instead of the native picker', () => {
@@ -163,10 +199,12 @@ test('dedupe bulk group toggle lives below scan stats and its context menu stays
   assert.match(page, /<StatsPanel[\s\S]*allGroupsSelected=\{allGroupsSelected\}/);
   assert.match(page, /\['选中档案', selectedArchiveCount\]/);
   assert.match(page, /\['选中分组', selectedGroupCount\]/);
-  assert.match(page, /function StatsPanel\([\s\S]*智能选择[\s\S]*>\s*删除选中\s*<[\s\S]*>\s*标记分组不重复\s*</);
-  assert.doesNotMatch(page, /删除选中 \(\{selectedArchiveCount\}\)|标记分组不重复 \(\{selectedGroupCount\}\)/);
+  assert.match(page, /function StatsPanel\([\s\S]*智能选择[\s\S]*>\s*执行\s*</);
+  assert.doesNotMatch(page, />\s*删除选中\s*<|>\s*标记分组不重复\s*</);
   assert.match(page, /function DateRangePanel\([\s\S]*检测范围[\s\S]*>重置</);
-  assert.match(page, /function DateRangePanel\([\s\S]*\{running \? '处理中\.\.\.' : '开始检测'\}/);
+  assert.match(page, /<h2 style=\{\{ margin: 0, fontWeight: 800, fontSize: '16px'[^}]*\}\}>检测范围<\/h2>/);
+  assert.doesNotMatch(page, /按档案入库日期筛选，默认范围包含全部档案/);
+  assert.match(page, /function DateRangePanel\([\s\S]*\{running \? '处理中…' : '开始检测'\}/);
   assert.doesNotMatch(page, /<header[\s\S]*智能选择[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*开始检测[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*选择全部分组标记为不重复[\s\S]*<\/header>/);
@@ -300,8 +338,15 @@ test('immersive Reader replaces its top toolbar with side-aware corner controls'
 });
 
 test('build and proxy hardening are reproducible', () => {
+  const app = read('src/App.jsx');
   const vite = read('vite.config.js');
   const workflow = read('.github/workflows/mobile-build.yml');
+  assert.match(app, /import React, \{ lazy, Suspense,/);
+  for (const page of ['Reader', 'Home', 'HistoryPage', 'WatchlistPage', 'DeduplicatePage', 'MetadataPage', 'UploadPage']) {
+    assert.match(app, new RegExp(`const ${page} = lazy\\(\\(\\) => import\\('\\./pages/${page}'\\)\\);`));
+    assert.doesNotMatch(app, new RegExp(`import ${page} from '\\./pages/${page}'`));
+  }
+  assert.match(app, /<Suspense fallback=\{<AppRouteFallback \/>\}>/);
   assert.doesNotMatch(vite, /secure:\s*false/);
   assert.doesNotMatch(vite, /wildcards/);
   assert.match(vite, /VITE_LRR_PROXY_TARGET/);
@@ -516,7 +561,8 @@ test('configuration transfer warning and settings layers stay concise and isolat
   assert.doesNotMatch(dialog, /Base64 编码，不是加密/);
   assert.doesNotMatch(dialog, /message=\{isExport/);
   assert.match(dialog, /className="config-transfer-warning"/);
-  assert.match(css, /\.confirm-dialog:has\(\.config-transfer-field\)\s+\.confirm-dialog-title\s*\{[^}]*text-align:\s*center;/s);
+  assert.match(css, /\.confirm-dialog-title\s*\{[^}]*text-align:\s*center;/s);
+  assert.doesNotMatch(css, /\.confirm-dialog:has\(\.config-transfer-field\)\s+\.confirm-dialog-title/);
   assert.match(css, /\.config-transfer-warning\s*\{[^}]*background:[^}]*text-align:\s*center;/s);
   assert.match(home, /className="settings-panel-footer"/);
   assert.match(css, /\.settings-panel-footer\s*\{[^}]*flex:\s*0 0 auto;[^}]*background:/s);
@@ -561,7 +607,7 @@ test('archive mutations synchronize catalog and short search caches after succes
   const progressActions = read('src/lib/archiveProgressActions.js');
   const reader = read('src/pages/Reader.jsx');
 
-  assert.match(deletion, /await lrrApi\.deleteArchive\(archiveId\);[\s\S]{0,300}removeArchivesFromCatalog\(archiveId\);[\s\S]{0,200}clearArchiveSearchResponseCache\(\);/);
+  assert.match(deletion, /archiveOperation:\s*async \(\) =>\s*assertArchiveDeletionResult\(await lrrApi\.deleteArchive\(archiveId\)\)[\s\S]{0,500}removeArchivesFromCatalog\(archiveId\);[\s\S]{0,200}clearArchiveSearchResponseCache\(\);/);
   assert.match(metadataPage, /await lrrApi\.updateArchiveMetadata[\s\S]{0,500}rememberArchiveInCatalog\(/);
   assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,300}uploadResults\.some[\s\S]{0,200}invalidateArchiveCatalog\(\)/);
   assert.match(progressActions, /rememberArchiveProgressInCatalog\(id, result\.page/);
@@ -585,13 +631,24 @@ test('home carousels use compact shared vertical padding', () => {
 
 test('watchlist glow stays inside compact carousel padding', () => {
   const css = read('src/index.css');
-  const glowStart = css.indexOf('.watchlist-card:not(.watchlist-card-plain) .archive-card-shell::before');
+  const glowStart = css.indexOf('.watchlist-card:not(.watchlist-card-plain) .archive-card-shell');
   const glowEnd = css.indexOf('.archive-cover-image', glowStart);
   const glowCss = css.slice(glowStart, glowEnd);
 
-  assert.match(glowCss, /0 0 6px[\s\S]*0 0 10px/);
-  assert.match(glowCss, /:hover[\s\S]*0 0 8px[\s\S]*0 0 12px/);
-  assert.doesNotMatch(glowCss, /0 0 (?:14|16|18|20|30|34|38|42)px/);
+  assert.match(glowCss, /inset 0 0 0 1px[\s\S]*inset 0 0 8px/);
+  assert.match(glowCss, /:hover[\s\S]*inset 0 0 0 2px[\s\S]*inset 0 0 10px/);
+  assert.doesNotMatch(glowCss, /^ {4}(?!inset\s)[^\n]*0 0 \d+px/gm);
+  assert.doesNotMatch(glowCss, /\.archive-card-shell::before/);
+  assert.doesNotMatch(glowCss, /var\(--shadow\)/);
+});
+
+test('archive cards never paint shadows outside their rounded bounds', () => {
+  const css = read('src/index.css');
+  const card = read('src/components/ArchiveCard.jsx');
+  assert.match(css, /\.archive-card-shell\s*\{[^}]*box-shadow:\s*none;/s);
+  assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:\s*inset/s);
+  assert.doesNotMatch(css, /\.archive-card-shell\.is-selected\s*\{[^}]*\n\s*(?!inset)0 \d+px \d+px/s);
+  assert.doesNotMatch(card, /boxShadow:\s*isPanelVisible/);
 });
 
 test('image cache falls back to IndexedDB when Cache Storage is unavailable', () => {
@@ -711,9 +768,314 @@ test('Home auto-loads archives and desktop history count badges stay vertically 
   assert.match(css, /\.history-page-title-row\s*\{[^}]*align-items:\s*center;/s);
 });
 
+test('Worker-dependent controls are hidden without a valid Worker configuration', () => {
+  const home = read('src/pages/Home.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const watchlist = read('src/pages/WatchlistPage.jsx');
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  const ehFavoriteSync = read('src/lib/ehFavoriteSync.js');
+
+  for (const source of [home, history, watchlist, dedupe, reader]) {
+    assert.match(source, /hasValidWorkerConfig/);
+    assert.match(source, /workerReady/);
+  }
+  assert.match(home, /\{workerReady && \(\s*<button[\s\S]*?handleSyncHistory/);
+  assert.match(history, /\{workerReady && \(\s*<button[\s\S]*?handleSyncHistory/);
+  assert.match(watchlist, /\{workerReady && \(\s*<button[\s\S]*?handleSync/);
+  assert.match(dedupe, /showWorkerActions=\{workerReady\}/);
+  assert.match(dedupe, /if \(workerReady\) \{[\s\S]*?getNonDuplicatePairKeys\(\)/);
+  assert.match(reader, /ehWorker=\{workerReady \? getWorkerUrl\(\) : ''\}/);
+  assert.match(ehFavoriteSync, /import \{ hasValidWorkerConfig \} from '\.\/worker-config'/);
+  assert.match(ehFavoriteSync, /hasValidWorkerConfig\(\)/);
+});
+
+test('scheduled history cleanup force-validates cached records without UI feedback', () => {
+  const maintenance = read('src/lib/historyMaintenance.js');
+  const watchlist = read('src/lib/watchlist.js');
+  const timer = maintenance.match(/export function startHistoryExistenceCheckTimer\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+
+  assert.match(maintenance, /loadHistoryState\(\{ force: true \}\)/);
+  assert.match(maintenance, /loadWatchlistState\(\{ force: true \}\)/);
+  assert.match(watchlist, /hydrateArchiveRecords\(items, \{ force \}\)/);
+  assert.equal((timer.match(/runHistoryExistenceCheck\(\)\.catch\(\(\) => \{\}\)/g) || []).length, 2);
+  assert.doesNotMatch(timer, /alert|notice|dialog/i);
+});
+
+test('manual history cleanup locks page interactions and reports removed records', () => {
+  const history = read('src/pages/HistoryPage.jsx');
+  const handler = history.match(/const handleCheckHistory = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(handler, /setMenu\(null\)/);
+  assert.match(handler, /const removed = await runHistoryExistenceCheck\(\{ force: true \}\)/);
+  assert.match(handler, /if \(removed > 0\) setNotice\(`已清理 \$\{removed\} 条失效记录。`\)/);
+  assert.match(handler, /catch \(error\)[\s\S]*setNotice\(`清理失败：\$\{error\?\.message \|\| '未知错误'\}`\)/);
+  assert.match(handler, /finally \{\s*setChecking\(false\)/);
+  assert.match(history, /onClick=\{handleSyncHistory\}[\s\S]*?disabled=\{syncing \|\| checking\}/);
+  assert.match(history, /<section[^>]*inert=\{checking \? '' : undefined\}[^>]*aria-busy=\{checking\}/);
+  assert.match(history, /<button className="btn" onClick=\{onBack\}>返回<\/button>/);
+});
+
+test('archive multi-select exposes a checkbox indicator and keyboard semantics', () => {
+  const card = read('src/components/ArchiveCard.jsx');
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+
+  assert.match(card, /className=\{`archive-card-selection-checkbox\$\{selected \? ' is-selected' : ''\}`\}/);
+  assert.match(card, /className=\{`glass-panel archive-card-shell\$\{selected \? ' is-selected' : ''\}`\}/);
+  assert.match(card, /role=\{selectionMode \? 'checkbox' : undefined\}/);
+  assert.match(card, /aria-checked=\{selectionMode \? selected : undefined\}/);
+  assert.match(card, /onKeyDown=\{\(event\) => \{/);
+  assert.match(card, /event\.key === 'Enter' \|\| event\.key === ' '/);
+  assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:[^}]*inset 0 0 0/s);
+  assert.match(css, /\.archive-card-shell\.is-selected::after\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*border:\s*2px solid var\(--accent\);[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:[^}]*0 0 0 1px rgba\(255,255,255,0\.82\)[^}]*0 3px 10px rgba\(0,0,0,0\.9\)/s);
+  assert.doesNotMatch(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:/s);
+  assert.match(home, /className="archive-count-badge archive-selection-count-badge"/);
+});
+
+test('archive multi-select action row animates layout from open state', () => {
+  const css = read('src/index.css');
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(css, /\.archive-selection-actions\s*\{[^}]*transition:\s*grid-template-rows 0\.26s/s);
+  assert.match(css, /\.archive-selection-actions\[data-open="true"\]\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.doesNotMatch(css, /\.archive-selection-actions\[data-mounted="true"\]\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.archive-selection-actions[\s\S]*?transition:\s*none\s*!important/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.archive-card-selection-checkbox[\s\S]*?transition:\s*none\s*!important/);
+  assert.doesNotMatch(home, /archiveSelectionActionsMounted|data-mounted/);
+});
+
+test('dedupe operation feedback uses shared progress and failure components', () => {
+  const progressUrl = new URL('../src/components/ExecutionProgressPanel.jsx', import.meta.url);
+  const failureUrl = new URL('../src/components/ArchiveDeletionFailureDialog.jsx', import.meta.url);
+
+  assert.equal(fs.existsSync(progressUrl), true, 'shared execution progress component is missing');
+  assert.equal(fs.existsSync(failureUrl), true, 'shared deletion failure dialog is missing');
+
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const progress = fs.readFileSync(progressUrl, 'utf8');
+  const failure = fs.readFileSync(failureUrl, 'utf8');
+  assert.match(dedupe, /import ExecutionProgressPanel from '\.\.\/components\/ExecutionProgressPanel'/);
+  assert.match(dedupe, /import ArchiveDeletionFailureDialog from '\.\.\/components\/ArchiveDeletionFailureDialog'/);
+  assert.doesNotMatch(dedupe, /function ExecutionProgressPanel/);
+  assert.doesNotMatch(dedupe, /copyEhFailureUrls|copyStatus/);
+  assert.match(progress, /dedupe-execution-progress-track/);
+  assert.match(failure, /E-Hentai 收藏夹删除失败/);
+  assert.match(failure, /LANraragi 删除失败/);
+  assert.match(failure, /report\?\.lrrHeading \|\| 'LANraragi 删除失败'/);
+  assert.match(failure, /navigator\.clipboard\.writeText/);
+});
+
+test('home bulk actions favorite selected archives and report deletion progress', () => {
+  const home = read('src/pages/Home.jsx');
+  const actions = home.match(/<div className="archive-selection-actions-inner">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || '';
+  const favoriteHandler = home.match(/const handleBulkArchiveFavorite = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const deleteHandler = home.match(/const handleBulkArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(home, /import \{[^}]*setArchiveFavorite[^}]*\} from '\.\.\/lib\/categories'/);
+  assert.match(home, /import ExecutionProgressPanel from '\.\.\/components\/ExecutionProgressPanel'/);
+  assert.match(home, /import ArchiveDeletionFailureDialog from '\.\.\/components\/ArchiveDeletionFailureDialog'/);
+  assert.match(actions, /全选当前[\s\S]*收藏所选[\s\S]*删除所选/);
+  assert.match(favoriteHandler, /for \(const archive of selectedArchiveList\)/);
+  assert.match(favoriteHandler, /await setArchiveFavorite\(archiveId, true\)/);
+  assert.match(favoriteHandler, /setBulkFavoriteProgress/);
+  assert.doesNotMatch(favoriteHandler, /setSelectedArchiveIds/);
+  assert.match(deleteHandler, /continueOnFavoriteError:\s*true/);
+  assert.match(deleteHandler, /onFavoriteError:/);
+  assert.match(deleteHandler, /setBulkDeleteProgress/);
+  assert.match(home, /<ExecutionProgressPanel progress=\{bulkDeleteProgress\} \/>/);
+  assert.match(home, /dismissOnBackdrop=\{!archiveDeleting\}/);
+  assert.match(home, /<ArchiveDeletionFailureDialog/);
+});
+
+test('every single archive deletion surface continues after EH failures and reports them', () => {
+  const home = read('src/pages/Home.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const metadata = read('src/pages/MetadataPage.jsx');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const homeHelper = home.match(/const deleteArchiveWithSync = useCallback\(async \([\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const historyHandler = history.match(/const handleArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const metadataHandler = metadata.match(/const handleArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const recommendationHandler = recommendations.match(/const handleArchiveDelete = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  for (const source of [homeHelper, historyHandler, metadataHandler, recommendationHandler]) {
+    assert.match(source, /continueOnFavoriteError:\s*true/);
+    assert.match(source, /onFavoriteError\s*[:,]/);
+  }
+  for (const source of [home, history, metadata, recommendations]) {
+    assert.match(source, /ArchiveDeletionFailureDialog/);
+  }
+  assert.doesNotMatch(recommendationHandler, /lrrApi\.deleteArchive/);
+  assert.match(recommendations, /EhFavoriteDeleteSwitch/);
+  assert.match(recommendations, /workerReady && getEhFavoriteDeleteSync\(\)/);
+  assert.match(metadata, /if \(deletedWithReport\)[\s\S]*?navigateHome\(\)/);
+});
+
+test('archive deletion reports metadata lookup failures before continuing LANraragi deletion', () => {
+  const deletion = read('src/lib/archiveDeletion.js');
+
+  assert.match(deletion, /catch \(error\) \{[\s\S]*?onFavoriteError\?\.\(\{ galleryUrl, error \}\)[\s\S]*?\}/);
+  assert.doesNotMatch(deletion, /catch \{\}/);
+});
+
+test('recommendation deletion dialogs survive removal of the final recommendation', () => {
+  const recommendations = read('src/components/Recommendations.jsx');
+  const earlyReturn = recommendations.match(/if \([^\n]+\) return null;/)?.[0] || '';
+
+  assert.match(earlyReturn, /archiveDeleteTarget/);
+  assert.match(earlyReturn, /archiveFailureReport/);
+});
+
+test('dedupe reports EH failures even when no gallery URL can be resolved', () => {
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const handler = dedupe.match(/const executeSelected = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[/)?.[0] || '';
+
+  assert.doesNotMatch(handler, /if \(galleryUrl\) ehFailuresByUrl\.set/);
+  assert.match(handler, /ehFailures\.push\(\{ url: galleryUrl/);
+});
+
+test('archive context menus toggle LANraragi Favorites and expose async status', () => {
+  const home = read('src/pages/Home.jsx');
+  const menu = read('src/components/ArchiveContextMenu.jsx');
+  const dedupeMenu = read('src/components/DedupeArchiveContextMenu.jsx');
+  const css = read('src/index.css');
+
+  assert.match(home, /getCategoryDisplayName\(cat\)/);
+  assert.match(home, /sortCategoriesForDisplay\(categories\)/);
+  assert.match(home, /selectedCategoryOverride\.archives/);
+  assert.match(home, /selectedCategoryOverride\?\.search/);
+  assert.doesNotMatch(home, /category:\$\{cat\.name\}/);
+  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  assert.doesNotMatch(categoryClick, /writeFilter\(cleared\)[\s\S]*?setFilter\(cleared\)/);
+  assert.match(home, /syncChangedCategory[\s\S]*?setCategories\([\s\S]*?setSelectedCategory\(current => \(current\?\.id === changed\.id \? changed : current\)\)[\s\S]*?lrr:categories-changed/);
+  for (const source of [menu, dedupeMenu]) {
+    assert.match(source, /getFavoriteState/);
+    assert.match(source, /setArchiveFavorite/);
+    assert.match(source, /加入收藏夹/);
+    assert.match(source, /移出收藏夹/);
+    assert.match(source, /favoriteError\s*&&/);
+    assert.match(source, /aria-live="polite"/);
+  }
+  assert.match(menu, /加入待看/);
+  assert.match(menu, /移出待看/);
+  assert.doesNotMatch(menu, /取消待看/);
+  assert.doesNotMatch(css, /\.archive-context-menu-status\s*\{[^}]*min-height/s);
+});
+
+test('active categories remain selected while applying and clearing text filters', () => {
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(home, /const hasActiveTextFilter = effectiveFilter\.active && !!String\(effectiveFilter\.query \|\| ''\)\.trim\(\)/);
+  assert.match(home, /!hasActiveTextFilter && \(isUntaggedMode \|\| isStaticCategoryMode\)/);
+  assert.match(home, /category:\s*!isUntaggedMode \? selectedCategoryOverride\?\.id : ''/);
+  assert.match(home, /untaggedOnly:\s*isUntaggedMode/);
+  assert.match(home, /const handleSearch = \(\) => \{\s*applyFilter\(filter\.query, filter\.sortBy, filter\.order, selectedCategory\);/);
+  const clearFilter = home.match(/const clearFilter = \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.doesNotMatch(clearFilter, /setSelectedCategory\(null\)/);
+});
+
+test('category clicks preserve and activate the current text filter', () => {
+  const home = read('src/pages/Home.jsx');
+  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(categoryClick, /const query = filter\.query \|\| ''/);
+  assert.match(categoryClick, /const nextFilter = \{ \.\.\.filter, active: !!query\.trim\(\) \}/);
+  assert.match(categoryClick, /writeFilter\(nextFilter\)/);
+  assert.match(categoryClick, /setFilter\(nextFilter\)/);
+  assert.match(categoryClick, /setSelectedCategory\(nextCategory\)/);
+  assert.match(categoryClick, /navigateHome\(\{ query: query\.trim\(\), replace: true \}\)/);
+  assert.doesNotMatch(categoryClick, /DEFAULT_FILTER|cleared/);
+  assert.match(categoryClick, /\}, \[filter, selectedCategory\]\);/);
+});
+
+test('category switches show a loading count instead of stale archive totals', () => {
+  const home = read('src/pages/Home.jsx');
+  const countLabel = home.match(/const archiveCountLabel = useMemo\(\(\) => \{[\s\S]*?\n  \}, \[/)?.[0] || '';
+  const categoryClick = home.match(/const handleCategoryClick = useCallback\(\(cat\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(countLabel, /if \(loading\) return '正在获取结果\.\.\.';/);
+  assert.match(categoryClick, /setLoading\(true\)/);
+});
+
+test('README documents category-scoped filtering and LANraragi Favorites', () => {
+  const readme = read('README.md');
+
+  assert.match(readme, /静态和动态分类/);
+  assert.match(readme, /`🔖 Favorites`[\s\S]*?`⭐收藏夹`/);
+  assert.match(readme, /加入或移出 LANraragi 收藏夹/);
+});
+
+test('website branding uses one adaptive SVG while install icons stay PNG', () => {
+  const app = read('src/App.jsx');
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  const html = read('index.html');
+  const manifest = read('public/manifest.json');
+  const logoUrl = new URL('../public/logo.svg', import.meta.url);
+  const logoExists = fs.existsSync(logoUrl);
+
+  assert.equal(logoExists, true);
+  const logo = logoExists ? read('public/logo.svg') : '';
+  assert.doesNotMatch(app, /logo-(?:black|white)\.png/);
+  assert.doesNotMatch(home, /logo-(?:black|white)\.png/);
+  assert.match(app, /<span className="login-brand-logo" aria-hidden="true" \/>/);
+  assert.match(home, /<span className="home-brand-logo" aria-hidden="true" \/>/);
+  assert.match(css, /mask:\s*url\('\/logo\.svg'\) center \/ contain no-repeat/);
+  assert.match(css, /-webkit-mask:\s*url\('\/logo\.svg'\) center \/ contain no-repeat/);
+  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\/logo\.svg" \/>/);
+  assert.match(html, /<link rel="apple-touch-icon" href="\/icons\/icon-180\.png" \/>/);
+  assert.match(manifest, /"src": "\/icons\/icon-192\.png"/);
+  assert.match(manifest, /"src": "\/icons\/icon-512\.png"/);
+  assert.match(logo, /viewBox="0 0 1254 1254"/);
+  assert.match(logo, /prefers-color-scheme:\s*dark/);
+  assert.ok((logo.match(/<path\b/g) || []).length >= 4);
+});
+
 test('touch surfaces suppress native WebKit tap highlight globally', () => {
   const css = read('src/index.css');
   assert.match(css, /\*\s*\{[^}]*-webkit-tap-highlight-color:\s*transparent;/s);
+});
+
+test('ordinary UI controls use semantic colors in both themes', () => {
+  const css = read('src/index.css');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const customSelect = read('src/components/CustomSelect.jsx');
+  const toggle = read('src/components/ToggleSwitch.jsx');
+  const ehSwitch = read('src/components/EhFavoriteDeleteSwitch.jsx');
+  const comments = read('src/components/EhComments.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  const home = read('src/pages/Home.jsx');
+  const archiveCard = read('src/components/ArchiveCard.jsx');
+  const tagSuggest = read('src/components/TagSuggest.jsx');
+
+  assert.match(css, /--warning-text:/);
+  assert.match(css, /--warning-surface:/);
+  assert.match(css, /--warning-border:/);
+  assert.match(css, /--good-text:/);
+  assert.match(css, /--good-surface:/);
+  assert.match(css, /--good-border:/);
+  assert.doesNotMatch(css, /#ffd2d0|#fbbf24|#fca5a5|#6ee7b7|#62d48b|#80dca2|#ff8e8e|#5fcf8b/);
+  assert.doesNotMatch(recommendations, /#e3e9f3|#a7b1c2|#ccc|rgba\(255,255,255/);
+  assert.doesNotMatch(history, /#e8edf5|linear-gradient\(90deg, rgba\(255,255,255/);
+  assert.doesNotMatch(dedupe, /#fbbf24|rgba\(251,191,36|rgba\(255,255,255,0\.025\)/);
+  assert.doesNotMatch(customSelect, /rgba\(255, 255, 255, 0\.08\)/);
+  assert.match(toggle, /className=\{`toggle-switch-track/);
+  assert.doesNotMatch(toggle, /transition:\s*'all/);
+  assert.match(css, /\.toggle-switch-track\s*\{[^}]*min-width:\s*38px;[^}]*max-width:\s*38px;[^}]*flex:\s*0 0 38px;/s);
+  assert.doesNotMatch(ehSwitch, /rgba\(255,255,255/);
+  assert.doesNotMatch(comments, /#69f0ae/);
+  assert.doesNotMatch(reader, /rgba\(255,180,180/);
+  assert.doesNotMatch(home, /rgba\(255,255,255,0\.0[34568]\)/);
+  assert.doesNotMatch(dedupe, /rgba\(255,255,255,0\.035\)|rgba\(148,163,184,0\.16\)/);
+  assert.doesNotMatch(archiveCard, /rgba\(255,255,255,0\.0[25]\)|transition:\s*'all/);
+  assert.match(archiveCard, /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-main\)\)/);
+  assert.match(tagSuggest, /color-mix\(in srgb, \$\{nsColor\} 40%, var\(--text-main\)\)/);
+  assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-sub\)/s);
+  assert.match(css, /\.upload-notice\s*\{[^}]*background:\s*var\(--warning-surface\)[^}]*border:\s*1px solid var\(--warning-border\)/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toggle-switch-track[\s\S]*?\.archive-card-selection-checkbox/);
 });
 
 test('home uses automatic archive loading or the manual fallback, never both', () => {

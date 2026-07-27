@@ -1,33 +1,74 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as deduplicate from '../src/lib/deduplicate.js';
 import {
   createDedupeSavedResultPayload,
   compactDedupeArchives,
   getDuplicateSelectionDisabledIds,
+  groupDuplicatePairsByChain,
   normalizeDuplicateSelection,
+  selectDuplicateDeletionIds,
 } from '../src/lib/deduplicate.js';
 
 const groups = [['A', 'B'], ['A', 'C'], ['B', 'C']];
 
 test('duplicate selection keeps one archive in every connected component', () => {
-  assert.deepEqual(normalizeDuplicateSelection(groups, ['A', 'B', 'C']), ['A']);
+  assert.deepEqual(normalizeDuplicateSelection(groups, ['A', 'B', 'C']), ['A', 'B']);
   assert.deepEqual(normalizeDuplicateSelection([['A', 'B'], ['A', 'C']], ['B', 'C']), ['B', 'C']);
 });
 
-test('duplicate selection allows at most one archive from each direct group', () => {
-  assert.deepEqual(normalizeDuplicateSelection([['A', 'B'], ['A', 'C']], ['A', 'B']), ['A']);
+test('duplicate selection allows direct pair members while retaining one archive in the chain', () => {
+  assert.deepEqual(normalizeDuplicateSelection([['A', 'B'], ['A', 'C']], ['A', 'B']), ['A', 'B']);
+  assert.deepEqual(normalizeDuplicateSelection([['A', 'B'], ['A', 'C']], ['A', 'C']), ['A', 'C']);
   assert.deepEqual(normalizeDuplicateSelection([['A', 'B'], ['A', 'C']], ['A', 'A']), ['A']);
 });
 
 test('duplicate selection exposes candidates that would violate interlocks', () => {
   assert.deepEqual(
-    Array.from(getDuplicateSelectionDisabledIds(groups, new Set(['A']))).sort(),
-    ['B', 'C'],
+    Array.from(getDuplicateSelectionDisabledIds(groups, new Set(['A', 'B']))).sort(),
+    ['C'],
   );
   assert.deepEqual(
-    Array.from(getDuplicateSelectionDisabledIds([['A', 'B'], ['A', 'C']], new Set(['B']))).sort(),
+    Array.from(getDuplicateSelectionDisabledIds([['A', 'B'], ['A', 'C']], new Set(['B', 'C']))).sort(),
     ['A'],
   );
+});
+
+test('smart selection deletes rough translations before every keep-quality rule', () => {
+  assert.deepEqual(selectDuplicateDeletionIds([
+    { arcid: 'rough', tags: 'other:uncensored, other:rough translation', size: 9999 },
+    { arcid: 'clean', tags: 'other:extraneous ads', size: 1 },
+  ]), ['rough']);
+});
+
+test('smart selection signals normalize the three visible priority tags', () => {
+  assert.equal(typeof deduplicate.getDedupeSmartSelectionSignals, 'function');
+  assert.deepEqual(deduplicate.getDedupeSmartSelectionSignals({
+    tags: ' OTHER:Rough Translation , other:EXTRANEOUS ADS, Other:Uncensored ',
+  }), {
+    roughTranslation: true,
+    extraneousAds: true,
+    uncensored: true,
+  });
+  assert.deepEqual(deduplicate.getDedupeSmartSelectionSignals({ tags: 'artist:test' }), {
+    roughTranslation: false,
+    extraneousAds: false,
+    uncensored: false,
+  });
+});
+
+test('duplicate pairs remain pairs while connected chains are displayed together', () => {
+  assert.deepEqual(groupDuplicatePairsByChain([
+    ['D', 'E'],
+    ['A', 'B'],
+    ['X', 'Y'],
+    ['A', 'C'],
+    ['E', 'F'],
+  ]), [
+    [['D', 'E'], ['E', 'F']],
+    [['A', 'B'], ['A', 'C']],
+    [['X', 'Y']],
+  ]);
 });
 
 test('dedupe persistence keeps only visible archives and whitelisted fields', () => {

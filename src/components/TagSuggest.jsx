@@ -209,6 +209,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
             return (
               <div
                 key={`${ns}|${key}`}
+                className="tag-suggest-option"
                 data-suggest-index={idx}
                 onMouseDown={(e) => { e.preventDefault(); selectItem(item); }}
                 onClick={(e) => { e.preventDefault(); selectItem(item); }}
@@ -230,7 +231,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
                   <span style={{
                     fontSize: '10px',
                     fontWeight: 600,
-                    color: nsColor,
+                    color: `color-mix(in srgb, ${nsColor} 40%, var(--text-main))`,
                     background: `${nsColor}24`,
                     border: `1px solid ${nsColor}66`,
                     borderRadius: '4px',
@@ -273,6 +274,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
           return (
             <div
               key={`${ns}|${key}`}
+              className="tag-suggest-option"
               data-suggest-index={idx}
               onMouseDown={(e) => { e.preventDefault(); selectItem(item); }}
               onMouseEnter={() => setActiveIndex(idx)}
@@ -291,7 +293,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
               <span style={{
                 fontSize: '10px',
                 fontWeight: 600,
-                color: nsColor,
+                color: `color-mix(in srgb, ${nsColor} 40%, var(--text-main))`,
                 background: `${nsColor}24`,
                 border: `1px solid ${nsColor}66`,
                 borderRadius: '4px',
