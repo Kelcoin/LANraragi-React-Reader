@@ -82,13 +82,14 @@ test('metadata status cards contain long plugin messages', () => {
   assert.match(css, /\.metadata-status-card\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow-wrap:\s*anywhere;/s);
 });
 
-test('metadata tag suggestions exclude tags already attached to the archive', () => {
+test('metadata tag entry rejects an already attached tag without hiding its suggestion', () => {
   const page = read('src/pages/MetadataPage.jsx');
   const suggestions = read('src/components/TagSuggest.jsx');
-  assert.match(page, /<TagSuggest[^>]*excludeTags=\{form\.tags\}/s);
-  assert.match(suggestions, /const EMPTY_TAGS = \[\]/);
-  assert.match(suggestions, /excludeTags = EMPTY_TAGS/);
-  assert.match(suggestions, /filter\(item => !excludedTagKeys\.has/);
+  assert.doesNotMatch(page, /excludeTags/);
+  assert.doesNotMatch(suggestions, /excludeTags|excludedTagKeys/);
+  assert.match(page, /const incomingTags = parseTags\(value\)/);
+  assert.match(page, /nextTags\.length === form\.tags\.length/);
+  assert.match(page, /showStatus\(`标签已存在：\$\{incomingTags\[0\]\}`, 'error'\)/);
 });
 
 test('dedupe results use compact persistence, interlocked selection, and wide-card layout', () => {
