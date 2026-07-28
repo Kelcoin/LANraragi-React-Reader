@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { searchTags, isDBReady, NAMESPACE_COLORS_MAP, NS_CN_LABELS } from '../lib/tags';
 import { getTagSuggestPlacement } from '../lib/tagSuggestLayout';
 
 const COLORS = NAMESPACE_COLORS_MAP || {};
-const EMPTY_TAGS = [];
 
 const NS_COLORS = {
   artist: COLORS.artist || '#e0994c',
@@ -25,7 +24,7 @@ const NS_COLORS = {
   general: COLORS.general || '#a5afb4'
 };
 
-export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSetActive, excludeTags = EMPTY_TAGS }) {
+export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSetActive }) {
   const [suggestions, setSuggestions] = useState([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [visible, setVisible] = useState(false);
@@ -33,7 +32,6 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
   const debounceRef = useRef(null);
   const dismissTimerRef = useRef(null);
   const [anchor, setAnchor] = useState(null);
-  const excludedTagKeys = useMemo(() => new Set(excludeTags.map(tag => String(tag).trim().replace(/\$$/, '').toLocaleLowerCase())), [excludeTags]);
 
   const updateSuggestions = useCallback((val) => {
     if (!isDBReady()) {
@@ -53,7 +51,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
       return;
     }
 
-    const results = searchTags(segment).filter(item => !excludedTagKeys.has(`${item.ns}:${item.key}`.toLocaleLowerCase()));
+    const results = searchTags(segment);
     if (results.length > 0) {
       setSuggestions(results);
       setVisible(true);
@@ -61,7 +59,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
       setSuggestions([]);
       setVisible(false);
     }
-  }, [excludedTagKeys]);
+  }, []);
 
   useEffect(() => {
     updateSuggestions(inputValue);
