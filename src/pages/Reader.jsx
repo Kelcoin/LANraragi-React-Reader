@@ -41,6 +41,7 @@ import { getWorkerUrl, getSyncToken, hasValidWorkerConfig } from '../lib/worker-
 import { getBootState, markBackground, loadReaderSnapshot, saveReaderSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
 import { navigateHistory, navigateHome, navigateToArchive, navigateToMetadata, navigateWatchlist, parseRouteFromLocation } from '../lib/navigation';
+import { filterRandomArchives, getRandomHideRead } from '../lib/randomArchiveFilter';
 import Recommendations from '../components/Recommendations';
 import EhComments from '../components/EhComments';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -514,7 +515,7 @@ const ReaderArchiveThumb = ({ archiveId, cacheOnly = false }) => {
   );
 };
 
-function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, onDelete, activeType, onTypeChange, onViewMore, progressBarVisibility }) {
+function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, onDelete, activeType, onTypeChange, onViewMore, progressBarVisibility, top }) {
   const panelWindow = getReaderArchivePanelWindow(type, items);
   const panelRef = useRef(null);
   const contentRef = useRef(null);
@@ -559,15 +560,15 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
       data-reader-overlay-scroll
       className="reader-archive-panel reader-panel-surface glass-panel dropdown-animate no-scrollbar"
       style={{
-        position: 'absolute',
-        top: '62px',
-        left: '20px',
-        zIndex: 110,
+        position: 'fixed',
+        top: `${top}px`,
+        left: 'max(20px, calc(var(--app-safe-area-left) + 12px))',
+        zIndex: 9999,
         padding: 0,
         borderRadius: '14px',
         width: 'min(360px, calc(100vw - 40px))',
         boxSizing: 'border-box',
-        maxHeight: '70vh',
+        maxHeight: `calc(100dvh - ${top}px - max(12px, calc(var(--app-safe-area-bottom) + 8px)))`,
         height: readerArchivePanelHeight == null ? 'auto' : `${readerArchivePanelHeight}px`,
         overflowY: 'auto',
         overscrollBehavior: 'contain',
@@ -1148,6 +1149,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   const [historyEntries, setHistoryEntries] = useState(() => getHistory());
   const [watchlistEntries, setWatchlistEntries] = useState(() => getWatchlist());
   const [hideRead] = useState(getHideRead);
+  const [randomHideRead] = useState(getRandomHideRead);
   const [isMobile, setIsMobile] = useState(() => isReaderMobileViewport(window.innerWidth));
   const { toolbarRef, mode: toolbarMode } = useReaderToolbarMode(isMobile, viewMode);
   const toolbarCompact = toolbarMode !== 'full';
@@ -3093,7 +3095,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
     setRandomEntriesLoading(true);
     lrrApi.getRandom(16)
       .then((response) => {
-        if (active) setRandomEntries(Array.isArray(response?.data) ? response.data : []);
+        const data = Array.isArray(response?.data) ? response.data : [];
+        if (active) setRandomEntries(filterRandomArchives(data, historyEntries, randomHideRead));
       })
       .catch(() => {
         if (active) setRandomEntries([]);
@@ -3102,7 +3105,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
         if (active) setRandomEntriesLoading(false);
       });
     return () => { active = false; };
-  }, [archivePanelType, showArchivePanel]);
+  }, [archivePanelType, historyEntries, randomHideRead, showArchivePanel]);
 
   useEffect(() => {
     if (viewMode !== 'immersive') return;
@@ -3601,7 +3604,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           </div>
         , document.body)}
 
-        {viewMode !== 'immersive' && showArchivePanel && (
+        {viewMode !== 'immersive' && showArchivePanel && createPortal(
           <ReaderArchiveListPanel
             type={archivePanel.type}
             title={archivePanel.title}
@@ -3615,8 +3618,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               ? navigateHistory
               : (archivePanelType === 'watchlist' ? navigateWatchlist : null)}
             progressBarVisibility={settings.progressBarVisibility}
+            top={settingsPanelTop + 8}
           />
-        )}
+        , document.body)}
 
         {/* ===== Mode Switch ===== */}
         {viewMode === 'normal' ? (

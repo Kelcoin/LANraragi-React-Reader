@@ -2886,8 +2886,8 @@ textarea:focus-visible,
 }
 
 .archive-grid > .archive-card-wrap.is-wide {
-  flex: 0 1 316px;
-  width: min(316px, 100%);
+  flex: 0 1 var(--archive-wide-card-width, 316px);
+  width: min(var(--archive-wide-card-width, 316px), 100%);
   max-width: 100%;
 }
 

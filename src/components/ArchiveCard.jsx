@@ -10,7 +10,7 @@ import { encodeApiKey } from '../lib/api';
 import { scopedCacheKey } from '../lib/configScope';
 import { isOutsideHorizontalViewport } from '../lib/horizontalScroller';
 import { getContentLanguage } from '../lib/readerUiState';
-import { ARCHIVE_CARD_WIDTH, WIDE_ARCHIVE_CARD_WIDTH } from '../lib/archiveGridLayout';
+import { ARCHIVE_CARD_WIDTH, getWideArchiveCardWidth } from '../lib/archiveGridLayout';
 
 const NAMESPACE_COLORS = NAMESPACE_COLORS_MAP;
 const archiveAspectRatioCache = new Map();
@@ -98,7 +98,7 @@ function calculatePanelPosition(cardRect, panelHeight, pointerY = null) {
   };
 }
 
-export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, archiveGridItemKey, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange }) {
+export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, archiveGridItemKey, archiveGridGap = 16, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange }) {
   const id = archive.arcid || archive.id;
   const [hovered, setHovered] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -195,15 +195,16 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
   const reserveEmptyProgressSpace = reserveProgressSpace && !showProgress;
 
   const isWide = noCrop && aspectRatio != null && aspectRatio > 1.0;
+  const wideCardWidth = getWideArchiveCardWidth(archiveGridGap);
   const baseMetaFontSize = isMobile ? 10.5 : 11;
 
   useLayoutEffect(() => {
     if (!archiveGridItemKey || !onArchiveGridWidthChange) return;
     onArchiveGridWidthChange(
       archiveGridItemKey,
-      isWide ? WIDE_ARCHIVE_CARD_WIDTH : ARCHIVE_CARD_WIDTH,
+      isWide ? wideCardWidth : ARCHIVE_CARD_WIDTH,
     );
-  }, [archiveGridItemKey, isWide, onArchiveGridWidthChange]);
+  }, [archiveGridItemKey, isWide, onArchiveGridWidthChange, wideCardWidth]);
 
   const rememberAspectRatio = useCallback((next) => {
     if (!Number.isFinite(next) || next <= 0) return;
@@ -534,6 +535,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
         transform: isPanelVisible ? 'translateY(-6px)' : undefined,
         transformOrigin: 'center top',
         transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
+        '--archive-wide-card-width': `${wideCardWidth}px`,
         ...wrapStyle,
       }}
     >
@@ -543,8 +545,8 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
         className={`glass-panel archive-card-shell${selected ? ' is-selected' : ''}`}
         title={undefined}
         style={{
-          minWidth: isWide ? '316px' : '150px',
-          width: isWide ? '316px' : '150px',
+          minWidth: isWide ? `${wideCardWidth}px` : '150px',
+          width: isWide ? `${wideCardWidth}px` : '150px',
           padding: '12px',
           cursor: disabled ? 'not-allowed' : 'pointer',
           transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease',

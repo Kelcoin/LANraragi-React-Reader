@@ -7,6 +7,14 @@ import { resolveAppVersion } from '../scripts/app-version.mjs';
 const cwd = fileURLToPath(new URL('..', import.meta.url));
 const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
+test('package manifests use release version 1.4.6', () => {
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const lock = JSON.parse(fs.readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.version, '1.4.6');
+  assert.equal(lock.version, '1.4.6');
+  assert.equal(lock.packages[''].version, '1.4.6');
+});
+
 test('application version always uses package.json SemVer plus build SHA', () => {
   const resolved = resolveAppVersion({ cwd, hash: 'abcdef1234567890' });
   assert.equal(resolved.version, `v${packageVersion}+abcdef1`);

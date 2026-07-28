@@ -18,7 +18,7 @@ const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', children, 
   const previousRectsRef = useRef(new Map());
   const animationsRef = useRef(new Map());
   const layoutFrameRef = useRef(null);
-  const [layout, setLayout] = useState({ width: 0, gap: 0, revision: 0 });
+  const [layout, setLayout] = useState({ width: 0, gap: 16, revision: 0 });
 
   const setGridRef = useCallback((node) => {
     gridRef.current = node;
@@ -85,6 +85,7 @@ const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', children, 
       isValidElement(element)
         ? cloneElement(element, {
             archiveGridItemKey: key,
+            archiveGridGap: layout.gap,
             archiveGridChildrenVersion: children,
             archiveGridLayoutVersion: `${layout.width}:${layout.gap}:${layout.revision}`,
             onArchiveGridWidthChange: reportItemWidth,
