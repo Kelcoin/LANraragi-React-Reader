@@ -1341,6 +1341,9 @@ textarea:focus-visible,
 .metadata-status-card {
   width: fit-content;
   max-width: min(100%, 560px);
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0 auto;
   padding: 10px 16px;
   border: 1px solid var(--glass-border-hover);

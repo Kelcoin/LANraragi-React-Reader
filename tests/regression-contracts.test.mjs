@@ -72,6 +72,25 @@ test('metadata loading state stays centered in the viewport', () => {
   assert.match(css, /\.metadata-loading-state\s*\{[^}]*min-height:\s*100dvh;[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
 });
 
+test('metadata error statuses dismiss automatically', () => {
+  const page = read('src/pages/MetadataPage.jsx');
+  assert.match(page, /\{ autoHide = type === 'error' \}/);
+});
+
+test('metadata status cards contain long plugin messages', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.metadata-status-card\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow-wrap:\s*anywhere;/s);
+});
+
+test('metadata tag suggestions exclude tags already attached to the archive', () => {
+  const page = read('src/pages/MetadataPage.jsx');
+  const suggestions = read('src/components/TagSuggest.jsx');
+  assert.match(page, /<TagSuggest[^>]*excludeTags=\{form\.tags\}/s);
+  assert.match(suggestions, /const EMPTY_TAGS = \[\]/);
+  assert.match(suggestions, /excludeTags = EMPTY_TAGS/);
+  assert.match(suggestions, /filter\(item => !excludedTagKeys\.has/);
+});
+
 test('dedupe results use compact persistence, interlocked selection, and wide-card layout', () => {
   const page = read('src/pages/DeduplicatePage.jsx');
   const deduplicate = read('src/lib/deduplicate.js');

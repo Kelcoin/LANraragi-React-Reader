@@ -146,7 +146,7 @@ export default function MetadataPage({ archiveId }) {
     return () => { active = false; };
   }, []);
 
-  const showStatus = (text, type = 'info', { autoHide = false } = {}) => {
+  const showStatus = (text, type = 'info', { autoHide = type === 'error' } = {}) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     statusIdRef.current += 1;
     setStatus({ id: statusIdRef.current, text, type, closing: false });
@@ -250,7 +250,7 @@ export default function MetadataPage({ archiveId }) {
       <label className="metadata-field">标题<input className="input-glass" style={field} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
       <label className="metadata-field">摘要<textarea className="input-glass" style={{ ...field, minHeight: 110 }} value={form.summary} onChange={e => setForm({ ...form, summary: e.target.value })} /></label>
       <div className="metadata-tag-field"><div className="metadata-field-label">标签</div>
-        <div ref={tagInputRef} style={{ position: 'relative', marginBottom: 10 }}><input className="input-glass" style={field} value={tagInput} placeholder="输入中文、拼音或标签，按回车/逗号添加" onChange={e => { const value = e.target.value; if (value.includes(',')) addTags(value); else setTagInput(value); }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTags(tagInput); } else if (e.key === 'Backspace' && !tagInput && form.tags.length) setForm({ ...form, tags: form.tags.slice(0, -1) }); }} /><TagSuggest inputValue={tagInput} containerRef={tagInputRef} onSelectTag={(tag) => addTags(tag.replace(/\$$/, ''))} /></div>
+        <div ref={tagInputRef} style={{ position: 'relative', marginBottom: 10 }}><input className="input-glass" style={field} value={tagInput} placeholder="输入中文、拼音或标签，按回车/逗号添加" onChange={e => { const value = e.target.value; if (value.includes(',')) addTags(value); else setTagInput(value); }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTags(tagInput); } else if (e.key === 'Backspace' && !tagInput && form.tags.length) setForm({ ...form, tags: form.tags.slice(0, -1) }); }} /><TagSuggest inputValue={tagInput} containerRef={tagInputRef} excludeTags={form.tags} onSelectTag={(tag) => addTags(tag.replace(/\$$/, ''))} /></div>
         <MetadataTagsBox
           onPointerMove={(event) => {
             if (event.pointerType !== 'mouse') return;
