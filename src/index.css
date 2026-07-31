@@ -83,6 +83,8 @@
   --tag-general: #a7b1c2;
   --overlay-bg: rgba(0, 0, 0, 0.74);
   --reader-overlay-text: #f2f3f6;
+  --immersive-bg: #000;
+  --immersive-text: #f2f3f6;
   --app-safe-area-top: var(--lrr-android-safe-top, env(safe-area-inset-top, 0px));
   --app-safe-area-right: env(safe-area-inset-right, 0px);
   --app-safe-area-bottom: env(safe-area-inset-bottom, 0px);
@@ -177,6 +179,8 @@
   --tag-general: #625c54;
   --overlay-bg: rgba(40, 37, 34, 0.48);
   --reader-overlay-text: #f2f3f6;
+  --immersive-bg: #fff;
+  --immersive-text: #171a20;
 }
 
 * {
@@ -2543,7 +2547,7 @@ textarea:focus-visible,
   border-color: var(--accent);
   transform: scale(1.06);
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline-offset: 0;
 }
 
 .reader-immersive-control-button:disabled { opacity: 0.42; cursor: not-allowed; }
@@ -3360,14 +3364,14 @@ textarea:focus-visible,
   min-height: 34px;
   border-color: transparent;
   background: transparent;
-  color: var(--text-sub);
+  color: #fff;
   box-shadow: none;
 }
 
 .theme-palette-mode-tab.is-active {
   border-color: var(--glass-border-hover);
   background: var(--surface-1);
-  color: var(--accent-strong);
+  color: #fff;
   box-shadow: var(--shadow-control);
 }
 

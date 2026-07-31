@@ -1,29 +1,57 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { searchTags, isDBReady, NAMESPACE_COLORS_MAP, NS_CN_LABELS } from '../lib/tags';
+import { searchTags, isDBReady, NS_CN_LABELS } from '../lib/tags';
 import { getTagSuggestPlacement } from '../lib/tagSuggestLayout';
+import { hexToHsl, hslToHex, parseHexColor } from '../lib/color';
 import { NamespaceGlyph } from './AppGlyphs';
 
-const COLORS = NAMESPACE_COLORS_MAP || {};
+const FALLBACK_ACCENT = '#4a9ff0';
+const FALLBACK_SECONDARY = '#70784f';
 
-const NS_COLORS = {
-  artist: COLORS.artist || 'var(--tag-artist)',
-  parody: COLORS.parody || 'var(--tag-parody)',
-  category: COLORS.category || 'var(--tag-category)',
-  character: COLORS.character || 'var(--tag-character)',
-  female: COLORS.female || 'var(--tag-female)',
-  male: COLORS.male || 'var(--tag-male)',
-  mixed: COLORS.mixed || 'var(--tag-mixed)',
-  other: COLORS.other || 'var(--tag-other)',
-  group: COLORS.group || 'var(--tag-group)',
-  series: COLORS.series || 'var(--tag-series)',
-  language: COLORS.language || 'var(--tag-language)',
-  uploader: COLORS.uploader || 'var(--tag-uploader)',
-  date_added: COLORS.date_added || 'var(--tag-date-added)',
-  timestamp: COLORS.timestamp || 'var(--tag-timestamp)',
-  source: COLORS.source || 'var(--tag-source)',
-  general: COLORS.general || 'var(--tag-general)'
+const NAMESPACE_HUE_SPECS = {
+  artist: { base: 'accent', offset: 0 },
+  parody: { base: 'secondary', offset: 22 },
+  category: { base: 'accent', offset: 44 },
+  character: { base: 'secondary', offset: 66 },
+  female: { base: 'accent', offset: 88 },
+  male: { base: 'secondary', offset: 110 },
+  mixed: { base: 'accent', offset: 132 },
+  other: { base: 'secondary', offset: 154 },
+  group: { base: 'accent', offset: 176 },
+  series: { base: 'secondary', offset: 198 },
+  language: { base: 'accent', offset: 220 },
+  uploader: { base: 'secondary', offset: 242 },
+  date_added: { base: 'accent', offset: 264 },
+  timestamp: { base: 'secondary', offset: 286 },
+  source: { base: 'accent', offset: 308 },
+  general: { base: 'secondary', offset: 330 },
 };
+
+const NEUTRAL_NAMESPACES = new Set(['other', 'date_added', 'timestamp', 'general']);
+
+function readThemeHex(name, fallback) {
+  try {
+    return parseHexColor(getComputedStyle(document.documentElement).getPropertyValue(name)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function buildNamespaceColors(accentHex, secondaryHex) {
+  const accentHsl = hexToHsl(accentHex) || { h: 210, s: 72, l: 54 };
+  const secondaryHsl = hexToHsl(secondaryHex) || { h: 82, s: 30, l: 40 };
+  const colors = {};
+  for (const [ns, spec] of Object.entries(NAMESPACE_HUE_SPECS)) {
+    const base = spec.base === 'secondary' ? secondaryHsl : accentHsl;
+    const neutral = NEUTRAL_NAMESPACES.has(ns);
+    colors[ns] = hslToHex({
+      h: Math.round((base.h + spec.offset) % 360),
+      s: neutral ? Math.max(16, Math.round(base.s * 0.5)) : Math.max(28, Math.min(78, base.s)),
+      l: base.l,
+    });
+  }
+  return colors;
+}
 
 export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSetActive }) {
   const [suggestions, setSuggestions] = useState([]);
@@ -33,6 +61,9 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
   const debounceRef = useRef(null);
   const dismissTimerRef = useRef(null);
   const [anchor, setAnchor] = useState(null);
+  const accentHex = readThemeHex('--accent', FALLBACK_ACCENT);
+  const secondaryHex = readThemeHex('--secondary', FALLBACK_SECONDARY);
+  const nsColors = useMemo(() => buildNamespaceColors(accentHex, secondaryHex), [accentHex, secondaryHex]);
 
   const updateSuggestions = useCallback((val) => {
     if (!isDBReady()) {
@@ -211,7 +242,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
           const key = item.key;
           const label = item.label;
           const tag = `${ns}:${key}$`;
-          const nsColor = NS_COLORS[ns] || NS_COLORS.general;
+          const nsColor = nsColors[ns] || nsColors.general;
           const nsLabel = (NS_CN_LABELS && NS_CN_LABELS[ns]) || ns;
 
           // ── Responsive item layout ──

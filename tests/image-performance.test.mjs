@@ -146,7 +146,7 @@ test('image load queue times out a stalled job and releases the next slot', asyn
 test('paged Reader covers stale bitmaps while the target spread decodes', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /targetPending\s*&&\s*!webtoonActive[\s\S]{0,1200}正在切换到第/);
-  assert.match(reader, /background:\s*'(?:#000|var\(--reader-stage-bg\))'/);
+  assert.match(reader, /background:\s*'(?:#000|var\(--reader-(?:stage|immersive)-bg\))'/);
 });
 
 test('memory image cache policy uses byte budget and oldest-first eviction', () => {

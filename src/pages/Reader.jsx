@@ -383,7 +383,7 @@ const PageImage = React.forwardRef(({
         overflow: 'hidden',
         minWidth: 0,
         minHeight: 0,
-        background: isImmersive ? 'var(--reader-stage-bg)' : 'transparent',
+        background: isImmersive ? 'var(--immersive-bg)' : 'transparent',
       }}
     >
       <img
@@ -3444,8 +3444,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       data-ios={isIosWebKit ? 'true' : 'false'}
       style={{
         minHeight: '100vh',
-        background: viewMode === 'normal' ? 'transparent' : 'var(--reader-stage-bg)',
-        color: viewMode === 'immersive' ? 'var(--reader-overlay-text)' : 'var(--text-main)',
+        background: viewMode === 'normal' ? 'transparent' : 'var(--immersive-bg)',
+        color: viewMode === 'immersive' ? 'var(--immersive-text)' : 'var(--text-main)',
       }}
     >
       {progressSyncNotice && (
@@ -3795,8 +3795,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                     justifyContent: 'center',
                     padding: '24px',
                     textAlign: 'center',
-                    background: 'var(--reader-stage-bg)',
-                    color: 'var(--reader-overlay-text)',
+                    background: 'var(--immersive-bg)',
+                    color: 'var(--immersive-text)',
                     fontSize: 'clamp(18px, 3vw, 30px)',
                     fontWeight: 750,
                     pointerEvents: 'none',
@@ -3863,7 +3863,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               width: '100%',
               height: '100%',
               overflow: webtoonActive ? 'hidden' : (zoomScale === 1.0 ? 'hidden' : 'visible'),
-              background: 'var(--reader-stage-bg)',
+              background: 'var(--immersive-bg)',
               userSelect: 'none',
               WebkitUserSelect: 'none',
               WebkitTouchCallout: 'none',
@@ -3944,7 +3944,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                   overscrollBehavior: 'contain',
                   WebkitOverflowScrolling: 'touch',
                   touchAction: 'pan-y',
-                  background: 'var(--reader-stage-bg)',
+                  background: 'var(--immersive-bg)',
                 }}
               >
                 {pages.map((pageUrl, index) => (
@@ -3978,7 +3978,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               style={{
                 position: 'absolute', inset: 0,
                 display: webtoonActive ? 'none' : 'flex', justifyContent: 'center', alignItems: 'center',
-                background: 'var(--reader-stage-bg)', zIndex: 1,
+                background: 'var(--immersive-bg)', zIndex: 1,
                 transform: 'translateX(-100%)',
               }}
             >
@@ -3997,16 +3997,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               style={{
                 position: 'absolute', inset: 0,
                 display: webtoonActive ? 'none' : 'flex', justifyContent: 'center', alignItems: 'center',
-                background: 'var(--reader-stage-bg)', zIndex: 1,
+                background: 'var(--immersive-bg)', zIndex: 1,
                 transform: 'translateX(100%)',
               }}
             >
               {immersiveRightSpread.length === 0 ? (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
-                  color: 'color-mix(in srgb, var(--reader-overlay-text) 60%, transparent)', userSelect: 'none', pointerEvents: 'none',
+                  color: 'color-mix(in srgb, var(--immersive-text) 60%, transparent)', userSelect: 'none', pointerEvents: 'none',
                 }}>
-                  <HomeSectionGlyph name="continue" size={48} color="color-mix(in srgb, var(--reader-overlay-text) 60%, transparent)" style={{ opacity: 0.7 }} />
+                  <HomeSectionGlyph name="continue" size={48} color="color-mix(in srgb, var(--immersive-text) 60%, transparent)" style={{ opacity: 0.7 }} />
                   <span style={{ fontSize: '16px', letterSpacing: '2px' }}>继续滑动退出沉浸模式</span>
                 </div>
               ) : (
@@ -4047,13 +4047,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                     gap: '16px',
                     padding: '24px',
                     textAlign: 'center',
-                    background: 'var(--reader-stage-bg)',
+                    background: 'var(--immersive-bg)',
                   }}
                 >
-                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: 'var(--reader-overlay-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
+                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: 'var(--immersive-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
                     {pageSwitchLabel}
                   </div>
-                  <div style={{ fontSize: 'clamp(16px, 2.6vw, 26px)', fontWeight: 600, color: 'color-mix(in srgb, var(--reader-overlay-text) 62%, transparent)' }}>
+                  <div style={{ fontSize: 'clamp(16px, 2.6vw, 26px)', fontWeight: 600, color: 'color-mix(in srgb, var(--immersive-text) 62%, transparent)' }}>
                     正在解码图像
                   </div>
                 </div>
@@ -4100,8 +4100,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                   right: isMobile ? 'auto' : '20px',
                   padding: '4px 10px',
                   borderRadius: '16px',
-                  background: 'color-mix(in srgb, var(--reader-stage-bg) 65%, transparent)',
-                  border: '1px solid color-mix(in srgb, var(--reader-overlay-text) 12%, transparent)',
+                  background: 'color-mix(in srgb, var(--immersive-bg) 65%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--immersive-text) 12%, transparent)',
                   fontSize: '11px',
                   letterSpacing: '1px',
                   pointerEvents: 'none',
