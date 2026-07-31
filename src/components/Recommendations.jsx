@@ -442,7 +442,7 @@ export default function Recommendations({ currentArchive }) {
               style={{
                 background: tab === 'sim' ? 'var(--accent)' : 'transparent',
                 border: tab === 'sim' ? '1px solid var(--accent)' : '1px solid var(--glass-border)',
-                color: tab === 'sim' ? '#fff' : 'var(--text-sub)',
+                color: tab === 'sim' ? 'var(--accent-contrast)' : 'var(--text-sub)',
                 fontSize: '13px', fontWeight: 600, cursor: 'pointer',
                 padding: '5px 12px', borderRadius: '6px', transition: 'background-color 0.2s, border-color 0.2s, color 0.2s',
               }}
@@ -454,7 +454,7 @@ export default function Recommendations({ currentArchive }) {
                 style={{
                   background: tab === 'artist' ? 'var(--accent)' : 'transparent',
                   border: tab === 'artist' ? '1px solid var(--accent)' : '1px solid var(--glass-border)',
-                  color: tab === 'artist' ? '#fff' : 'var(--text-sub)',
+                  color: tab === 'artist' ? 'var(--accent-contrast)' : 'var(--text-sub)',
                   fontSize: '13px', fontWeight: 600, cursor: 'pointer',
                   padding: '5px 12px', borderRadius: '6px', transition: 'background-color 0.2s, border-color 0.2s, color 0.2s',
                 }}

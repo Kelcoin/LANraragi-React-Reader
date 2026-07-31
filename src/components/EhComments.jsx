@@ -545,7 +545,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
     <div ref={sectionRef} data-lrr-eh-comments className="eh-comments glass-panel section-reveal section-reveal-delay-3" style={{ padding: '20px', marginTop: '20px' }}>
       <div className="eh-comments-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px' }}>
         <h3 className="eh-comments-title" style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: 'var(--accent)' }}>💬</span> E-Hentai 评论区
+          <ToolbarGlyph name="comment" size={18} color="var(--accent)" /> E-Hentai 评论区
         </h3>
         <div className="eh-comments-actions" style={{ display: 'flex', gap: '8px' }}>
           <a
@@ -616,7 +616,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                 return (
                 <div key={c.id} className={`eh-comment-card${c.isUploader ? ' is-uploader' : ''}`} style={{
                   padding: '14px 16px', borderRadius: '10px', marginBottom: '10px',
-                  borderLeftColor: c.isUploader ? '#d77f12' : 'var(--comment-card-border)'
+                  borderLeftColor: c.isUploader ? 'var(--comment-uploader-border)' : 'var(--comment-card-border)'
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px', fontSize: '12px', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
@@ -625,7 +625,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                      {c.isUploader && <span style={{ background: '#ff9800', color: '#000', fontSize: '10px', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>UP</span>}
+                      {c.isUploader && <span className="eh-comment-uploader-badge" style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>UP</span>}
                       {!c.isUploader && (
                         <span style={{ color: scoreClass, fontWeight: 'bold', fontSize: '12px' }}>
                           评分 {scoreSign}{c.score}

@@ -558,15 +558,15 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
           userSelect: 'none',
         }}
         aria-disabled={disabled || undefined}
-        role={selectionMode ? 'checkbox' : undefined}
+        role={selectionMode ? 'checkbox' : 'button'}
         aria-checked={selectionMode ? selected : undefined}
-        tabIndex={selectionMode && !disabled ? 0 : undefined}
+        tabIndex={!disabled ? 0 : -1}
+        aria-label={archive.title || id}
         onKeyDown={(event) => {
-          if (!selectionMode || disabled || !onSelectToggle) return;
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onSelectToggle(archive, event);
-          }
+          if (disabled || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          if (selectionMode && onSelectToggle) onSelectToggle(archive, event);
+          else onClick?.(event);
         }}
         onPointerDown={(event) => {
           const nextTouchInteraction = event.pointerType === 'touch' || event.pointerType === 'pen';
@@ -656,10 +656,12 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
 
           {thumbState === 'ready' && thumbSrc && (
             <img
-              ref={imgRef}
-              className="archive-cover-image"
-              src={thumbSrc}
-              alt="cover"
+            ref={imgRef}
+            className="archive-cover-image"
+            src={thumbSrc}
+            alt="cover"
+            width="150"
+            height="210"
               loading="lazy"
               decoding="async"
               draggable={false}
@@ -797,8 +799,6 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
             left: `${panelPos.left}px`,
             zIndex: 9999,
             background: 'var(--tag-panel-bg)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
             border: '1px solid var(--glass-border-hover)',
             borderRadius: '14px',
             padding: '16px 18px',
@@ -855,10 +855,10 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        border: `1px solid ${group.color}44`,
+                        border: `1px solid color-mix(in srgb, ${group.color} 28%, transparent)`,
                         borderRadius: '5px',
                         padding: '2px 6px',
-                        background: `${group.color}15`,
+                        background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
                         color: 'var(--text-main)',
                         fontSize: '11px',
                         cursor: 'pointer',
@@ -867,12 +867,12 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
                         lineHeight: '1.4',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = `${group.color}35`;
+                        e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 22%, transparent)`;
                         e.currentTarget.style.borderColor = group.color;
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = `${group.color}15`;
-                        e.currentTarget.style.borderColor = `${group.color}44`;
+                        e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 10%, transparent)`;
+                        e.currentTarget.style.borderColor = `color-mix(in srgb, ${group.color} 28%, transparent)`;
                       }}
                     >
                       {translateDisplayTag(raw)}

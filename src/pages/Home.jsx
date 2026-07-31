@@ -24,9 +24,10 @@ import ToggleSwitch from '../components/ToggleSwitch';
 import AppVersion from '../components/AppVersion';
 import ConfigTransferDialog from '../components/ConfigTransferDialog';
 import SettingHint from '../components/SettingHint';
+import ThemeColorPicker from '../components/ThemeColorPicker';
 import { HomeSectionGlyph, ThemeModeGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { deleteFilterPreset, readFilterPresets, renameFilterPreset, saveFilterPreset } from '../lib/filterPresets';
-import { getCategoryDisplayName, getStoredCategories, loadCategories, setArchiveFavorite, sortCategoriesForDisplay, startCategoriesUpdateTimer, stopCategoriesUpdateTimer } from '../lib/categories';
+import { FAVORITES_CATEGORY_NAME, getCategoryDisplayName, getStoredCategories, loadCategories, setArchiveFavorite, sortCategoriesForDisplay, startCategoriesUpdateTimer, stopCategoriesUpdateTimer } from '../lib/categories';
 import { claimColdRestoreRoute, consumeHomeNavigationSnapshot, getBootState, loadHomeSnapshot, markBackground, saveHomeNavigationSnapshot, saveHomeSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
 import { useHorizontalScroller } from '../lib/horizontalScroller';
@@ -40,6 +41,7 @@ import { migrateLegacyStorageKey } from '../lib/configScope';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings } from '../lib/readerSettings';
 import { getArchiveSearchTotal } from '../lib/archiveSearch';
 import { filterRandomArchives, getRandomHideRead, setRandomHideRead } from '../lib/randomArchiveFilter';
+import { DEFAULT_THEME_PALETTES, readStoredThemePalettes } from '../lib/theme';
 
 const FILTER_KEY = 'lrr_filter';
 const RANDOMS_RECENT_KEY = 'lrr_random_recent_v1';
@@ -217,7 +219,7 @@ function SkeletonCard({ showProgress = false }) {
     <div style={{
       flexShrink: 0, minWidth: '150px', width: '150px',
       background: 'var(--surface-1)',
-      borderRadius: '14px',
+      borderRadius: 'var(--radius-card)',
       border: '1px solid var(--glass-border)',
       display: 'flex', flexDirection: 'column', padding: '12px',
       overflow: 'hidden',
@@ -232,7 +234,7 @@ function SkeletonCard({ showProgress = false }) {
         <div className="shimmer-strip" style={{ position: 'absolute', inset: 0 }} />
       </div>
       {showProgress && (
-        <div style={{ width: '100%', height: '3px', marginTop: '2px', borderRadius: '999px', background: 'rgba(74,159,240,0.22)' }} />
+        <div style={{ width: '100%', height: '3px', marginTop: '2px', borderRadius: 'var(--radius-chip)', background: 'var(--accent-soft)' }} />
       )}
       <div style={{
         height: '12px', borderRadius: '4px',
@@ -271,7 +273,7 @@ function SectionHeading({ glyph, children, onClick, title, style }) {
   );
 
   return (
-    <h2 style={{ fontSize: '18px', lineHeight: 1.2, margin: 0, display: 'flex', alignItems: 'center', gap: '10px', ...style }}>
+    <h2 className="section-heading" style={{ fontSize: '18px', lineHeight: 1.2, margin: 0, display: 'flex', alignItems: 'center', gap: '10px', ...style }}>
       {onClick ? (
         <button
           type="button"
@@ -293,6 +295,7 @@ function CollapseButton({ collapsed, onClick, title }) {
       onClick={onClick}
       title={title}
       aria-label={title}
+      className="collapse-button"
       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-sub)', opacity: 0.8, padding: '4px', borderRadius: '4px', display: 'flex' }}
     >
       <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true" style={{ transition: 'transform 0.3s', transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}>
@@ -330,7 +333,7 @@ function writeReaderSettings(settings) {
   else localStorage.removeItem('lrr_eh_cookie');
 }
 
-export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', onThemeModeChange }) {
+export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', onThemeModeChange, themePalettes = null, onThemePalettesChange }) {
   const supportsAutomaticArchiveLoading = typeof IntersectionObserver !== 'undefined';
   const workerReady = hasValidWorkerConfig();
   const [navSnapshot] = useState(() => consumeHomeNavigationSnapshot());
@@ -395,6 +398,11 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   const [cfgWorkerUrl, setCfgWorkerUrl] = useState(getWorkerUrl());
   const [cfgSyncToken, setCfgSyncToken] = useState(getSyncToken());
+  const [themePaletteMode, setThemePaletteMode] = useState(() => document.documentElement.dataset.theme || 'light');
+  const [themePalettesDraft, setThemePalettesDraft] = useState(themePalettes);
+  useEffect(() => {
+    setThemePaletteMode(document.documentElement.dataset.theme || (themeMode === 'dark' ? 'dark' : 'light'));
+  }, [themeMode]);
   const [readerSettings, setReaderSettings] = useState(readReaderSettings);
   const showHistoricalArchiveProgress = shouldShowArchiveProgress(readerSettings.progressBarVisibility, true);
   const showGlobalArchiveProgress = shouldShowArchiveProgress(readerSettings.progressBarVisibility, false);
@@ -524,6 +532,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const suggestActiveRef = useRef(false);
   const filterInputRef = useRef(null);
   const filterControlsRef = useRef(null);
+  const settingsTriggerRef = useRef(null);
+  const settingsDialogRef = useRef(null);
   const historyScroller = useHorizontalScroller();
   const watchlistScroller = useHorizontalScroller();
   const randomScroller = useHorizontalScroller();
@@ -597,6 +607,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   const handleConfirmImportConfig = async (encoded) => {
     const count = importConfig(encoded);
+    const nextThemePalettes = readStoredThemePalettes();
+    setThemePalettesDraft(nextThemePalettes);
+    onThemePalettesChange?.(nextThemePalettes);
     setCfgWorkerUrl(getWorkerUrl());
     setCfgSyncToken(getSyncToken());
     setReaderSettings(readReaderSettings());
@@ -804,6 +817,60 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const dismissFilterKeyboard = (event) => {
+      const target = event.target;
+      if (filterControlsRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest('[data-filter-popover="true"]')) return;
+      filterInputRef.current?.blur();
+    };
+    document.addEventListener('pointerdown', dismissFilterKeyboard);
+    return () => document.removeEventListener('pointerdown', dismissFilterKeyboard);
+  }, []);
+
+  useEffect(() => {
+    if (!showConfig) return undefined;
+    const dialog = settingsDialogRef.current;
+    const previouslyFocused = document.activeElement;
+    const getFocusable = () => Array.from(dialog?.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]):not(.settings-hint-wrap)',
+    ) || []);
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowConfig(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !dialog) return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const focusFrame = requestAnimationFrame(() => {
+      const firstFocusable = getFocusable()[0];
+      if (firstFocusable) firstFocusable.focus();
+      else dialog?.focus();
+    });
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) previouslyFocused.focus();
+    };
+  }, [showConfig]);
 
   const probeServerStatus = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!force && serverProbePromiseRef.current) return serverProbePromiseRef.current;
@@ -1764,6 +1831,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
+      filterInputRef.current?.blur();
       if (suggestActiveRef.current) return;
       handleSearch();
     }
@@ -1935,7 +2003,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         border-radius: 4px;
       }
     `}</style>
-    <div style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: '1680px', margin: '0 auto' }}>
+    <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: '1680px', margin: '0 auto' }}>
       <div className="home-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '18px', marginBottom: '32px', flexWrap: 'wrap' }}>
         <div className="home-brand">
           <h1 className="home-brand-title" translate="no" aria-label="Readoshi" style={{ fontWeight: 600, margin: '0 0 8px 0', fontSize: '28px', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1984,10 +2052,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   width: '8px',
                   height: '8px',
                   borderRadius: '50%',
-                  background: serverOnline ? '#4caf50' : '#f44336',
+                  background: serverOnline ? 'var(--good)' : 'var(--danger)',
                   boxShadow: serverOnline
-                    ? '0 0 8px rgba(76,175,80,0.72)'
-                    : '0 0 8px rgba(244,67,54,0.72)',
+                    ? '0 0 8px color-mix(in srgb, var(--good) 72%, transparent)'
+                    : '0 0 8px color-mix(in srgb, var(--danger) 72%, transparent)',
                   transition: 'background 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease',
                   transform: serverProbeRunning ? 'scale(1.08)' : 'scale(1)',
                 }} />
@@ -2012,9 +2080,11 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <button className="btn" onClick={() => {
             setCfgWorkerUrl(getWorkerUrl());
             setCfgSyncToken(getSyncToken());
+            setThemePalettesDraft(themePalettes);
+            setThemePaletteMode(document.documentElement.dataset.theme || 'light');
             setReaderSettings(readReaderSettings());
             setShowConfig(true);
-          }} style={{ fontSize: '13px' }}>设置</button>
+          }} ref={settingsTriggerRef} style={{ fontSize: '13px' }}>设置</button>
           <button className="btn" onClick={onLogout} style={{ fontSize: '13px' }}>退出</button>
         </div>
       </div>
@@ -2277,7 +2347,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 aria-label="搜索标签或标题"
                 className="input-glass"
                 style={{ width: '100%', boxSizing: 'border-box', paddingRight: filter.query ? '66px' : '38px' }}
-                placeholder={filter.active ? `筛选: ${filter.query}` : '搜索标签或标题... 按回车筛选'}
+                placeholder={filter.active ? `筛选: ${filter.query}` : '搜索标签或标题… 按回车筛选'}
                 value={filter.query}
                 onChange={(e) => {
                   if (showPresets) setShowPresets(false);
@@ -2299,7 +2369,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                     display: 'flex', alignItems: 'center',
                   }}
                   title="清除筛选"
-                >✕</button>
+                ><ToolbarGlyph name="close" size={14} /></button>
               )}
               <button
                 type="button"
@@ -2397,6 +2467,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           {displayCategories.map(cat => {
             const isActive = selectedCategory?.id === cat.id;
             const label = getCategoryDisplayName(cat);
+            const isFavorites = cat?.name === FAVORITES_CATEGORY_NAME;
             return (
               <button
                 key={cat.id}
@@ -2404,7 +2475,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 onClick={() => handleCategoryClick(cat)}
                 style={{
                   fontWeight: isActive ? 600 : 400,
-                  borderRadius: '18px',
+                  borderRadius: 'var(--radius-chip)',
                   ...(isActive ? {
                     background: 'var(--accent)',
                     borderColor: 'var(--accent)',
@@ -2414,6 +2485,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 }}
                 title={label}
               >
+                {isFavorites && <ToolbarGlyph name="favorite" size={15} color="currentColor" />}
                 {label.length > 12 ? label.slice(0, 12) + '...' : label}
               </button>
             );
@@ -2427,7 +2499,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               onClick={() => handleCategoryClick(UNTAGGED_CATEGORY)}
                 style={{
                   fontWeight: isActive ? 600 : 400,
-                  borderRadius: '18px',
+                  borderRadius: 'var(--radius-chip)',
                   ...(isActive ? {
                     background: 'var(--accent)',
                     borderColor: 'var(--accent)',
@@ -2477,6 +2549,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   className="input-glass no-spinner"
                   type="text"
                   inputMode="numeric"
+                  aria-label="跳转到档案页码"
                   value={archivePageInput}
                   onChange={(event) => setArchivePageInput(event.target.value.replace(/[^\d]/g, ''))}
                   onKeyDown={(event) => { if (event.key === 'Enter' && !archiveRequestBusy) submitArchivePageInput(); }}
@@ -2491,11 +2564,11 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           ) : hasMore ? (
             supportsAutomaticArchiveLoading ? (
               loading || archivesRefreshing ? (
-                <div style={{ color: 'var(--text-sub)' }}>加载中...</div>
+                <div style={{ color: 'var(--text-sub)' }}>加载中…</div>
               ) : null
             ) : (
               <button className="btn" style={{ padding: '10px 40px' }} onClick={() => doFetch(false)} disabled={loading || archivesRefreshing}>
-                {loading ? '加载中...' : '加载更多'}
+                {loading ? '加载中…' : '加载更多'}
               </button>
             )
           ) : (archives.length > 0 && (
@@ -2505,24 +2578,23 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       </section>
     </div>
     {showConfig && createPortal(
-      <div className="settings-overlay" onClick={() => setShowConfig(false)} style={{
+      <div className="settings-overlay" role="presentation" onClick={() => setShowConfig(false)} style={{
         position: 'fixed', inset: 0, zIndex: 100000,
         background: 'rgba(0,0,0,0.55)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <form className="glass-panel settings-panel" onClick={e => e.stopPropagation()} onSubmit={(e) => {
+        <form ref={settingsDialogRef} className="glass-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {
           e.preventDefault();
           setWorkerUrl(cfgWorkerUrl);
           setSyncToken(cfgSyncToken);
+          onThemePalettesChange?.(themePalettesDraft);
           setShowConfig(false);
         }} style={{
           padding: 0, display: 'flex', flexDirection: 'column', gap: 0,
           overflow: 'hidden',
         }}>
           <div className="settings-panel-header" style={{ textAlign: 'center', padding: '28px 28px 12px' }}>
-            <h2 className="settings-title">设置</h2>
+            <h2 className="settings-title" id="home-settings-title">设置</h2>
           </div>
 
           <div className="settings-panel-scroll">
@@ -2706,6 +2778,59 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               <button type="button" className="btn" onClick={handleNavigateDeduplicate} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>重复档案检测</button>
             </div>
             <div style={{ borderTop: '1px solid var(--glass-border)', marginTop: '14px' }} />
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <SettingHint className="settings-section-title-label" text={'分别为浅色和深色模式设定主色、辅助色和底色。\n应用后会自动生成按钮、面板、状态与评论区的统一色彩语言。'}>自定义配色</SettingHint>
+            </div>
+            <div className="theme-palette-mode-tabs" role="tablist" aria-label="自定义配色模式">
+              {['light', 'dark'].map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={themePaletteMode === mode}
+                  className={`btn theme-palette-mode-tab${themePaletteMode === mode ? ' is-active' : ''}`}
+                  onClick={() => setThemePaletteMode(mode)}
+                >
+                  {mode === 'light' ? '浅色模式' : '深色模式'}
+                </button>
+              ))}
+            </div>
+            <div className="theme-palette-grid">
+              {[
+                ['accent', '主强调色'],
+                ['secondary', '辅助色'],
+                ['background', '底色'],
+              ].map(([key, label]) => (
+                <ThemeColorPicker
+                  key={key}
+                  label={label}
+                  value={themePalettesDraft?.[themePaletteMode]?.[key] || DEFAULT_THEME_PALETTES[themePaletteMode][key]}
+                  onChange={(value) => setThemePalettesDraft((current) => ({
+                    ...(current || {}),
+                    [themePaletteMode]: {
+                      ...(current?.[themePaletteMode] || DEFAULT_THEME_PALETTES[themePaletteMode]),
+                      [key]: value,
+                    },
+                  }))}
+                />
+              ))}
+            </div>
+            <div className="theme-palette-actions">
+              <span className="theme-palette-status" aria-live="polite">
+                {themePalettesDraft?.[themePaletteMode] ? `${themePaletteMode === 'light' ? '浅色' : '深色'}模式已启用自定义色彩语言` : `当前使用${themePaletteMode === 'light' ? '浅色' : '深色'}内置主题配色`}
+              </span>
+              <button type="button" className="btn theme-palette-reset" onClick={() => setThemePalettesDraft((current) => {
+                if (!current?.[themePaletteMode]) return current;
+                const next = { ...current };
+                delete next[themePaletteMode];
+                return next.light || next.dark ? next : null;
+              })}>
+                恢复当前模式默认配色
+              </button>
+            </div>
           </div>
 
           </div>

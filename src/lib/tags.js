@@ -5,18 +5,18 @@ let dbPromise = null;
 const NAMESPACE_ORDER = ['artist', 'parody', 'category', 'character', 'female', 'male', 'mixed', 'other', 'group', 'series', 'language'];
 const BOTTOM_NAMESPACE_ORDER = ['uploader', 'date_added', 'timestamp', 'source'];
 const NAMESPACE_LABELS = {
-  artist: '🎨 作者', parody: '📖 原作', category: '📂 分类', character: '👤 角色',
-  female: '♀ 女性', male: '♂ 男性', mixed: '🔀 混合', other: '📌 其他',
-  group: '🏢 社团', series: '📚 系列', language: '🌐 语言', uploader: '📤 发布者',
-  date_added: '📅 添加日期', timestamp: '🕐 发布日期',
-  source: '🔗 来源', general: '🏷️ 通用'
+  artist: '作者', parody: '原作', category: '分类', character: '角色',
+  female: '女性', male: '男性', mixed: '混合', other: '其他',
+  group: '社团', series: '系列', language: '语言', uploader: '发布者',
+  date_added: '添加日期', timestamp: '发布日期',
+  source: '来源', general: '通用'
 };
 const NAMESPACE_COLORS = {
-  artist: '#e0994c', parody: '#5aa9d4', category: '#7ec7c5', character: '#8ec274',
-  female: '#de7680', male: '#72a3db', mixed: '#d6aa38', other: '#a5afb4',
-  group: '#948cd9', series: '#e0759e', language: '#64c9a9', uploader: '#78afc4',
-  date_added: '#8c9baa', timestamp: '#8c9baa',
-  source: '#78afc4', general: '#a5afb4'
+  artist: 'var(--tag-artist)', parody: 'var(--tag-parody)', category: 'var(--tag-category)', character: 'var(--tag-character)',
+  female: 'var(--tag-female)', male: 'var(--tag-male)', mixed: 'var(--tag-mixed)', other: 'var(--tag-other)',
+  group: 'var(--tag-group)', series: 'var(--tag-series)', language: 'var(--tag-language)', uploader: 'var(--tag-uploader)',
+  date_added: 'var(--tag-date-added)', timestamp: 'var(--tag-timestamp)',
+  source: 'var(--tag-source)', general: 'var(--tag-general)'
 };
 
 const NS_CN_MAP = {

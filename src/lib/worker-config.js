@@ -1,3 +1,5 @@
+import { normalizeThemePalettes } from './theme.js';
+
 const WORKER_URL_KEY = 'lrr_worker_url';
 const SYNC_TOKEN_KEY = 'lrr_sync_token';
 
@@ -49,6 +51,7 @@ export const CONFIG_KEYS = [
   'lrr_eh_favorite_delete_sync',
   'lrr_image_cache_limit',
   'lrr_theme_mode',
+  'lrr_custom_theme',
   'lrr_filter_presets',
 ];
 
@@ -92,6 +95,15 @@ export function importConfig(encoded) {
   for (const key of CONFIG_KEYS) {
     if (cfg[key] !== undefined) {
       if (typeof cfg[key] !== 'string') continue;
+      if (key === 'lrr_custom_theme') {
+        let parsedTheme;
+        try { parsedTheme = JSON.parse(cfg[key]); } catch { continue; }
+        const normalizedTheme = normalizeThemePalettes(parsedTheme);
+        if (!normalizedTheme) continue;
+        localStorage.setItem(key, JSON.stringify(normalizedTheme));
+        count++;
+        continue;
+      }
       localStorage.setItem(key, cfg[key]);
       count++;
     }

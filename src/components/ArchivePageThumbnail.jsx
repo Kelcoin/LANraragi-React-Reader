@@ -122,6 +122,8 @@ export default function ArchivePageThumbnail({ archiveId, pageIndex, active, cac
       ref={wrapRef}
       src={src}
       alt=""
+      width="100"
+      height="130"
       className="archive-page-thumbnail-image"
       onLoad={() => setThumbState('ready')}
       onError={() => {

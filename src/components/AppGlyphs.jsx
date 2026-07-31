@@ -231,6 +231,20 @@ function renderToolbarGlyph(name) {
       );
     case 'watchlist':
       return <path d="M6 4.5h12v16l-6-3-6 3v-16z" />;
+    case 'favorite':
+      return <path d="m12 3.8 2.55 5.18 5.72.83-4.14 4.04.98 5.7L12 16.86l-5.11 2.69.98-5.7-4.14-4.04 5.72-.83L12 3.8z" fill="currentColor" fillOpacity="0.16" />;
+    case 'comment':
+      return <path d="M5.25 5.5h13.5A1.75 1.75 0 0 1 20.5 7.25v7.5a1.75 1.75 0 0 1-1.75 1.75H11l-4.75 3v-3H5.25a1.75 1.75 0 0 1-1.75-1.75v-7.5A1.75 1.75 0 0 1 5.25 5.5z" />;
+    case 'check':
+      return <path d="m5 12.5 4.2 4.2L19 7" />;
+    case 'eyedropper':
+      return (
+        <>
+          <path d="m14.6 5.2 4.2 4.2M16.2 3.6l4.2 4.2" />
+          <path d="m13.4 6.4-7.9 7.9-1.1 4.3 4.3-1.1 7.9-7.9a2.25 2.25 0 0 0-3.2-3.2z" />
+          <path d="m7.1 14.9 2 2" opacity="0.62" />
+        </>
+      );
     case 'play':
       return <path d="M5 3l14 9-14 9V3z" />;
     case 'pause':
@@ -328,10 +342,10 @@ function renderThemeModeGlyph(mode) {
 }
 
 const SECTION_GLYPH_COLORS = {
-  continue: '#3cbf8c',
-  watchlist: '#e6a246',
-  random: '#409eff',
-  archives: '#a482d6',
+  continue: '#70784f',
+  watchlist: '#70784f',
+  random: '#b74632',
+  archives: '#525d38',
 };
 
 export function HomeSectionGlyph({ name, size = 18, color = 'currentColor', style }) {

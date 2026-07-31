@@ -4,7 +4,7 @@ import { checkServerStatus } from './lib/api';
 import { canNavigate, navigateHome, navigateToArchive, parseRouteFromLocation } from './lib/navigation';
 import { startHistoryExistenceCheckTimer, stopHistoryExistenceCheckTimer } from './lib/historyMaintenance';
 import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, exportConfig, importConfig } from './lib/worker-config';
-import { applyThemeMode, getNextThemeMode, readStoredThemeMode, watchSystemTheme, writeStoredThemeMode } from './lib/theme';
+import { applyThemeMode, getNextThemeMode, readStoredThemeMode, readStoredThemePalettes, watchSystemTheme, writeStoredThemeMode, writeStoredThemePalettes } from './lib/theme';
 import PwaStatus from './components/PwaStatus';
 import AppVersion from './components/AppVersion';
 import ConfigTransferDialog from './components/ConfigTransferDialog';
@@ -26,9 +26,10 @@ function AppRouteFallback() {
 
 export default function App() {
   const [route, setRoute] = useState(() => resolveInitialRoute(parseRouteFromLocation()));
+  const [themePalettes, setThemePalettes] = useState(readStoredThemePalettes);
   const [themeMode, setThemeMode] = useState(() => {
     const mode = readStoredThemeMode();
-    applyThemeMode(mode);
+    applyThemeMode(mode, { palettes: readStoredThemePalettes() });
     return mode;
   });
   
@@ -66,15 +67,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    applyThemeMode(themeMode);
+    applyThemeMode(themeMode, { palettes: themePalettes });
     writeStoredThemeMode(themeMode);
     return watchSystemTheme(() => {
-      if (themeMode === 'auto') applyThemeMode(themeMode);
+      if (themeMode === 'auto') applyThemeMode(themeMode, { palettes: themePalettes });
     });
-  }, [themeMode]);
+  }, [themeMode, themePalettes]);
 
   const handleThemeModeChange = () => {
     setThemeMode((mode) => getNextThemeMode(mode));
+  };
+
+  const handleThemePalettesChange = (palettes) => {
+    const normalized = writeStoredThemePalettes(palettes);
+    setThemePalettes(normalized);
+    applyThemeMode(themeMode, { palettes: normalized });
   };
 
   useEffect(() => {
@@ -153,8 +160,10 @@ export default function App() {
     };
     setTempConfig(next);
     const nextThemeMode = readStoredThemeMode();
-    applyThemeMode(nextThemeMode);
+    const nextThemePalettes = readStoredThemePalettes();
+    applyThemeMode(nextThemeMode, { palettes: nextThemePalettes });
     setThemeMode(nextThemeMode);
+    setThemePalettes(nextThemePalettes);
     setConfigTransfer(null);
     setLoginNotice({ type: 'success', text: `已导入 ${count} 项配置` });
   };
@@ -219,7 +228,7 @@ export default function App() {
               </button>
             </div>
 
-            <button type="submit" className="btn" style={{ marginTop: '8px', padding: '12px', background: 'var(--accent)', borderColor: 'rgba(141,216,255,0.58)', color: '#fff' }} disabled={loginLoading}>
+            <button type="submit" className="btn" style={{ marginTop: '8px', padding: '12px', background: 'var(--accent)', borderColor: 'var(--accent-strong)', color: 'var(--accent-contrast)' }} disabled={loginLoading}>
               {loginLoading ? '正在验证连接…' : '开始阅读'}
             </button>
 
@@ -271,7 +280,7 @@ export default function App() {
           syncToken: getSyncToken(),
         });
         navigateHome({ replace: true });
-      }} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />;
+        }} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} themePalettes={themePalettes} onThemePalettesChange={handleThemePalettesChange} />;
   }
 
   return (

@@ -5,7 +5,7 @@ import ArchiveContextMenu from '../components/ArchiveContextMenu';
 import { navigateToMetadata } from '../lib/navigation';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ArchiveSearchBox from '../components/ArchiveSearchBox';
-import { HomeSectionGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
+import { HomeSectionGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { getCropCover, getHistory, loadHistoryState } from '../lib/history';
 import { lrrApi } from '../lib/api';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
@@ -246,7 +246,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
                   style={{
                     background: selectionMode ? 'var(--accent)' : undefined,
                     borderColor: selectionMode ? 'var(--accent)' : undefined,
-                    color: selectionMode ? '#fff' : undefined,
+                    color: selectionMode ? 'var(--accent-contrast)' : undefined,
                   }}
                 >
                   {selectionMode ? '退出多选' : '多选'}
@@ -287,7 +287,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
                           borderRadius: '8px',
                           border: selected ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.26)',
                           background: selected ? 'var(--accent)' : 'rgba(8,10,14,0.78)',
-                          color: '#fff',
+                          color: 'var(--accent-contrast)',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
@@ -295,7 +295,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
                           boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
                         }}
                       >
-                        {selected ? '✓' : ''}
+                        {selected && <ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" />}
                       </button>
                     ) : null}
                     onClick={(event) => {

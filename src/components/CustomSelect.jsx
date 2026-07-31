@@ -1,8 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
+import { ToolbarGlyph } from './AppGlyphs';
 
 export default function CustomSelect({ value, options, onChange, style, compact, ariaLabel }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -42,7 +45,23 @@ export default function CustomSelect({ value, options, onChange, style, compact,
   }, [isOpen, updatePosition]);
 
   const selectedOption = options.find(opt => opt.value === value);
+  const selectedIndex = options.findIndex(opt => opt.value === value);
   const isNarrow = typeof window !== 'undefined' && window.innerWidth < 480;
+
+  const selectOption = useCallback((nextValue) => {
+    onChange(nextValue);
+    setIsOpen(false);
+  }, [onChange]);
+
+  const openDropdown = useCallback(() => {
+    if (!isOpen && triggerRef.current) updatePosition();
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : (options.length > 0 ? 0 : -1));
+    setIsOpen(true);
+  }, [isOpen, options.length, selectedIndex, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen) setActiveIndex(selectedIndex);
+  }, [isOpen, selectedIndex]);
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', minWidth: compact ? (isNarrow ? '80px' : '100px') : '150px', ...style }}>
@@ -50,6 +69,10 @@ export default function CustomSelect({ value, options, onChange, style, compact,
         ref={triggerRef}
         className="input-glass"
         role="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? listboxId : undefined}
+        aria-activedescendant={isOpen && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
         aria-label={ariaLabel}
         tabIndex={0}
         style={{ 
@@ -60,17 +83,33 @@ export default function CustomSelect({ value, options, onChange, style, compact,
           borderColor: isOpen ? 'var(--accent)' : undefined
         }}
         onClick={() => {
-            if (!isOpen && triggerRef.current) {
-              updatePosition();
-            }
-            setIsOpen(prev => !prev);
+            if (isOpen) setIsOpen(false);
+            else openDropdown();
           }}
         onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            setIsOpen(false);
+            return;
+          }
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!isOpen) {
+              openDropdown();
+              return;
+            }
+            if (options.length === 0) return;
+            setActiveIndex((previous) => {
+              const next = e.key === 'ArrowDown' ? previous + 1 : previous - 1;
+              return (next + options.length) % options.length;
+            });
+            return;
+          }
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            triggerRef.current?.click();
+            if (!isOpen) openDropdown();
+            else if (activeIndex >= 0 && options[activeIndex]) selectOption(options[activeIndex].value);
           }
-          if (e.key === 'Escape') setIsOpen(false);
         }}
       >
         <span style={{ flex: 1, minWidth: 0, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -80,29 +119,33 @@ export default function CustomSelect({ value, options, onChange, style, compact,
       </div>
 
       {isOpen && createPortal(
-        <div ref={dropdownRef} className="glass-panel dropdown-animate" data-select-dropdown="true" style={{
+        <div ref={dropdownRef} id={listboxId} className="glass-panel dropdown-animate" data-select-dropdown="true" role="listbox" aria-label={ariaLabel} style={{
           position: 'fixed', top: pos.top, left: pos.left, width: pos.width || 'auto',
           zIndex: 100100, padding: '8px 0', maxHeight: pos.maxHeight, overflowY: 'auto',
           overscrollBehavior: 'contain', touchAction: 'pan-y',
           boxShadow: '0 18px 52px rgba(0,0,0,0.46)',
           background: 'var(--dropdown-bg)'
         }}>
-          {options.map(opt => (
+          {options.map((opt, index) => (
             <div
               key={opt.value}
               className="custom-select-option"
               data-selected={opt.value === value}
+              id={`${listboxId}-option-${index}`}
+              role="option"
+              aria-selected={opt.value === value}
               style={{
                 minHeight: '40px', padding: '0 12px', margin: '3px 8px', borderRadius: '9px', cursor: 'pointer', fontSize: '14px',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                background: opt.value === value ? 'var(--accent-soft)' : 'transparent',
+                background: index === activeIndex || opt.value === value ? 'var(--accent-soft)' : 'transparent',
                 color: opt.value === value ? 'var(--accent-strong)' : 'var(--text-main)',
                 transition: 'background 0.2s'
               }}
-              onClick={() => { onChange(opt.value); setIsOpen(false); }}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => selectOption(opt.value)}
             >
               <span>{opt.label}</span>
-              {opt.value === value && <span style={{ fontSize: '14px' }}>✔</span>}
+              {opt.value === value && <ToolbarGlyph name="check" size={15} color="var(--accent-strong)" />}
             </div>
           ))}
         </div>,

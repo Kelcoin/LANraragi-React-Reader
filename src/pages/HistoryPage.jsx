@@ -6,7 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ArchiveSearchBox from '../components/ArchiveSearchBox';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
-import { HomeSectionGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
+import { HomeSectionGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
 import { isArchiveMissingError, runHistoryExistenceCheck } from '../lib/historyMaintenance';
 import { hasValidWorkerConfig } from '../lib/worker-config';
@@ -380,7 +380,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                   style={{
                     background: selectionMode ? 'var(--accent)' : undefined,
                     borderColor: selectionMode ? 'var(--accent)' : undefined,
-                    color: selectionMode ? '#fff' : undefined,
+                    color: selectionMode ? 'var(--accent-contrast)' : undefined,
                   }}
                 >
                   {selectionMode ? '退出多选' : '多选'}
@@ -439,7 +439,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                                 borderRadius: '8px',
                                 border: selected ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.26)',
                                 background: selected ? 'var(--accent)' : 'rgba(8,10,14,0.78)',
-                                color: '#fff',
+                                color: 'var(--accent-contrast)',
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -447,7 +447,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                                 boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
                               }}
                             >
-                              {selected ? '✓' : ''}
+                              {selected && <ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" />}
                             </button>
                           ) : null}
                           onClick={(e) => {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { applyThemePalette, createCustomThemeTokens, normalizeThemePalette, normalizeThemePalettes, readStoredThemePalette, readStoredThemePalettes, writeStoredThemePalette, writeStoredThemePalettes } from '../src/lib/theme.js';
+import { hslToHex, parseHexColor, rgbToHsl } from '../src/lib/color.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
@@ -31,12 +33,47 @@ test('global UI copy and selection styles use the archive terminology consistent
   const css = read('src/index.css');
   const metadata = read('src/pages/MetadataPage.jsx');
   const home = read('src/pages/Home.jsx');
-  assert.match(css, /body\s*\{[^}]*user-select:\s*none;[^}]*-webkit-user-select:\s*none;/s);
+  assert.match(css, /body\s*\{[^}]*overflow-x:\s*clip;/s);
+  assert.match(css, /body\s*\{[^}]*user-select:\s*none;/s);
   assert.match(css, /input,[\s\S]*textarea,[\s\S]*\[contenteditable="true"\][^{]*\{[^}]*user-select:\s*text;/s);
   assert.match(metadata, /className="metadata-field-label">标签</);
   assert.match(css, /\.metadata-field-label\s*\{[^}]*font-weight:\s*650;/s);
   assert.match(home, /style=\{\{ flex:\s*'1\.35 1 0'/);
   assert.doesNotMatch(home, /全部归档|待看归档|上传归档|重复归档检测/);
+});
+
+test('calm editorial theme replaces blue-gray light surfaces with paper, graphite, olive, and vermilion tokens', () => {
+  const css = read('src/index.css');
+  const lightTheme = css.match(/:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+
+  assert.match(lightTheme, /--page-bg:\s*#f4f0e8/i);
+  assert.match(lightTheme, /--surface-1:\s*#fffdf8/i);
+  assert.match(lightTheme, /--text-main:\s*#282522/i);
+  assert.match(lightTheme, /--accent:\s*#b74632/i);
+  assert.match(lightTheme, /--olive:\s*#70784f/i);
+  assert.match(lightTheme, /--card-bg:\s*#fffdf8/i);
+  assert.doesNotMatch(lightTheme, /linear-gradient/i);
+  assert.doesNotMatch(lightTheme, /#(?:2563eb|1d4ed8|d8e1eb|f4f7fb)/i);
+});
+
+test('calm editorial surfaces are flat by default and use restrained shape hierarchy', () => {
+  const css = read('src/index.css');
+  const cardRule = css.match(/\.archive-card-shell\s*\{([^}]*)\}/)?.[1] || '';
+  assert.match(css, /--radius-panel:\s*12px/);
+  assert.match(css, /--radius-control:\s*7px/);
+  assert.match(css, /\.glass-panel\s*\{[\s\S]*?background:\s*var\(--surface-1\);[\s\S]*?backdrop-filter:\s*none;/);
+  assert.match(css, /\.btn:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
+  assert.match(css, /\.input-glass:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
+  assert.match(cardRule, /background:\s*var\(--card-bg\)/);
+  assert.doesNotMatch(cardRule, /background:\s*linear-gradient/);
+});
+
+test('calm editorial progress and upload states avoid decorative purple gradients', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.archive-card-progress-fill\s*\{[\s\S]*background:\s*var\(--accent\)/);
+  assert.match(css, /\.upload-progress span\s*\{[\s\S]*background:\s*var\(--accent\)/);
+  assert.match(css, /\.upload-task-row::before\s*\{[\s\S]*background:\s*var\(--accent-soft\)/);
+  assert.doesNotMatch(css, /#9c7cff/);
 });
 
 test('expanded EH settings release their stacking context so tooltips cover secret inputs', () => {
@@ -351,7 +388,7 @@ test('immersive Reader replaces its top toolbar with side-aware corner controls'
   assert.match(reader, /if \(showDrawer\) return;/);
   assert.match(reader, /onWheel=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(css, /\.reader-immersive-controls\[data-visible="true"\]\s+\.reader-immersive-control-button/);
-  assert.match(css, /background:\s*rgba\(18,\s*21,\s*28,\s*0\.[45]\d*\)/);
+  assert.match(css, /background:\s*var\(--reader-control-bg\)/);
   assert.match(css, /\.reader-immersive-trigger\s*\{[^}]*width:\s*max\(32px,\s*7vw\);/s);
   assert.match(reader, /\{\['left', 'right'\]\.map\(\(side\) => \(/);
   assert.match(reader, /data-visible=\{immersiveControlsSide === side \? 'true' : 'false'\}/);
@@ -677,8 +714,9 @@ test('watchlist glow stays inside compact carousel padding', () => {
   const glowEnd = css.indexOf('.archive-cover-image', glowStart);
   const glowCss = css.slice(glowStart, glowEnd);
 
-  assert.match(glowCss, /inset 0 0 0 1px[\s\S]*inset 0 0 8px/);
-  assert.match(glowCss, /:hover[\s\S]*inset 0 0 0 2px[\s\S]*inset 0 0 10px/);
+  assert.match(glowCss, /inset 0 0 0 1px/);
+  assert.match(glowCss, /:hover[\s\S]*inset 0 0 0 2px/);
+  assert.doesNotMatch(glowCss, /inset 0 0 8px|inset 0 0 10px/);
   assert.doesNotMatch(glowCss, /^ {4}(?!inset\s)[^\n]*0 0 \d+px/gm);
   assert.doesNotMatch(glowCss, /\.archive-card-shell::before/);
   assert.doesNotMatch(glowCss, /var\(--shadow\)/);
@@ -865,13 +903,13 @@ test('archive multi-select exposes a checkbox indicator and keyboard semantics',
 
   assert.match(card, /className=\{`archive-card-selection-checkbox\$\{selected \? ' is-selected' : ''\}`\}/);
   assert.match(card, /className=\{`glass-panel archive-card-shell\$\{selected \? ' is-selected' : ''\}`\}/);
-  assert.match(card, /role=\{selectionMode \? 'checkbox' : undefined\}/);
+  assert.match(card, /role=\{selectionMode \? 'checkbox' : (?:undefined|'button')\}/);
   assert.match(card, /aria-checked=\{selectionMode \? selected : undefined\}/);
   assert.match(card, /onKeyDown=\{\(event\) => \{/);
-  assert.match(card, /event\.key === 'Enter' \|\| event\.key === ' '/);
+  assert.match(card, /event\.key !== 'Enter' && event\.key !== ' '/);
   assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:[^}]*inset 0 0 0/s);
   assert.match(css, /\.archive-card-shell\.is-selected::after\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*border:\s*2px solid var\(--accent\);[^}]*pointer-events:\s*none;/s);
-  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:[^}]*0 0 0 1px rgba\(255,255,255,0\.82\)[^}]*0 3px 10px rgba\(0,0,0,0\.9\)/s);
+  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:\s*0 0 0 2px var\(--surface-1\)/s);
   assert.doesNotMatch(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:/s);
   assert.match(home, /className="archive-count-badge archive-selection-count-badge"/);
 });
@@ -1044,7 +1082,7 @@ test('README documents category-scoped filtering and LANraragi Favorites', () =>
   const readme = read('README.md');
 
   assert.match(readme, /静态和动态分类/);
-  assert.match(readme, /`🔖 Favorites`[\s\S]*?`⭐收藏夹`/);
+  assert.match(readme, /Favorites 分类固定显示为“收藏夹”/);
   assert.match(readme, /加入或移出 LANraragi 收藏夹/);
 });
 
@@ -1126,4 +1164,252 @@ test('home uses automatic archive loading or the manual fallback, never both', (
   assert.match(home, /if \(!supportsAutomaticArchiveLoading\) return undefined;/);
   assert.match(home, /supportsAutomaticArchiveLoading\s*\?\s*\(/);
   assert.match(home, /:\s*\(\s*<button[^>]*onClick=\{\(\) => doFetch\(false\)\}/s);
+});
+
+test('touch archive filtering dismisses the virtual keyboard on commit and outside pointerdown', () => {
+  const home = read('src/pages/Home.jsx');
+  const suggestions = read('src/components/TagSuggest.jsx');
+  assert.match(home, /filterInputRef\.current\?\.blur\(\)/);
+  assert.match(home, /document\.addEventListener\('pointerdown'/);
+  assert.match(home, /data-filter-popover/);
+  assert.match(suggestions, /data-filter-popover="true"/);
+});
+
+test('light theme uses opaque paper surfaces and synchronizes browser theme color', () => {
+  const css = read('src/index.css');
+  const theme = read('src/lib/theme.js');
+  const html = read('index.html');
+  assert.match(css, /:root\[data-theme="light"\][\s\S]*--page-bg:\s*#f4f0e8;/);
+  assert.match(css, /:root\[data-theme="light"\][\s\S]*--glass-bg:\s*#fffdf8;/);
+  assert.match(css, /:root\[data-theme="light"\][\s\S]*--text-muted:\s*#8a8278;/);
+  assert.match(theme, /querySelector\?\.\('\[data-theme-color\]'\)/);
+  assert.match(theme, /setAttribute\('content',/);
+  assert.doesNotMatch(html, /maximum-scale|user-scalable=no/);
+});
+
+test('archive cards, custom selects, and overlays expose complete keyboard semantics', () => {
+  const card = read('src/components/ArchiveCard.jsx');
+  const select = read('src/components/CustomSelect.jsx');
+  const home = read('src/pages/Home.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  const dialog = read('src/components/ConfirmDialog.jsx');
+  assert.match(card, /role=\{selectionMode \? 'checkbox' : 'button'\}/);
+  assert.match(card, /tabIndex=\{!disabled \? 0 : -1\}/);
+  assert.match(card, /event\.key !== 'Enter' && event\.key !== ' '/);
+  assert.match(select, /role="listbox"/);
+  assert.match(select, /role="option"/);
+  assert.match(select, /e\.key === 'ArrowDown'/);
+  assert.match(home, /role="dialog"[\s\S]*aria-modal="true"/);
+  assert.match(reader, /role="dialog"[\s\S]*aria-modal="true"/);
+  assert.match(reader, /<button[\s\S]*data-reader-drawer-page/);
+  assert.match(dialog, /event\.key !== 'Tab'/);
+});
+
+test('settings dialog keeps initial focus on first control instead of dialog fallback', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /const firstFocusable = getFocusable\(\)\[0\];/);
+  assert.match(home, /:not\(\.settings-hint-wrap\)/);
+  assert.match(home, /if \(firstFocusable\) firstFocusable\.focus\(\);\s*else dialog\?\.focus\(\);/);
+  assert.doesNotMatch(home, /getFocusable\(\)\[0\]\?\.focus\(\)\s*\|\|\s*dialog\?\.focus\(\)/);
+});
+
+test('dark theme restores a calm black-blue palette and uses an independent dark overlay token', () => {
+  const css = read('src/index.css');
+  const darkTheme = css.match(/:root,\s*:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+
+  assert.match(darkTheme, /--page-bg:\s*#0f1115/i);
+  assert.match(darkTheme, /--surface-1:\s*#171b23/i);
+  assert.match(darkTheme, /--surface-2:\s*#202633/i);
+  assert.match(darkTheme, /--accent:\s*#4a9ff0/i);
+  assert.match(darkTheme, /--overlay-bg:\s*rgba\(0,\s*0,\s*0,\s*0\.74\)/i);
+  assert.match(css, /\.settings-overlay\s*\{[\s\S]*background:\s*var\(--overlay-bg\)/s);
+  assert.doesNotMatch(css, /\.settings-overlay\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--text-main\)/s);
+});
+
+test('custom theme exposes persisted three-color semantic palette and applies/reset tokens globally', () => {
+  const theme = read('src/lib/theme.js');
+  const app = read('src/App.jsx');
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(theme, /CUSTOM_THEME_STORAGE_KEY/);
+  assert.match(theme, /readStoredThemePalette/);
+  assert.match(theme, /writeStoredThemePalette/);
+  assert.match(theme, /applyThemePalette/);
+  assert.match(theme, /createCustomThemeTokens/);
+  assert.match(theme, /removeProperty/);
+  assert.match(app, /themePalette/);
+  assert.match(app, /applyThemeMode\(themeMode, \{ palettes: themePalettes \}\)/);
+  assert.match(home, /themePalettes/);
+  assert.match(home, /ThemeColorPicker/);
+  assert.doesNotMatch(home, /type="color"/);
+  assert.match(home, /恢复当前模式默认配色/);
+});
+
+test('custom theme palette normalizes, persists, generates semantic tokens, and clears cleanly', () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  };
+  const palette = normalizeThemePalette({ accent: '#123', secondary: '#456789', background: '#abcdef' });
+  assert.deepEqual(palette, { accent: '#112233', secondary: '#456789', background: '#abcdef' });
+  assert.ok(createCustomThemeTokens(palette, 'dark')['--accent']);
+  assert.equal(writeStoredThemePalette(palette, storage).accent, '#112233');
+  assert.deepEqual(readStoredThemePalette(storage), palette);
+
+  const properties = new Map();
+  const root = { dataset: { theme: 'light' }, style: { setProperty: (key, value) => properties.set(key, value), removeProperty: (key) => properties.delete(key) } };
+  applyThemePalette(palette, { root, resolvedTheme: 'light' });
+  assert.equal(properties.get('--accent'), createCustomThemeTokens(palette, 'light')['--accent']);
+  applyThemePalette(null, { root, resolvedTheme: 'light' });
+  assert.equal(properties.has('--accent'), false);
+  assert.equal(writeStoredThemePalette(null, storage), null);
+  assert.equal(readStoredThemePalette(storage), null);
+});
+
+test('continue-reading and watchlist heading hover keeps background transparent while enlarging type', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.home-carousel-header \.section-heading-link:hover\s*\{[\s\S]*background:\s*transparent;[\s\S]*border-color:\s*transparent;[\s\S]*transform:\s*scale\(1\.03\)/s);
+  assert.match(css, /\.home-carousel-header \.section-heading-link\s*\{[\s\S]*transition:[^}]*transform/s);
+});
+
+test('EH comments use semantic theme tokens without fixed uploader colors', () => {
+  const comments = read('src/components/EhComments.jsx');
+  const css = read('src/index.css');
+  assert.doesNotMatch(comments, /#d77f12|#ff9800/);
+  assert.match(comments, /var\(--comment-uploader-border\)/);
+  assert.match(css, /\.eh-comment-card\s*\{[\s\S]*background:\s*var\(--comment-card-bg\)/s);
+  assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*border-left-color:\s*var\(--comment-uploader-border\)/s);
+  assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*background:\s*var\(--comment-uploader-bg\)/s);
+  assert.match(css, /\.eh-comment-input\s*\{[\s\S]*background:\s*var\(--comment-input-bg\)/s);
+});
+
+test('home sections clip their own collapsed carousel edges instead of leaking borders', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\s*\{[\s\S]*overflow:\s*hidden;/s);
+  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\s*\{[\s\S]*min-width:\s*0;/s);
+});
+test('custom themes keep independent light and dark palettes and migrate the legacy single palette', () => {
+  const theme = read('src/lib/theme.js');
+  assert.match(theme, /DEFAULT_THEME_PALETTES/);
+  assert.match(theme, /readStoredThemePalettes/);
+  assert.match(theme, /writeStoredThemePalettes/);
+  assert.match(theme, /palettes\?\.\[resolved\]/);
+
+  const storage = new Map();
+  const fakeStorage = {
+    getItem: (key) => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key),
+  };
+  const palettes = {
+    light: { accent: '#b74632', secondary: '#70784f', background: '#f4f0e8' },
+    dark: { accent: '#4a9ff0', secondary: '#79b8ff', background: '#0f1115' },
+  };
+  assert.deepEqual(normalizeThemePalettes(palettes), palettes);
+  writeStoredThemePalettes(palettes, fakeStorage);
+  assert.deepEqual(readStoredThemePalettes(fakeStorage), palettes);
+  fakeStorage.setItem('lrr_custom_theme', JSON.stringify(palettes.light));
+  assert.deepEqual(readStoredThemePalettes(fakeStorage), { light: palettes.light, dark: palettes.light });
+  assert.equal(readStoredThemePalette(fakeStorage).accent, palettes.light.accent);
+  writeStoredThemePalette(null, fakeStorage);
+  assert.equal(readStoredThemePalettes(fakeStorage), null);
+});
+
+test('custom color picker accepts canonical hex values and converts between RGB/HSL', () => {
+  const picker = read('src/components/ThemeColorPicker.jsx');
+  assert.doesNotMatch(picker, /type=["']color["']/);
+  assert.match(picker, /inputMode=["']text["']/);
+  assert.match(picker, /二维|saturation|hue/i);
+  assert.equal(parseHexColor('#abc'), '#aabbcc');
+  assert.equal(parseHexColor('aabbcc'), '#aabbcc');
+  assert.equal(parseHexColor('#12xz45'), null);
+  assert.deepEqual(rgbToHsl({ r: 255, g: 0, b: 0 }), { h: 0, s: 100, l: 50 });
+  assert.equal(hslToHex({ h: 120, s: 100, l: 50 }), '#00ff00');
+});
+
+test('config transfer includes and validates the split custom theme palette', () => {
+  const config = read('src/lib/worker-config.js');
+  assert.match(config, /lrr_custom_theme/);
+  assert.match(config, /normalizeThemePalettes/);
+  assert.match(config, /JSON\.parse\(cfg\[key\]\)/);
+  assert.match(config, /normalizeThemePalettes\(parsedTheme\)/);
+});
+
+test('visible emoji are replaced by project glyphs while API favorite name stays compatible', () => {
+  const categories = read('src/lib/categories.js');
+  const comments = read('src/components/EhComments.jsx');
+  const tags = read('src/lib/tags.js');
+  const home = read('src/pages/Home.jsx');
+  assert.doesNotMatch(categories, /⭐/);
+  assert.doesNotMatch(comments, /💬/);
+  assert.doesNotMatch(tags, /🎨|📖|📂|👤|🔀|📌|🏢|📚|🌐|📤|📅|🕐|🔗|🏷/);
+  assert.match(home, /ToolbarGlyph[\s\S]*favorite/);
+  assert.match(comments, /ToolbarGlyph[\s\S]*comment/);
+});
+
+test('settings overlay blurs without shifting the page when scroll is locked', () => {
+  const css = read('src/index.css');
+  const lock = read('src/lib/bodyScrollLock.js');
+  assert.match(css, /\.settings-overlay\s*\{[\s\S]*backdrop-filter:\s*blur\(/);
+  assert.match(css, /-webkit-backdrop-filter:\s*blur\(/);
+  assert.match(lock, /viewportWidth[\s\S]*clientWidth/);
+  assert.match(lock, /previousBodyPaddingRight/);
+});
+
+test('custom palette settings stay at the bottom and explain from the section title', () => {
+  const home = read('src/pages/Home.jsx');
+  const toolsIndex = home.indexOf('<div className="settings-section-title">工具</div>');
+  const paletteIndex = home.indexOf('<SettingHint className="settings-section-title-label"');
+  const footerIndex = home.indexOf('<div className="settings-panel-footer">');
+  assert.ok(toolsIndex >= 0 && paletteIndex > toolsIndex && paletteIndex < footerIndex);
+  assert.match(home, /<SettingHint className="settings-section-title-label" text=\{['"]分别为浅色和深色模式设定主色、辅助色和底色。\\n应用后会自动生成按钮、面板、状态与评论区的统一色彩语言。['"]\}>自定义配色<\/SettingHint>/);
+  assert.doesNotMatch(home, />配色说明<\/SettingHint>/);
+});
+
+test('custom palette picker opens from a color swatch and closes as a popover', () => {
+  const picker = read('src/components/ThemeColorPicker.jsx');
+  assert.match(picker, /useState\(false\)/);
+  assert.match(picker, /theme-color-picker-trigger/);
+  assert.match(picker, /theme-color-picker-popover/);
+  assert.match(picker, /setIsOpen\(false\)/);
+  assert.match(picker, /event\.key (?:===|!==) ['"]Escape['"]/);
+  assert.match(picker, /event\.stopPropagation\(\)/);
+  assert.match(picker, /data-theme-color-picker/);
+});
+
+test('settings overlay, watchlist glow, and palette swatches use reduced-motion-safe transitions', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.settings-overlay\s*\{[\s\S]*animation:\s*settingsOverlayReveal/);
+  assert.match(css, /\.watchlist-card:not\(\.watchlist-card-plain\) \.archive-card-shell\s*\{[\s\S]*transition:[^}]*box-shadow/s);
+  assert.match(css, /\.theme-color-picker-preview\s*\{[\s\S]*transition:\s*background-color/s);
+  assert.match(css, /@keyframes settingsOverlayReveal/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.settings-overlay[\s\S]*animation:\s*none/s);
+});
+
+test('palette preview components keep stable keys so mode switching can animate color changes', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /<ThemeColorPicker[\s\S]*key=\{key\}/);
+  assert.doesNotMatch(home, /key=\{`\$\{themePaletteMode\}-\$\{key\}`\}/);
+});
+
+test('custom palette picker escapes settings clipping, stays above the modal, and uses circular swatches', () => {
+  const picker = read('src/components/ThemeColorPicker.jsx');
+  const css = read('src/index.css');
+  assert.match(picker, /createPortal/);
+  assert.match(picker, /popoverPosition/);
+  assert.match(picker, /addEventListener\('scroll',[\s\S]*true\)/);
+  assert.match(css, /\.theme-color-picker-popover\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*100003;/s);
+  assert.match(css, /\.theme-color-picker-trigger\s*\{[^}]*border-radius:\s*50%;/s);
+  assert.match(css, /\.theme-color-picker-preview\s*\{[^}]*border-radius:\s*50%;/s);
+  assert.match(css, /\.theme-color-picker-trigger:hover,[\s\S]*background:\s*var\(--surface-inset\)/s);
+});
+
+test('release version is 1.5.0 across package manifests', () => {
+  const packageJson = read('package.json');
+  const packageLock = read('package-lock.json');
+  assert.match(packageJson, /"version":\s*"1\.5\.0"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.0"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.0"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.0"/);
 });

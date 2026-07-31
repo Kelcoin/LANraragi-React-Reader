@@ -25,8 +25,27 @@ export default function ConfirmDialog({
     if (!open) return undefined;
 
     const previouslyFocused = document.activeElement;
+    const getFocusable = () => Array.from(dialogRef.current?.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) || []);
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onCancel?.();
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     const releaseScrollLock = acquireBodyScrollLock();
@@ -56,6 +75,7 @@ export default function ConfirmDialog({
         role={destructive ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="confirm-dialog-title" id={titleId}>
