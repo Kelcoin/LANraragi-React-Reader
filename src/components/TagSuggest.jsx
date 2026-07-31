@@ -7,22 +7,22 @@ import { NamespaceGlyph } from './AppGlyphs';
 const COLORS = NAMESPACE_COLORS_MAP || {};
 
 const NS_COLORS = {
-  artist: COLORS.artist || '#e0994c',
-  parody: COLORS.parody || '#5aa9d4',
-  category: COLORS.category || '#7ec7c5',
-  character: COLORS.character || '#8ec274',
-  female: COLORS.female || '#de7680',
-  male: COLORS.male || '#72a3db',
-  mixed: COLORS.mixed || '#d6aa38',
-  other: COLORS.other || '#a5afb4',
-  group: COLORS.group || '#948cd9',
-  series: COLORS.series || '#e0759e',
-  language: COLORS.language || '#64c9a9',
-  uploader: COLORS.uploader || '#78afc4',
-  date_added: COLORS.date_added || '#8c9baa',
-  timestamp: COLORS.timestamp || '#8c9baa',
-  source: COLORS.source || '#78afc4',
-  general: COLORS.general || '#a5afb4'
+  artist: COLORS.artist || 'var(--tag-artist)',
+  parody: COLORS.parody || 'var(--tag-parody)',
+  category: COLORS.category || 'var(--tag-category)',
+  character: COLORS.character || 'var(--tag-character)',
+  female: COLORS.female || 'var(--tag-female)',
+  male: COLORS.male || 'var(--tag-male)',
+  mixed: COLORS.mixed || 'var(--tag-mixed)',
+  other: COLORS.other || 'var(--tag-other)',
+  group: COLORS.group || 'var(--tag-group)',
+  series: COLORS.series || 'var(--tag-series)',
+  language: COLORS.language || 'var(--tag-language)',
+  uploader: COLORS.uploader || 'var(--tag-uploader)',
+  date_added: COLORS.date_added || 'var(--tag-date-added)',
+  timestamp: COLORS.timestamp || 'var(--tag-timestamp)',
+  source: COLORS.source || 'var(--tag-source)',
+  general: COLORS.general || 'var(--tag-general)'
 };
 
 export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSetActive }) {

@@ -383,7 +383,7 @@ const PageImage = React.forwardRef(({
         overflow: 'hidden',
         minWidth: 0,
         minHeight: 0,
-        background: isImmersive ? '#000' : 'transparent',
+        background: isImmersive ? 'var(--reader-stage-bg)' : 'transparent',
       }}
     >
       <img
@@ -798,7 +798,7 @@ function getNormalReaderFrameStyle(isMobile) {
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    boxShadow: '0 18px 50px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.035)',
+    boxShadow: '0 18px 50px rgba(0,0,0,0.34), inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent)',
     boxSizing: 'border-box',
   };
 }
@@ -3444,8 +3444,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       data-ios={isIosWebKit ? 'true' : 'false'}
       style={{
         minHeight: '100vh',
-        background: viewMode === 'normal' ? 'transparent' : '#000',
-        color: viewMode === 'immersive' ? '#fff' : 'var(--text-main)',
+        background: viewMode === 'normal' ? 'transparent' : 'var(--reader-stage-bg)',
+        color: viewMode === 'immersive' ? 'var(--reader-overlay-text)' : 'var(--text-main)',
       }}
     >
       {progressSyncNotice && (
@@ -3795,8 +3795,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                     justifyContent: 'center',
                     padding: '24px',
                     textAlign: 'center',
-                    background: '#000',
-                    color: '#f2f3f6',
+                    background: 'var(--reader-stage-bg)',
+                    color: 'var(--reader-overlay-text)',
                     fontSize: 'clamp(18px, 3vw, 30px)',
                     fontWeight: 750,
                     pointerEvents: 'none',
@@ -3863,7 +3863,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               width: '100%',
               height: '100%',
               overflow: webtoonActive ? 'hidden' : (zoomScale === 1.0 ? 'hidden' : 'visible'),
-              background: '#000',
+              background: 'var(--reader-stage-bg)',
               userSelect: 'none',
               WebkitUserSelect: 'none',
               WebkitTouchCallout: 'none',
@@ -3944,7 +3944,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                   overscrollBehavior: 'contain',
                   WebkitOverflowScrolling: 'touch',
                   touchAction: 'pan-y',
-                  background: '#000',
+                  background: 'var(--reader-stage-bg)',
                 }}
               >
                 {pages.map((pageUrl, index) => (
@@ -3969,7 +3969,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
             {!webtoonActive && settings.autoTurnActive && (
               <div
                 ref={progressBarRef}
-                style={{ position: 'absolute', top: 0, left: 0, height: '2px', background: '#4caf50', width: '0%', zIndex: 120 }}
+                style={{ position: 'absolute', top: 0, left: 0, height: '2px', background: 'var(--good)', width: '0%', zIndex: 120 }}
               />
             )}
 
@@ -3978,7 +3978,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               style={{
                 position: 'absolute', inset: 0,
                 display: webtoonActive ? 'none' : 'flex', justifyContent: 'center', alignItems: 'center',
-                background: '#000', zIndex: 1,
+                background: 'var(--reader-stage-bg)', zIndex: 1,
                 transform: 'translateX(-100%)',
               }}
             >
@@ -3997,16 +3997,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               style={{
                 position: 'absolute', inset: 0,
                 display: webtoonActive ? 'none' : 'flex', justifyContent: 'center', alignItems: 'center',
-                background: '#000', zIndex: 1,
+                background: 'var(--reader-stage-bg)', zIndex: 1,
                 transform: 'translateX(100%)',
               }}
             >
               {immersiveRightSpread.length === 0 ? (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
-                  color: 'rgba(255,255,255,0.6)', userSelect: 'none', pointerEvents: 'none',
+                  color: 'color-mix(in srgb, var(--reader-overlay-text) 60%, transparent)', userSelect: 'none', pointerEvents: 'none',
                 }}>
-                  <HomeSectionGlyph name="continue" size={48} color="rgba(255,255,255,0.6)" style={{ opacity: 0.7 }} />
+                  <HomeSectionGlyph name="continue" size={48} color="color-mix(in srgb, var(--reader-overlay-text) 60%, transparent)" style={{ opacity: 0.7 }} />
                   <span style={{ fontSize: '16px', letterSpacing: '2px' }}>继续滑动退出沉浸模式</span>
                 </div>
               ) : (
@@ -4047,13 +4047,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                     gap: '16px',
                     padding: '24px',
                     textAlign: 'center',
-                    background: '#000',
+                    background: 'var(--reader-stage-bg)',
                   }}
                 >
-                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: '#f2f3f6', letterSpacing: '0.5px', textWrap: 'balance' }}>
+                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: 'var(--reader-overlay-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
                     {pageSwitchLabel}
                   </div>
-                  <div style={{ fontSize: 'clamp(16px, 2.6vw, 26px)', fontWeight: 600, color: 'rgba(223,225,232,0.62)' }}>
+                  <div style={{ fontSize: 'clamp(16px, 2.6vw, 26px)', fontWeight: 600, color: 'color-mix(in srgb, var(--reader-overlay-text) 62%, transparent)' }}>
                     正在解码图像
                   </div>
                 </div>
@@ -4100,8 +4100,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                   right: isMobile ? 'auto' : '20px',
                   padding: '4px 10px',
                   borderRadius: '16px',
-                  background: 'rgba(0,0,0,0.65)',
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'color-mix(in srgb, var(--reader-stage-bg) 65%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--reader-overlay-text) 12%, transparent)',
                   fontSize: '11px',
                   letterSpacing: '1px',
                   pointerEvents: 'none',
@@ -4152,7 +4152,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           position: 'fixed', inset: 0, zIndex: 200,
           display: 'flex', justifyContent: drawerSide === 'left' ? 'flex-start' : 'flex-end',
           pointerEvents: showDrawer ? 'auto' : 'none',
-          background: showDrawer ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0)',
+          background: showDrawer ? 'var(--overlay-bg)' : 'transparent',
           backdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
           WebkitBackdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
           transition: 'background 0.25s ease, backdrop-filter 0.25s ease, -webkit-backdrop-filter 0.25s ease',
@@ -4337,7 +4337,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <ArchivePageThumbnail archiveId={archiveId} pageIndex={idx} active={showDrawer} cacheOnly={assetCacheOnly} eager={drawerPrefetchSet.has(idx)} />
                       </div>
-                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '11px', textAlign: 'center', padding: '2px 0' }}>
+                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--overlay-bg)', color: 'var(--reader-overlay-text)', fontSize: '11px', textAlign: 'center', padding: '2px 0' }}>
                         P. {idx + 1}
                       </div>
                     </button>

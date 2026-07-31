@@ -437,14 +437,14 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                                 width: '28px',
                                 height: '28px',
                                 borderRadius: '8px',
-                                border: selected ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.26)',
-                                background: selected ? 'var(--accent)' : 'rgba(8,10,14,0.78)',
+                                border: selected ? '1px solid var(--accent)' : '1px solid color-mix(in srgb, var(--accent-contrast) 26%, transparent)',
+                                background: selected ? 'var(--accent)' : 'var(--overlay-bg)',
                                 color: 'var(--accent-contrast)',
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+                                boxShadow: 'var(--shadow-soft)',
                               }}
                             >
                               {selected && <ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" />}

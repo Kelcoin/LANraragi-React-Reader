@@ -342,10 +342,10 @@ function renderThemeModeGlyph(mode) {
 }
 
 const SECTION_GLYPH_COLORS = {
-  continue: '#70784f',
-  watchlist: '#70784f',
-  random: '#b74632',
-  archives: '#525d38',
+  continue: 'var(--olive)',
+  watchlist: 'var(--olive)',
+  random: 'var(--accent)',
+  archives: 'var(--olive-strong)',
 };
 
 export function HomeSectionGlyph({ name, size = 18, color = 'currentColor', style }) {

@@ -2035,14 +2035,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                       position: 'absolute',
                       inset: '1px',
                       borderRadius: '50%',
-                      border: `1px solid ${serverOnline ? 'rgba(76,175,80,0.30)' : 'rgba(244,67,54,0.30)'}`,
+                      border: `1px solid ${serverOnline ? 'color-mix(in srgb, var(--good) 30%, transparent)' : 'color-mix(in srgb, var(--danger) 30%, transparent)'}`,
                       animation: 'serverProbeRipple 1.4s ease-out infinite',
                     }} />
                     <span style={{
                       position: 'absolute',
                       inset: '1px',
                       borderRadius: '50%',
-                      border: `1px solid ${serverOnline ? 'rgba(76,175,80,0.22)' : 'rgba(244,67,54,0.22)'}`,
+                      border: `1px solid ${serverOnline ? 'color-mix(in srgb, var(--good) 22%, transparent)' : 'color-mix(in srgb, var(--danger) 22%, transparent)'}`,
                       animation: 'serverProbeRipple 1.4s ease-out 0.42s infinite',
                     }} />
                   </>
@@ -2474,7 +2474,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 className="btn archive-category-button"
                 onClick={() => handleCategoryClick(cat)}
                 style={{
-                  fontWeight: isActive ? 600 : 400,
+                  fontWeight: isActive ? 700 : 500,
                   borderRadius: 'var(--radius-chip)',
                   ...(isActive ? {
                     background: 'var(--accent)',
@@ -2498,7 +2498,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 className="btn archive-category-button"
               onClick={() => handleCategoryClick(UNTAGGED_CATEGORY)}
                 style={{
-                  fontWeight: isActive ? 600 : 400,
+                  fontWeight: isActive ? 700 : 500,
                   borderRadius: 'var(--radius-chip)',
                   ...(isActive ? {
                     background: 'var(--accent)',
@@ -2580,7 +2580,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     {showConfig && createPortal(
       <div className="settings-overlay" role="presentation" onClick={() => setShowConfig(false)} style={{
         position: 'fixed', inset: 0, zIndex: 100000,
-        background: 'rgba(0,0,0,0.55)',
+        background: 'var(--overlay-bg)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <form ref={settingsDialogRef} className="glass-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {

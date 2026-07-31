@@ -549,7 +549,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
           width: isWide ? `${wideCardWidth}px` : '150px',
           padding: '12px',
           cursor: disabled ? 'not-allowed' : 'pointer',
-          transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease',
+          transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease, box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1)',
           display: 'flex',
           flexDirection: 'column',
           touchAction: 'pan-x pan-y pinch-zoom',
