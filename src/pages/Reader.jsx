@@ -747,8 +747,10 @@ async function primePageBlob(pageUrl, priority = IMAGE_LOAD_PRIORITY.PRELOAD) {
   }, { priority });
 }
 
-function getNormalReaderFrameHeight(isMobile) {
-  return isMobile ? 'min(72vh, 680px)' : 'min(82vh, 1080px)';
+function getNormalReaderFrameHeight(isMobile, toolbarHeight = 'var(--reader-toolbar-height, 68px)') {
+  const navRowHeight = isMobile ? 92 : 96;
+  // Only cap unusually tall viewports; common phones stay below a 2:1 frame ratio.
+  return `min(calc(100dvh - ${toolbarHeight} - 24px - ${navRowHeight}px), calc((100vw - 32px) * 2))`;
 }
 
 const normalReaderStageShellStyle = {
@@ -779,8 +781,8 @@ function forceWindowScrollTop() {
   document.body.scrollTop = 0;
 }
 
-function getNormalReaderFrameStyle(isMobile) {
-  const height = getNormalReaderFrameHeight(isMobile);
+function getNormalReaderFrameStyle(isMobile, toolbarHeight = 'var(--reader-toolbar-height, 68px)') {
+  const height = getNormalReaderFrameHeight(isMobile, toolbarHeight);
   return {
     flex: '0 0 auto',
     minHeight: height,
@@ -877,6 +879,11 @@ function useReaderToolbarMode(isMobile, layoutKey = null) {
       if (toolbar.style.getPropertyValue('--reader-toolbar-title-width') !== titleWidthValue) {
         toolbar.style.setProperty('--reader-toolbar-title-width', titleWidthValue);
       }
+      const root = toolbar.closest('.reader-root');
+      const toolbarHeightValue = `${toolbar.getBoundingClientRect().height}px`;
+      if (root?.style.getPropertyValue('--reader-toolbar-height') !== toolbarHeightValue) {
+        root.style.setProperty('--reader-toolbar-height', toolbarHeightValue);
+      }
       const titleWidth = titleContent
         ? Math.max(Math.ceil(titleContent.getBoundingClientRect().width), 80)
         : 0;
@@ -908,7 +915,7 @@ function useReaderToolbarMode(isMobile, layoutKey = null) {
     toolbar.querySelectorAll('.reader-toolbar-group, .reader-toolbar-title').forEach((node) => observer.observe(node));
     document.fonts?.ready?.then(update).catch(() => {});
     return () => observer.disconnect();
-  }, [isMobile, layoutKey, mode]);
+  }, [isMobile, layoutKey]);
 
   return { toolbarRef, mode };
 }
@@ -1518,6 +1525,17 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       return acquireBodyScrollLock();
     }
     return undefined;
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== 'immersive') return undefined;
+    const applyStatusBar = (hidden) => {
+      try {
+        window.ReadoshiAndroid?.setStatusBarHidden(hidden);
+      } catch {}
+    };
+    applyStatusBar(true);
+    return () => applyStatusBar(false);
   }, [viewMode]);
 
   useEffect(() => {
@@ -4217,7 +4235,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               return grouped.map((group) => (
                 <div key={group.ns} style={{ marginBottom: '8px' }}>
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: group.color, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: `color-mix(in srgb, ${group.color} 76%, var(--text-main))`, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap', background: `color-mix(in srgb, ${group.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${group.color} 36%, transparent)`, borderRadius: '5px', padding: '2px 6px' }}>
                       <NamespaceGlyph ns={group.ns} size={14} color={group.color} />
                       {stripDecoratedLabel(group.label)}
                     </span>
@@ -4246,8 +4264,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                           alignItems: 'center',
                           padding: '2px 6px',
                           borderRadius: '5px',
-                          background: `${group.color}18`,
-                          border: `1px solid ${group.color}40`,
+                          background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
+                          border: `1px solid color-mix(in srgb, ${group.color} 32%, transparent)`,
                           color: 'var(--text-main)',
                           fontSize: '10px',
                           whiteSpace: 'nowrap',
@@ -4256,12 +4274,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                           transition: 'background-color 0.15s ease, border-color 0.15s ease',
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = `${group.color}30`;
-                          e.currentTarget.style.borderColor = group.color;
+                          e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 18%, transparent)`;
+                          e.currentTarget.style.borderColor = `color-mix(in srgb, ${group.color} 70%, transparent)`;
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = `${group.color}18`;
-                          e.currentTarget.style.borderColor = `${group.color}40`;
+                          e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 10%, transparent)`;
+                          e.currentTarget.style.borderColor = `color-mix(in srgb, ${group.color} 32%, transparent)`;
                         }}
                       >
                         {translateTag(group.ns, value)}

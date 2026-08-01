@@ -13,7 +13,7 @@ const DEDUPE_KEY_PREFIX = 'dedupe:';
 const SYNC_SCHEMA_VERSION = 3;
 const PROJECT_NAME = 'Readoshi';
 const PROJECT_URL = 'https://github.com/Kelcoin/Readoshi';
-const WORKER_VERSION = '1.0.0';
+const WORKER_VERSION = '1.0.1';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -283,6 +283,12 @@ function detectNonGallery(html) {
       lower.includes('your ip address has been temporarily banned')) {
     return 'login-or-banned';
   }
+  if (lower.includes('gallery not found')) {
+    return 'gallery-not-found';
+  }
+  if (lower.includes('copyright claim')) {
+    return 'copyright-removed';
+  }
   if (html.length < 500 && !html.includes('gallery')) {
     return 'empty-or-redirect';
   }
@@ -325,6 +331,12 @@ async function ehProxy(request) {
       if (blockType === 'cloudflare-block') {
         return json({ error: 'EH_CLOUDFLARE_BLOCK', status: res.status, detail: 'EH/EX 返回了 Cloudflare 验证页面' }, res.status);
       }
+      if (blockType === 'gallery-not-found') {
+        return json({ error: 'GALLERY_NOT_FOUND', status: res.status, detail: 'EH 返回了画廊不存在页面' }, 404);
+      }
+      if (blockType === 'copyright-removed') {
+        return json({ error: 'GALLERY_COPYRIGHT_REMOVED', status: res.status, detail: 'EH 返回了版权移除页面' }, 410);
+      }
       return text('Upstream returned ' + res.status, res.status);
     }
 
@@ -334,6 +346,12 @@ async function ehProxy(request) {
     }
     if (blockType === 'cloudflare-block') {
       return json({ error: 'EH_CLOUDFLARE_BLOCK', status: 200, detail: 'Worker 节点被 EH/EX 的 Cloudflare 防护拦截' }, 403);
+    }
+    if (blockType === 'gallery-not-found') {
+      return json({ error: 'GALLERY_NOT_FOUND', status: 200, detail: 'EH 返回了画廊不存在页面' }, 404);
+    }
+    if (blockType === 'copyright-removed') {
+      return json({ error: 'GALLERY_COPYRIGHT_REMOVED', status: 200, detail: 'EH 返回了版权移除页面' }, 410);
     }
     if (blockType === 'empty-or-redirect') {
       return json({ error: 'EH_EMPTY_RESPONSE', status: 200, detail: 'EH 返回了空白或极短页面' }, 403);

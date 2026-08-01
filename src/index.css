@@ -775,12 +775,10 @@ textarea:focus-visible,
   transition: color 0.16s ease;
 }
 
-.secret-input-shell:hover::after,
 .secret-input-shell:focus-within::after {
   opacity: 0;
 }
 
-.secret-input-shell:hover .secret-input,
 .secret-input-shell:focus-within .secret-input {
   color: var(--text-main);
   caret-color: var(--text-main);
@@ -2396,6 +2394,11 @@ textarea:focus-visible,
 .eh-comment-uploader-badge { background: var(--comment-uploader-border); color: var(--surface-1); }
 .eh-comment-input { background: var(--comment-input-bg); border: 1px solid var(--reader-control-border); color: var(--text-main); }
 .eh-comment-input:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
+.eh-comment-input::-webkit-resizer,
+.eh-comment-input::-webkit-scrollbar-corner {
+  background: transparent;
+  border: 0;
+}
 .eh-comment-error {
   color: var(--comment-negative);
   background: color-mix(in srgb, var(--comment-negative) 10%, var(--surface-2));
@@ -2407,6 +2410,15 @@ textarea:focus-visible,
 }
 .eh-comment-error-title { font-size: 14px; font-weight: 750; line-height: 1.45; text-wrap: balance; }
 .eh-comment-error-detail { margin-top: 5px; color: var(--text-sub); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; text-wrap: pretty; }
+.eh-comment-error.is-gallery-missing {
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+  color: var(--warning-text);
+  text-align: center;
+}
+.eh-comment-error.is-gallery-missing .eh-comment-error-title {
+  font-size: 16px;
+}
 .eh-vote-button { transition: color 0.2s ease, background-color 0.2s ease, transform 0.2s ease; }
 
 .reader-toolbar-button {

@@ -328,7 +328,7 @@ test('Reader toolbar has three measured states and page commits preserve transie
   assert.match(reader, /reader-toolbar-group-right" style=\{\{[^}]*gridColumn: '3'/);
   assert.match(reader, /pageIndicatorTransientActiveRef\.current[\s\S]*checkIndicatorOverlap\(true\)/);
   assert.match(reader, /useReaderToolbarMode\(isMobile, viewMode\)/);
-  assert.match(reader, /\[isMobile, layoutKey, mode\]/);
+  assert.doesNotMatch(reader, /\[isMobile, layoutKey, mode\]/);
   assert.match(reader, /viewMode === 'normal' && \([\s\S]*className="reader-toolbar"[\s\S]*position: 'sticky',[\s\S]*top: 0/);
 });
 
@@ -1277,12 +1277,24 @@ test('continue-reading and watchlist heading hover keeps background transparent 
 test('EH comments use semantic theme tokens without fixed uploader colors', () => {
   const comments = read('src/components/EhComments.jsx');
   const css = read('src/index.css');
+  const state = read('src/lib/ehCommentsState.js');
   assert.doesNotMatch(comments, /#d77f12|#ff9800/);
   assert.match(comments, /var\(--comment-uploader-border\)/);
   assert.match(css, /\.eh-comment-card\s*\{[\s\S]*background:\s*var\(--comment-card-bg\)/s);
   assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*border-left-color:\s*var\(--comment-uploader-border\)/s);
   assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*background:\s*var\(--comment-uploader-bg\)/s);
   assert.match(css, /\.eh-comment-input\s*\{[\s\S]*background:\s*var\(--comment-input-bg\)/s);
+  assert.match(comments, /M8 11L3 3H13L8 11Z/);
+  assert.match(css, /\.eh-comment-input::-webkit-resizer[^}]*background:\s*transparent;/s);
+  assert.match(state, /GALLERY_NOT_FOUND: \['画廊不存在或已删除'/);
+  assert.match(state, /GALLERY_COPYRIGHT_REMOVED: \['画廊因版权要求被移除'/);
+  assert.match(state, /export function isTerminalGalleryError/);
+  assert.match(comments, /readEhCommentsCacheState/);
+  assert.match(comments, /writeEhCommentsCache\(cacheKey, \[\], \{ unavailable/);
+  assert.match(comments, /isTerminalGalleryError\(error\?\.code\)/);
+  assert.match(comments, /!isTerminalGalleryError\(error\?\.code\) && \(\n\s*<div className="eh-comments-actions"/);
+  assert.match(comments, /is-gallery-missing/);
+  assert.match(css, /\.eh-comment-error\.is-gallery-missing/);
 });
 
 test('home sections clip their own collapsed carousel edges instead of leaking borders', () => {

@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ToolbarGlyph } from './AppGlyphs';
-import { classifyEhGalleryPage, presentEhError } from '../lib/ehCommentsState';
+import { classifyEhGalleryPage, isTerminalGalleryError, presentEhError } from '../lib/ehCommentsState';
 import {
   createEhCommentsCacheKey,
   deleteEhCommentsCache,
-  readEhCommentsCache,
+  readEhCommentsCacheState,
   writeEhCommentsCache,
 } from '../lib/ehCommentsCache';
 
@@ -21,7 +21,7 @@ const VoteIcon = ({ direction, active = false }) => (
   >
     {direction === 'up'
       ? <path d="M8 3L13 11H3L8 3Z" opacity={active ? 1 : 0.96} />
-      : <path d="M8 13L3 5H13L8 13Z" opacity={active ? 1 : 0.96} />}
+      : <path d="M8 11L3 3H13L8 11Z" opacity={active ? 1 : 0.96} />}
   </svg>
 );
 
@@ -284,7 +284,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
 
     const showError = (code, detail = '') => {
       if (requestSeqRef.current !== requestSeq) return;
-      const presentation = presentEhError(code, detail);
+      const presentation = { ...presentEhError(code, detail), code };
       setError(presentation);
       setNeedsCookie(presentation.needsCookie);
     };
@@ -294,9 +294,19 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
 
     try {
       if (!forceRefresh) {
-        cachedComments = await readEhCommentsCache(cacheKey);
+        const cachedState = await readEhCommentsCacheState(cacheKey);
         if (!isCurrent()) return;
-        if (cachedComments) {
+        if (cachedState) {
+          if (cachedState.unavailable) {
+            const presentation = presentEhError(cachedState.unavailable);
+            setComments([]);
+            setLoading(false);
+            setLoaded(true);
+            setError({ ...presentation, code: cachedState.unavailable });
+            setNeedsCookie(presentation.needsCookie);
+            return;
+          }
+          cachedComments = cachedState.comments;
           setComments(cachedComments);
           setLoading(false);
           setLoaded(true);
@@ -380,11 +390,14 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         return;
       }
 
-      if (classifyEhGalleryPage(htmlText, 200) === 'unavailable') {
+      const galleryState = classifyEhGalleryPage(htmlText, 200);
+      if (galleryState === 'not_found' || galleryState === 'copyright_removed' || galleryState === 'unavailable') {
         if (!isCurrent()) return;
         if (!cachedComments) setComments([]);
         setLoaded(true);
-        showError('GALLERY_UNAVAILABLE');
+        const terminalCode = galleryState === 'not_found' ? 'GALLERY_NOT_FOUND' : galleryState === 'copyright_removed' ? 'GALLERY_COPYRIGHT_REMOVED' : 'GALLERY_UNAVAILABLE';
+        showError(terminalCode);
+        writeEhCommentsCache(cacheKey, [], { unavailable: terminalCode }).catch(() => {});
         return;
       }
 
@@ -434,6 +447,9 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         showError('NETWORK_ERROR', '请求超时，请检查 Worker 或网络连接。');
       } else {
         showError(e.ehCode || 'UNKNOWN_WORKER_ERROR', e.ehDetail || e.message);
+      }
+      if (isTerminalGalleryError(e?.ehCode)) {
+        await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
       }
       if (cachedComments) setLoaded(true);
     } finally {
@@ -547,6 +563,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         <h3 className="eh-comments-title" style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ToolbarGlyph name="comment" size={18} color="var(--accent)" /> E-Hentai 评论区
         </h3>
+        {!isTerminalGalleryError(error?.code) && (
         <div className="eh-comments-actions" style={{ display: 'flex', gap: '8px' }}>
           <a
             href={jumpUrl} target="_blank" rel="noopener noreferrer"
@@ -563,9 +580,10 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
             <span className="eh-comment-action-label">{loading ? '加载中…' : '重新加载'}</span>
           </button>
         </div>
+        )}
       </div>
 
-      {!loaded && !loading && (
+      {!loaded && !loading && !error && (
         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: '13px' }}>
           点击「重新加载」获取 E-Hentai 评论
         </div>
@@ -578,7 +596,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       )}
 
       {error && (
-        <div className="eh-comment-error" role="alert">
+        <div className={`eh-comment-error${error.code === 'GALLERY_NOT_FOUND' || error.code === 'GALLERY_COPYRIGHT_REMOVED' || error.code === 'GALLERY_UNAVAILABLE' ? ' is-gallery-missing' : ''}`} role="alert">
           <div className="eh-comment-error-title">{error.title}</div>
           <div className="eh-comment-error-detail">{error.detail}</div>
         </div>
@@ -618,7 +636,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                   padding: '14px 16px', borderRadius: '10px', marginBottom: '10px',
                   borderLeftColor: c.isUploader ? 'var(--comment-uploader-border)' : 'var(--comment-card-border)'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px', fontSize: '12px', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid var(--comment-card-border)', fontSize: '12px', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
                       <span style={{ color: c.isEditable ? 'var(--good-text)' : 'var(--accent)', fontWeight: 'bold', fontSize: '13px' }}>
                         {c.user}{c.isEditable ? ' (你)' : ''}
