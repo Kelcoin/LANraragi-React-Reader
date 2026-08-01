@@ -3,9 +3,10 @@ import { loadTagDB } from './lib/tags';
 import { checkServerStatus } from './lib/api';
 import { canNavigate, navigateHome, navigateToArchive, parseRouteFromLocation } from './lib/navigation';
 import { startHistoryExistenceCheckTimer, stopHistoryExistenceCheckTimer } from './lib/historyMaintenance';
-import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, exportConfig, importConfig } from './lib/worker-config';
+import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, importConfig } from './lib/worker-config';
 import { applyThemeMode, getNextThemeMode, readStoredThemeMode, readStoredThemePalettes, watchSystemTheme, writeStoredThemeMode, writeStoredThemePalettes } from './lib/theme';
 import PwaStatus from './components/PwaStatus';
+import SecretInput from './components/SecretInput';
 import AppVersion from './components/AppVersion';
 import ConfigTransferDialog from './components/ConfigTransferDialog';
 import { cacheServerInfo } from './lib/serverInfoCache';
@@ -134,16 +135,6 @@ export default function App() {
     }
   };
 
-  const handleExportConfig = () => {
-    const encoded = exportConfig({
-      lrr_server_url: tempConfig.url,
-      lrr_api_key: tempConfig.key,
-      lrr_worker_url: tempConfig.workerUrl,
-      lrr_sync_token: tempConfig.syncToken,
-    });
-    setConfigTransfer({ mode: 'export', value: encoded });
-  };
-
   const handleImportConfig = async () => {
     let encoded = '';
     try { encoded = await navigator.clipboard.readText(); } catch {}
@@ -173,7 +164,15 @@ export default function App() {
       <>
         <div className="login-shell">
           <div className="login-stack">
+
           <form onSubmit={handleConnect} className={`glass-panel login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
+            <button type="button" className="login-import-button" onClick={handleImportConfig} aria-label="导入配置" title="导入配置">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12" />
+                <path d="m8 11 4 4 4-4" />
+                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              </svg>
+            </button>
             <div className="login-brand-lockup">
               <span className="login-brand-logo" aria-hidden="true" />
               <h2 className="login-title">Readoshi</h2>
@@ -212,20 +211,15 @@ export default function App() {
                 </div>
                 <div>
                   <label className="field-label" htmlFor="sync-token">访问 Token</label>
-                  <span className="secret-input-shell" data-secret={tempConfig.syncToken}>
-                    <input id="sync-token" name="sync-token" type="text" autoComplete="off" spellCheck={false} className="input-glass secret-input" value={tempConfig.syncToken} onChange={e => setTempConfig({...tempConfig, syncToken: e.target.value})} />
-                  </span>
+                  <SecretInput
+                    id="sync-token"
+                    name="sync-token"
+                    ariaLabel="访问 Token"
+                    value={tempConfig.syncToken}
+                    onChange={e => setTempConfig({...tempConfig, syncToken: e.target.value})}
+                  />
                 </div>
               </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="button" className="btn" onClick={handleExportConfig} style={{ flex: 1, padding: '9px', fontSize: '12px' }}>
-                导出配置
-              </button>
-              <button type="button" className="btn" onClick={handleImportConfig} style={{ flex: 1, padding: '9px', fontSize: '12px' }}>
-                导入配置
-              </button>
             </div>
 
             <button type="submit" className="btn" style={{ marginTop: '8px', padding: '12px', background: 'var(--accent)', borderColor: 'var(--accent-strong)', color: 'var(--accent-contrast)' }} disabled={loginLoading}>

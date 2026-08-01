@@ -645,9 +645,10 @@ test('progress regression is configured only from the general settings section',
   const cacheSettings = read('src/components/CacheSettings.jsx');
   const css = read('src/index.css');
 
-  for (const label of ['通用设置', '缓存', '档案显示', '浏览与记录']) {
-    assert.match(home, new RegExp(`>${label}<`));
-  }
+  assert.match(home, /\[['"]general['"], ['"]通用['"]\],\s*\[['"]worker['"], ['"]Worker['"]\],\s*\[['"]palette['"], ['"]配色['"]\],\s*\[['"]tools['"], ['"]工具['"]\]/s);
+  assert.doesNotMatch(home, /\[\s*['"]transfer['"],\s*['"]导入导出['"]\]/);
+  assert.doesNotMatch(home, />缓存<|>档案显示<|>浏览与记录<|>E-Hentai 评论区<|>Worker 设置<|>导入导出</);
+  assert.doesNotMatch(home, /\[\s*['"]archives['"],\s*['"]档案['"]\]/);
   assert.doesNotMatch(cacheSettings, /允许阅读进度回溯|通用设置/);
   assert.match(home, /allowProgressRegression: checked/);
   assert.match(home, /className="settings-control"/);
@@ -1372,11 +1373,12 @@ test('settings overlay blurs without shifting the page when scroll is locked', (
 
 test('custom palette settings stay at the bottom and explain from the section title', () => {
   const home = read('src/pages/Home.jsx');
-  const toolsIndex = home.indexOf('<div className="settings-section-title">工具</div>');
-  const paletteIndex = home.indexOf('<SettingHint className="settings-section-title-label"');
+  const paletteIndex = home.indexOf('className="theme-palette-mode-tabs"');
+  const toolsIndex = home.indexOf('>上传档案</button>');
+  const transferIndex = home.indexOf('>导出配置</button>');
   const footerIndex = home.indexOf('<div className="settings-panel-footer">');
-  assert.ok(toolsIndex >= 0 && paletteIndex > toolsIndex && paletteIndex < footerIndex);
-  assert.match(home, /<SettingHint className="settings-section-title-label" text=\{['"]分别为浅色和深色模式设定主色、辅助色和底色。\\n应用后会自动生成按钮、面板、状态与评论区的统一色彩语言。['"]\}>自定义配色<\/SettingHint>/);
+  assert.ok(paletteIndex >= 0 && toolsIndex > paletteIndex && transferIndex > toolsIndex && transferIndex < footerIndex);
+  assert.match(home, /theme-palette-mode-tabs/);
   assert.doesNotMatch(home, />配色说明<\/SettingHint>/);
 });
 

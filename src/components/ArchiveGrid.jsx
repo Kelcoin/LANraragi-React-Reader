@@ -12,7 +12,8 @@ import React, {
 } from 'react';
 import { ARCHIVE_CARD_WIDTH, getArchiveCardMove, packArchiveGridItems } from '../lib/archiveGridLayout';
 
-const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', children, ...props }, forwardedRef) {
+const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', displayMode = 'card', children, ...props }, forwardedRef) {
+  const isCompact = displayMode === 'compact';
   const gridRef = useRef(null);
   const widthsRef = useRef(new Map());
   const previousRectsRef = useRef(new Map());
@@ -71,7 +72,7 @@ const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', children, 
   const childKeySignature = Children.toArray(children)
     .map((element) => String(element.key))
     .join('\u001f');
-  const animationLayoutVersion = `${layout.width}:${layout.gap}:${layout.revision}:${childKeySignature}`;
+  const animationLayoutVersion = `${displayMode}:${layout.width}:${layout.gap}:${layout.revision}:${childKeySignature}`;
 
   const packedChildren = useMemo(() => {
     const items = Children.toArray(children).map((element) => ({
@@ -79,7 +80,7 @@ const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', children, 
       key: String(element.key),
       width: widthsRef.current.get(String(element.key)) ?? ARCHIVE_CARD_WIDTH,
     }));
-    const packed = packArchiveGridItems(items, layout.width, layout.gap);
+    const packed = isCompact ? items : packArchiveGridItems(items, layout.width, layout.gap);
 
     return packed.map(({ element, key }) => (
       isValidElement(element)
@@ -89,12 +90,19 @@ const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', children, 
             archiveGridChildrenVersion: children,
             archiveGridLayoutVersion: `${layout.width}:${layout.gap}:${layout.revision}`,
             onArchiveGridWidthChange: reportItemWidth,
+            displayMode,
           })
         : element
     ));
-  }, [children, layout.gap, layout.revision, layout.width, reportItemWidth]);
+  }, [children, isCompact, layout.gap, layout.revision, layout.width, reportItemWidth]);
 
   useLayoutEffect(() => {
+    if (isCompact) {
+      for (const animation of animationsRef.current.values()) animation.cancel();
+      animationsRef.current.clear();
+      previousRectsRef.current.clear();
+      return undefined;
+    }
     const node = gridRef.current;
     if (!node) return;
 
@@ -183,7 +191,7 @@ const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', children, 
   }, []);
 
   return (
-    <div ref={setGridRef} className={['archive-grid', className].filter(Boolean).join(' ')} {...props}>
+    <div ref={setGridRef} className={['archive-grid', isCompact ? 'is-compact' : '', className].filter(Boolean).join(' ')} {...props}>
       {packedChildren}
     </div>
   );

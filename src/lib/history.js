@@ -14,6 +14,7 @@ const REMOTE_HIDE_READ_CACHE_KEY = 'lrr_hide_read_remote_cache';
 const HISTORY_PENDING_DELETES_KEY = 'lrr_history_pending_deletes';
 const CROP_COVER_KEY = 'lrr_crop_cover';
 const ARCHIVE_BROWSE_MODE_KEY = 'lrr_archive_browse_mode';
+const ARCHIVE_DISPLAY_MODE_KEY = 'lrr_archive_display_mode';
 const REMOTE_LOAD_TTL_MS = 30 * 1000;
 const HISTORY_SYNC_INTERVAL_MS = 8 * 1000;
 const HISTORY_SYNC_RETRY_MS = 2 * 60 * 1000;
@@ -436,6 +437,21 @@ export const getArchiveBrowseMode = () => localStorage.getItem(ARCHIVE_BROWSE_MO
 
 export const setArchiveBrowseMode = (mode) => {
   localStorage.setItem(ARCHIVE_BROWSE_MODE_KEY, mode === 'paged' ? 'paged' : 'scroll');
+};
+
+export const ARCHIVE_DISPLAY_MODES = { card: 'card', compact: 'compact' };
+
+export const getArchiveDisplayMode = () => (
+  localStorage.getItem(ARCHIVE_DISPLAY_MODE_KEY) === ARCHIVE_DISPLAY_MODES.compact
+    ? ARCHIVE_DISPLAY_MODES.compact
+    : ARCHIVE_DISPLAY_MODES.card
+);
+
+export const setArchiveDisplayMode = (mode) => {
+  localStorage.setItem(
+    ARCHIVE_DISPLAY_MODE_KEY,
+    mode === ARCHIVE_DISPLAY_MODES.compact ? ARCHIVE_DISPLAY_MODES.compact : ARCHIVE_DISPLAY_MODES.card,
+  );
 };
 
 if (typeof window !== 'undefined') {

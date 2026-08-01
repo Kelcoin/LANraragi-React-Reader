@@ -6,7 +6,7 @@ import { navigateToMetadata } from '../lib/navigation';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ArchiveSearchBox from '../components/ArchiveSearchBox';
 import { HomeSectionGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
-import { getCropCover, getHistory, loadHistoryState } from '../lib/history';
+import { getArchiveDisplayMode, getCropCover, getHistory, loadHistoryState } from '../lib/history';
 import { lrrApi } from '../lib/api';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
 import { hasValidWorkerConfig } from '../lib/worker-config';
@@ -19,6 +19,7 @@ function HeaderGlyph() {
 }
 
 export default function WatchlistPage({ onSelectArchive, onBack }) {
+  const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [items, setItems] = useState(() => getWatchlist());
   const [history, setHistory] = useState(() => getHistory());
@@ -260,7 +261,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
           </div>
 
           {filteredItems.length > 0 ? (
-            <ArchiveGrid ref={gridRef} style={{ gap: isNarrow ? '10px' : '16px' }}>
+            <ArchiveGrid ref={gridRef} displayMode={archiveDisplayMode} style={{ gap: isNarrow ? '10px' : '16px' }}>
               {filteredItems.map((item) => {
                 const selected = selectedIds.has(item.id);
                 return (

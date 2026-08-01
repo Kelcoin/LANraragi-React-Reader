@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { translateTag, categorizeTags, NAMESPACE_COLORS_MAP } from '../lib/tags';
 import { getCachedImage, getImage } from '../lib/imageCache';
@@ -46,8 +46,7 @@ function observeNearViewport(node, onEnter) {
   };
 }
 
-function calculatePanelPosition(cardRect, panelHeight, pointerY = null) {
-  const panelWidth = 320;
+function calculatePanelPosition(cardRect, panelHeight, pointerY = null, pointerX = null, panelWidth = 320) {
   const panelMaxHeight = 440;
   const effectivePanelHeight = Math.min(
     panelMaxHeight,
@@ -63,15 +62,21 @@ function calculatePanelPosition(cardRect, panelHeight, pointerY = null) {
     Math.max(sideGap, cardRect.left + (cardRect.width - panelWidth) / 2),
     Math.max(sideGap, vw - panelWidth - sideGap),
   );
+  const preferredLeft = pointerX == null
+    ? centeredLeft
+    : Math.min(
+        Math.max(sideGap, pointerX - panelWidth / 2),
+        Math.max(sideGap, vw - panelWidth - sideGap),
+      );
 
   const belowTop = cardRect.bottom + belowGap;
   if (belowTop + effectivePanelHeight <= vh - sideGap) {
-    return { top: belowTop, left: centeredLeft };
+    return { top: belowTop, left: preferredLeft };
   }
 
   const aboveTop = cardRect.top - effectivePanelHeight - aboveGap;
   if (aboveTop >= sideGap) {
-    return { top: aboveTop, left: centeredLeft };
+    return { top: aboveTop, left: preferredLeft };
   }
 
   const centeredSideTop = cardRect.top + (cardRect.height - effectivePanelHeight) / 2;
@@ -84,23 +89,26 @@ function calculatePanelPosition(cardRect, panelHeight, pointerY = null) {
 
   const rightLeft = cardRect.right + sideGap;
   if (rightLeft + panelWidth <= vw - sideGap) {
-    return { top: sideTop, left: rightLeft };
+    return { top: sideTop, left: pointerX == null ? rightLeft : preferredLeft };
   }
 
   const leftLeft = cardRect.left - panelWidth - sideGap;
   if (leftLeft >= sideGap) {
-    return { top: sideTop, left: leftLeft };
+    return { top: sideTop, left: pointerX == null ? leftLeft : preferredLeft };
   }
 
   return {
     top: sideTop,
-    left: Math.min(Math.max(sideGap, centeredLeft), Math.max(sideGap, vw - panelWidth - sideGap)),
+    left: Math.min(Math.max(sideGap, preferredLeft), Math.max(sideGap, vw - panelWidth - sideGap)),
   };
 }
 
-export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, archiveGridItemKey, archiveGridGap = 16, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange }) {
+export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, displayMode = 'card', archiveGridItemKey, archiveGridGap = 16, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange }) {
   const id = archive.arcid || archive.id;
   const [hovered, setHovered] = useState(false);
+  const [compactPanelKind, setCompactPanelKind] = useState(null);
+  const [compactVisibleTagCount, setCompactVisibleTagCount] = useState(null);
+  const [measureRevision, setMeasureRevision] = useState(0);
   const [closing, setClosing] = useState(false);
   const [thumbSrc, setThumbSrc] = useState(null);
   const [thumbState, setThumbState] = useState('loading');
@@ -119,6 +127,11 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     typeof IntersectionObserver === 'undefined'
   ));
   const panelRef = useRef(null);
+  const compactTagsRef = useRef(null);
+  const compactAuthorRef = useRef(null);
+  const panelScrollFrameRef = useRef(null);
+  const tagResetFrameRef = useRef(null);
+  const authorMeasureFrameRef = useRef(null);
   const imgRef = useRef(null);
   const leaveTimerRef = useRef(null);
   const closeTimerRef = useRef(null);
@@ -128,6 +141,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
   const longPressTriggeredRef = useRef(false);
   const pointerStartRef = useRef(null);
   const hoverPointerYRef = useRef(null);
+  const hoverPointerXRef = useRef(null);
 
   useEffect(() => {
     if (thumbnailEligible || !cardRef.current) return undefined;
@@ -140,8 +154,19 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     }
   }, [cacheOnly]);
 
-  const tags = archive.tags?.split(',').map((tag) => tag.trim()).filter(Boolean) || [];
-  const categorizedTags = categorizeTags(tags);
+  const archiveTagsString = archive.tags || '';
+  const categorizedTags = useMemo(() => categorizeTags(
+    archiveTagsString.split(',').map((tag) => tag.trim()).filter(Boolean),
+  ), [archiveTagsString]);
+  const isCompact = displayMode === 'compact';
+  const authorTags = useMemo(() => categorizedTags
+    .filter((group) => ['artist', 'group', 'cosplayer'].includes(group.ns))
+    .flatMap((group) => group.tags.map(({ raw }) => {
+      const value = raw.split(':').slice(1).join(':').trim();
+      return translateTag(group.ns, value) || value;
+    }))
+    .filter(Boolean), [categorizedTags]);
+  const compactTagGroups = useMemo(() => categorizedTags.filter((group) => !['uploader', 'date_added', 'timestamp', 'source', 'artist', 'group', 'cosplayer'].includes(group.ns)), [categorizedTags]);
   const archiveLanguage = getContentLanguage(archive.title);
 
   const totalPages = archive.pagecount || archive.total || 0;
@@ -199,12 +224,12 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
   const baseMetaFontSize = isMobile ? 10.5 : 11;
 
   useLayoutEffect(() => {
-    if (!archiveGridItemKey || !onArchiveGridWidthChange) return;
+    if (isCompact || !archiveGridItemKey || !onArchiveGridWidthChange) return;
     onArchiveGridWidthChange(
       archiveGridItemKey,
       isWide ? wideCardWidth : ARCHIVE_CARD_WIDTH,
     );
-  }, [archiveGridItemKey, isWide, onArchiveGridWidthChange, wideCardWidth]);
+  }, [archiveGridItemKey, isCompact, isWide, onArchiveGridWidthChange, wideCardWidth]);
 
   const rememberAspectRatio = useCallback((next) => {
     if (!Number.isFinite(next) || next <= 0) return;
@@ -297,6 +322,8 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     return translateTag('general', rawTag) || rawTag;
   }, []);
 
+  const compactRowTags = useMemo(() => compactTagGroups.flatMap((group) => group.tags.map(({ raw }) => translateDisplayTag(raw))), [compactTagGroups]);
+
   const handleTagClick = (event, tag) => {
     event.stopPropagation();
     if (!tag) return;
@@ -318,11 +345,12 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     }
   };
 
-  const updatePanelPosition = useCallback((pointerY = hoverPointerYRef.current) => {
+  const updatePanelPosition = useCallback((pointerY = hoverPointerYRef.current, pointerX = hoverPointerXRef.current) => {
     if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
     const panelHeight = panelRef.current?.getBoundingClientRect().height;
-    const nextPos = calculatePanelPosition(rect, panelHeight, pointerY);
+    const panelWidth = panelRef.current?.getBoundingClientRect().width || 320;
+    const nextPos = calculatePanelPosition(rect, panelHeight, pointerY, pointerX, panelWidth);
     setPanelPos((prev) => (
       Math.abs(prev.top - nextPos.top) < 0.5 && Math.abs(prev.left - nextPos.left) < 0.5
         ? prev
@@ -346,7 +374,19 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     if (cardRef.current?.closest?.('[data-scroll-block]')) return;
     clearPanelTimers();
     hoverPointerYRef.current = event?.clientY ?? null;
-    updatePanelPosition(hoverPointerYRef.current);
+    hoverPointerXRef.current = null;
+    updatePanelPosition(hoverPointerYRef.current, hoverPointerXRef.current);
+    setClosing(false);
+    setHovered(true);
+  };
+
+  const showCompactPanel = (event, kind) => {
+    if (cardRef.current?.closest?.('[data-scroll-block]')) return;
+    clearPanelTimers();
+    hoverPointerYRef.current = event?.clientY ?? null;
+    hoverPointerXRef.current = event?.clientX ?? null;
+    updatePanelPosition(hoverPointerYRef.current, hoverPointerXRef.current);
+    setCompactPanelKind(kind);
     setClosing(false);
     setHovered(true);
   };
@@ -359,6 +399,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
       closeTimerRef.current = setTimeout(() => {
         closeTimerRef.current = null;
         setHovered(false);
+        setCompactPanelKind(null);
         setClosing(false);
       }, 100);
     }, 200);
@@ -370,13 +411,25 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     setHovered(true);
   };
 
-  const hidePanelImmediately = () => {
+  const hideCompactCover = () => {
     clearPanelTimers();
     setClosing(true);
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       setHovered(false);
+      setCompactPanelKind(null);
       setClosing(false);
+    }, 40);
+  };
+
+  const hidePanelImmediately = () => {
+    clearPanelTimers();
+    setClosing(true);
+      closeTimerRef.current = setTimeout(() => {
+        closeTimerRef.current = null;
+        setHovered(false);
+        setCompactPanelKind(null);
+        setClosing(false);
     }, 100);
   };
 
@@ -388,12 +441,130 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     };
   }, []);
 
-  const isPanelVisible = hovered || (hasTouchInteraction && mobilePanelOpen);
+  const isPanelVisible = !isCompact && (hovered || (hasTouchInteraction && mobilePanelOpen));
+  const compactPanelVisible = isCompact && hovered && !!compactPanelKind;
 
   useLayoutEffect(() => {
     if (!isPanelVisible || categorizedTags.length === 0) return;
     updatePanelPosition();
   }, [archiveGridChildrenVersion, archiveGridLayoutVersion, categorizedTags.length, isPanelVisible, updatePanelPosition]);
+
+  useLayoutEffect(() => {
+    if (!compactPanelVisible) return;
+    updatePanelPosition();
+  }, [compactPanelKind, compactPanelVisible, updatePanelPosition]);
+
+  useEffect(() => {
+    let disposed = false;
+    const bump = () => {
+      if (disposed) return;
+      setCompactVisibleTagCount(null);
+      setMeasureRevision((value) => value + 1);
+    };
+    document.fonts?.ready?.then(bump).catch(() => {});
+    const fontTimer1 = setTimeout(bump, 600);
+    const fontTimer2 = setTimeout(bump, 1500);
+    return () => {
+      disposed = true;
+      clearTimeout(fontTimer1);
+      clearTimeout(fontTimer2);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isCompact || !compactTagsRef.current) return undefined;
+    const container = compactTagsRef.current;
+    const measure = () => {
+      const list = container.firstElementChild;
+      if (!list || list.children.length === 0) return;
+      const available = container.clientWidth;
+      const containerRect = container.getBoundingClientRect();
+      let count = 0;
+      for (const pill of list.children) {
+        const pillRect = pill.getBoundingClientRect();
+        if (pillRect.left - containerRect.left + pillRect.width <= available + 1) count += 1;
+        else break;
+      }
+      setCompactVisibleTagCount(count);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      if (tagResetFrameRef.current != null) return;
+      tagResetFrameRef.current = requestAnimationFrame(() => {
+        tagResetFrameRef.current = null;
+        setCompactVisibleTagCount(null);
+        setMeasureRevision((value) => value + 1);
+      });
+    });
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+      if (tagResetFrameRef.current != null) {
+        cancelAnimationFrame(tagResetFrameRef.current);
+        tagResetFrameRef.current = null;
+      }
+    };
+  }, [compactRowTags, isCompact, measureRevision]);
+
+  useLayoutEffect(() => {
+    if (!isCompact || !cardRef.current || !compactAuthorRef.current) return undefined;
+    const card = cardRef.current;
+    const author = compactAuthorRef.current;
+    const measure = () => {
+      const textSpan = author.querySelector('.archive-compact-author-text');
+      const clearWrapFallback = () => {
+        author.style.gridColumn = '';
+        author.style.gridRow = '';
+        if (!textSpan) return;
+        textSpan.style.maxWidth = '';
+        textSpan.style.whiteSpace = '';
+        textSpan.style.overflowWrap = '';
+      };
+      if (!window.matchMedia('(max-width: 680px)').matches) {
+        author.style.transform = '';
+        clearWrapFallback();
+        return;
+      }
+      // Measure from the untransformed position so the shift stays stable.
+      author.style.transform = '';
+      const cardRect = card.getBoundingClientRect();
+      const authorLeft = author.getBoundingClientRect().left - cardRect.left;
+      const naturalWidth = author.scrollWidth;
+      const rightLimit = cardRect.width - 12;
+      const maxLineWidth = cardRect.width - 8;
+      if (naturalWidth > maxLineWidth && textSpan) {
+        author.style.gridColumn = '1 / -1';
+        author.style.gridRow = '2';
+        textSpan.style.maxWidth = `${maxLineWidth}px`;
+        textSpan.style.whiteSpace = 'normal';
+        textSpan.style.overflowWrap = 'anywhere';
+        return;
+      }
+      clearWrapFallback();
+      const shift = Math.max(0, authorLeft + naturalWidth - rightLimit);
+      const leftFloor = Math.max(0, authorLeft - 4);
+      const appliedShift = Math.min(shift, leftFloor);
+      author.style.transform = appliedShift > 0 ? `translateX(${-appliedShift}px)` : '';
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      if (authorMeasureFrameRef.current != null) return;
+      authorMeasureFrameRef.current = requestAnimationFrame(() => {
+        authorMeasureFrameRef.current = null;
+        measure();
+      });
+    });
+    observer.observe(card);
+    return () => {
+      observer.disconnect();
+      if (authorMeasureFrameRef.current != null) {
+        cancelAnimationFrame(authorMeasureFrameRef.current);
+        authorMeasureFrameRef.current = null;
+      }
+    };
+  }, [authorTags, isCompact, measureRevision]);
 
   useEffect(() => {
     if (!isPanelVisible) return;
@@ -418,10 +589,21 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
         setClosing(false);
         return;
       }
-      updatePanelPosition();
+      if (panelScrollFrameRef.current == null) {
+        panelScrollFrameRef.current = requestAnimationFrame(() => {
+          panelScrollFrameRef.current = null;
+          updatePanelPosition();
+        });
+      }
     };
     window.addEventListener('scroll', handleScroll, true);
-    return () => window.removeEventListener('scroll', handleScroll, true);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      if (panelScrollFrameRef.current != null) {
+        cancelAnimationFrame(panelScrollFrameRef.current);
+        panelScrollFrameRef.current = null;
+      }
+    };
   }, [isPanelVisible, updatePanelPosition]);
 
   useEffect(() => {
@@ -448,6 +630,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
       if (cardRef.current && cardRef.current.contains(e.target)) return;
       setMobilePanelOpen(false);
       setHovered(false);
+      setCompactPanelKind(null);
     };
     document.addEventListener('touchstart', handler, { passive: true });
     return () => document.removeEventListener('touchstart', handler);
@@ -523,6 +706,189 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     event.stopPropagation();
     return true;
   }, []);
+
+  if (isCompact) {
+    const compactClick = (event) => {
+      if (suppressClickAfterLongPress(event) || disabled) return;
+      if (selectionMode && onSelectToggle) {
+        onSelectToggle(archive, event);
+        return;
+      }
+      onClick?.(event);
+    };
+
+    const compactProgressPct = getArchiveProgressPercent(archive);
+
+    return (
+      <div
+        ref={cardRef}
+        data-archive-grid-key={archiveGridItemKey || undefined}
+        className={['archive-card-wrap', 'is-compact', className].filter(Boolean).join(' ')}
+        style={{ position: 'relative', display: 'block', ...wrapStyle }}
+      >
+        {overlay}
+        <div
+          className={`glass-panel archive-card-shell archive-card-compact${selected ? ' is-selected' : ''}`}
+          role={selectionMode ? 'checkbox' : 'button'}
+          aria-checked={selectionMode ? selected : undefined}
+          aria-disabled={disabled || undefined}
+          aria-label={archive.title || id}
+          tabIndex={!disabled ? 0 : -1}
+          onKeyDown={(event) => {
+            if (disabled || (event.key !== 'Enter' && event.key !== ' ')) return;
+            event.preventDefault();
+            compactClick(event);
+          }}
+          onClick={compactClick}
+          onMouseDown={startLongPress}
+          onMouseUp={cancelLongPress}
+          onMouseMove={handlePointerMoveCancel}
+          onMouseLeave={(event) => { cancelLongPress(); if (!hasTouchInteraction) { if (compactPanelKind === 'cover') hideCompactCover(); else hidePanelWithDelay(event); } }}
+          onTouchStart={startLongPress}
+          onTouchEnd={cancelLongPress}
+          onTouchCancel={cancelLongPress}
+          onTouchMove={handlePointerMoveCancel}
+          onContextMenu={(event) => {
+            if (!onLongPress && !onArchiveContextMenu) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onArchiveContextMenu?.(archive, { x: event.clientX, y: event.clientY }, event);
+          }}
+        >
+          {selectionMode && <span className={`archive-card-selection-checkbox${selected ? ' is-selected' : ''}`} aria-hidden="true" />}
+          {showProgressBar && compactProgressPct != null && (
+            <div className="reader-archive-progress" role="progressbar" aria-label="阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow={compactProgressPct}>
+              <div className="reader-archive-progress-fill" style={{ width: `${compactProgressPct}%` }} />
+            </div>
+          )}
+          <div
+            className="archive-compact-title"
+            lang={archiveLanguage}
+            onMouseEnter={!hasTouchInteraction ? (event) => showCompactPanel(event, 'cover') : undefined}
+            onFocus={(event) => showCompactPanel(event, 'cover')}
+          >
+            {archive.title || id}
+          </div>
+          <span className="archive-compact-progress" title={pageInfo || '无阅读进度'}>{pageInfo || '—'}</span>
+          <span className="archive-compact-meta archive-compact-date" title={dateAddedStr || '无添加日期'}><NamespaceGlyph ns="date_added" size={14} color="var(--text-sub)" />{dateAddedStr || '—'}</span>
+          <span ref={compactAuthorRef} className="archive-compact-meta archive-compact-author" title={authorTags.join(', ')}><NamespaceGlyph ns="artist" size={14} color="var(--text-sub)" /><span className="archive-compact-author-text">{authorTags.length > 0 ? authorTags.join(', ') : '—'}</span></span>
+          <div
+            ref={compactTagsRef}
+            className="archive-compact-tags"
+            onMouseEnter={!hasTouchInteraction ? (event) => showCompactPanel(event, 'tags') : undefined}
+            onFocus={(event) => showCompactPanel(event, 'tags')}
+          >
+            {compactRowTags.length > 0 && (compactVisibleTagCount ?? compactRowTags.length) > 0 ? (
+              <span className="archive-compact-tag-list">
+                {compactRowTags.slice(0, compactVisibleTagCount ?? compactRowTags.length).map((tag, index) => (
+                  <span key={index} className="archive-compact-tag" title={tag}>{tag}</span>
+                ))}
+              </span>
+            ) : <span className="archive-compact-empty-tags">—</span>}
+          </div>
+        </div>
+
+        {compactPanelVisible && ReactDOM.createPortal(
+          compactPanelKind === 'cover' ? (
+            <div
+              ref={panelRef}
+              className={`archive-compact-cover-preview${closing ? ' is-closing' : ''}`}
+              style={{ top: `${panelPos.top}px`, left: `${panelPos.left}px` }}
+              onMouseEnter={keepPanel}
+              onMouseLeave={hideCompactCover}
+            >
+              {thumbSrc ? <img src={thumbSrc} alt="封面预览" draggable={false} /> : <div className="archive-compact-cover-placeholder">封面不可用</div>}
+            </div>
+          ) : (
+            <div
+              ref={panelRef}
+              className="no-scrollbar archive-tag-panel archive-compact-tag-panel"
+              style={{
+                position: 'fixed',
+                top: `${panelPos.top}px`,
+                left: `${panelPos.left}px`,
+                zIndex: 9999,
+                background: 'var(--tag-panel-bg)',
+                border: '1px solid var(--glass-border-hover)',
+                borderRadius: '14px',
+                padding: '16px 18px',
+                minWidth: '260px',
+                maxWidth: '320px',
+                maxHeight: '440px',
+                overflowY: 'auto',
+                boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
+                pointerEvents: 'auto',
+                animation: closing ? 'fadeOut 0.1s ease-out forwards' : 'slideDown 0.15s ease-out forwards',
+              }}
+              onMouseEnter={keepPanel}
+              onMouseLeave={hidePanelImmediately}
+            >
+              <div className="archive-compact-panel-title" lang={archiveLanguage}>{archive.title}</div>
+              {categorizedTags.map((group) => (
+                <div key={group.ns} style={{ marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
+                    <span
+                      className="archive-tag-namespace"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        '--tag-ns-color': group.color,
+                        color: 'color-mix(in srgb, var(--tag-ns-color) 40%, var(--text-main))',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        marginRight: '5px',
+                        lineHeight: '20px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <NamespaceGlyph ns={group.ns} size={14} color="currentColor" />
+                      {stripDecoratedLabel(group.label)}
+                    </span>
+                    {group.tags.map(({ raw }) => (
+                      <button
+                        key={raw}
+                        type="button"
+                        className="archive-tag-button"
+                        onClick={(e) => handleTagClick(e, raw)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          border: `1px solid color-mix(in srgb, ${group.color} 28%, transparent)`,
+                          borderRadius: '5px',
+                          padding: '2px 6px',
+                          background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
+                          color: 'var(--text-main)',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          transition: 'background-color 0.15s ease, border-color 0.15s ease',
+                          lineHeight: '1.4',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 22%, transparent)`;
+                          e.currentTarget.style.borderColor = group.color;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 10%, transparent)`;
+                          e.currentTarget.style.borderColor = `color-mix(in srgb, ${group.color} 28%, transparent)`;
+                        }}
+                      >
+                        {translateDisplayTag(raw)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ),
+          document.body,
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

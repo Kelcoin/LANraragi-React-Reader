@@ -7,7 +7,7 @@ import ArchiveSearchBox from '../components/ArchiveSearchBox';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import { HomeSectionGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
-import { getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
+import { getArchiveDisplayMode, getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
 import { isArchiveMissingError, runHistoryExistenceCheck } from '../lib/historyMaintenance';
 import { hasValidWorkerConfig } from '../lib/worker-config';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
@@ -79,6 +79,7 @@ function groupHistoryByPeriod(items) {
 }
 
 export default function HistoryPage({ onSelectArchive, onBack }) {
+  const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [history, setHistoryState] = useState(() => getHistory());
   const [hideRead, setHideReadState] = useState(getHideRead);
@@ -413,7 +414,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                     </div>
                   </div>
 
-                  <ArchiveGrid style={{ gap: isNarrow ? '10px' : '16px' }}>
+                  <ArchiveGrid displayMode={archiveDisplayMode} style={{ gap: isNarrow ? '10px' : '16px' }}>
                     {group.items.map((h) => {
                       const selected = selectedIds.has(h.id);
                       return (

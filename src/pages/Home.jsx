@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, useReducer } from 'react';
 import { createPortal } from 'react-dom';
 import { loadArchiveMetadataBatch, lrrApi } from '../lib/api';
-import { getHistory, getHideRead, setHideRead, getCropCover, setCropCover, getArchiveBrowseMode, setArchiveBrowseMode, removeHistoryItem, loadHistoryState } from '../lib/history';
+import { getHistory, getHideRead, setHideRead, getCropCover, setCropCover, getArchiveBrowseMode, setArchiveBrowseMode, getArchiveDisplayMode, setArchiveDisplayMode, ARCHIVE_DISPLAY_MODES, removeHistoryItem, loadHistoryState } from '../lib/history';
 import { addWatchlistItem, getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItem, removeWatchlistItems } from '../lib/watchlist';
 import { loadTagDB, startTagDBUpdateTimer, stopTagDBUpdateTimer } from '../lib/tags';
-import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, exportConfig, importConfig, hasValidWorkerConfig } from '../lib/worker-config';
+import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, importConfig, hasValidWorkerConfig } from '../lib/worker-config';
 import { runHistoryExistenceCheck } from '../lib/historyMaintenance';
 import { getEhCookie, getEhFavoriteDeleteSync, hasValidEhCookie, setEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
 import { acquireBodyScrollLock } from '../lib/bodyScrollLock';
@@ -23,7 +23,9 @@ import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import ToggleSwitch from '../components/ToggleSwitch';
 import AppVersion from '../components/AppVersion';
 import ConfigTransferDialog from '../components/ConfigTransferDialog';
+import ConfigExportDialog from '../components/ConfigExportDialog';
 import SettingHint from '../components/SettingHint';
+import SecretInput from '../components/SecretInput';
 import ThemeColorPicker from '../components/ThemeColorPicker';
 import { HomeSectionGlyph, ThemeModeGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { deleteFilterPreset, readFilterPresets, renameFilterPreset, saveFilterPreset } from '../lib/filterPresets';
@@ -36,6 +38,22 @@ import { ARCHIVE_BROWSE_MODES, ARCHIVE_PAGE_SIZE, clampArchivePage, getArchivePa
 import { reduceArchiveRefreshPhase } from '../lib/archiveRefreshMotion';
 import { ARCHIVE_PROGRESS_VISIBILITY, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
+
+const HOME_COLLAPSE_STORAGE_KEYS = {
+  history: 'lrr_home_collapsed_history',
+  watchlist: 'lrr_home_collapsed_watchlist',
+  random: 'lrr_home_collapsed_random',
+};
+
+function readStoredCollapsed(key, fallback = false) {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === '1') return true;
+    if (value === '0') return false;
+  } catch {}
+  return !!fallback;
+}
+
 import { subscribeReadingProgressChanged } from '../lib/readingProgress';
 import { migrateLegacyStorageKey } from '../lib/configScope';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings } from '../lib/readerSettings';
@@ -375,8 +393,11 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [randomHideRead, setRandomHideReadState] = useState(getRandomHideRead);
   const [cropCover, setCropCoverState] = useState(getCropCover);
   const [archiveBrowseMode, setArchiveBrowseModeState] = useState(() => getArchiveBrowseMode());
+  const [archiveDisplayMode, setArchiveDisplayModeState] = useState(() => getArchiveDisplayMode());
   const [showConfig, setShowConfig] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState('general');
   const [configTransfer, setConfigTransfer] = useState(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [configNotice, setConfigNotice] = useState(null);
   const [historyDeleteTarget, setHistoryDeleteTarget] = useState(null);
   const [archiveMenu, setArchiveMenu] = useState(null);
@@ -418,9 +439,21 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     if (!ps) return 0;
     return typeof ps.randomsUpdatedAt === 'number' ? ps.randomsUpdatedAt : (ps.ts || 0);
   });
-  const [historyCollapsed, setHistoryCollapsed] = useState(() => !!homeSnapshot?.historyCollapsed);
-  const [watchlistCollapsed, setWatchlistCollapsed] = useState(() => !!homeSnapshot?.watchlistCollapsed);
-  const [randomCollapsed, setRandomCollapsed] = useState(() => !!homeSnapshot?.randomCollapsed);
+  const [historyCollapsed, setHistoryCollapsed] = useState(() => readStoredCollapsed(HOME_COLLAPSE_STORAGE_KEYS.history, homeSnapshot?.historyCollapsed));
+  const [watchlistCollapsed, setWatchlistCollapsed] = useState(() => readStoredCollapsed(HOME_COLLAPSE_STORAGE_KEYS.watchlist, homeSnapshot?.watchlistCollapsed));
+  const [randomCollapsed, setRandomCollapsed] = useState(() => readStoredCollapsed(HOME_COLLAPSE_STORAGE_KEYS.random, homeSnapshot?.randomCollapsed));
+
+  useEffect(() => {
+    try { localStorage.setItem(HOME_COLLAPSE_STORAGE_KEYS.history, historyCollapsed ? '1' : '0'); } catch {}
+  }, [historyCollapsed]);
+
+  useEffect(() => {
+    try { localStorage.setItem(HOME_COLLAPSE_STORAGE_KEYS.watchlist, watchlistCollapsed ? '1' : '0'); } catch {}
+  }, [watchlistCollapsed]);
+
+  useEffect(() => {
+    try { localStorage.setItem(HOME_COLLAPSE_STORAGE_KEYS.random, randomCollapsed ? '1' : '0'); } catch {}
+  }, [randomCollapsed]);
   const [archives, setArchives] = useState(() => {
     if (homeSnapshot && Array.isArray(homeSnapshot.archives) && homeSnapshot.archives.length > 0) {
       return homeSnapshot.archives;
@@ -534,6 +567,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const filterControlsRef = useRef(null);
   const settingsTriggerRef = useRef(null);
   const settingsDialogRef = useRef(null);
+  const settingsPaneRef = useRef(null);
   const historyScroller = useHorizontalScroller();
   const watchlistScroller = useHorizontalScroller();
   const randomScroller = useHorizontalScroller();
@@ -596,7 +630,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, [saveCurrentHomeForNavigation]);
 
   const handleExportConfig = () => {
-    setConfigTransfer({ mode: 'export', value: exportConfig() });
+    setExportDialogOpen(true);
   };
 
   const handleImportConfig = async () => {
@@ -871,6 +905,22 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
   }, [showConfig]);
+
+  // Keep the settings pane transition target equal to the active section's real height.
+  useLayoutEffect(() => {
+    if (!showConfig || !settingsPaneRef.current) return undefined;
+    const pane = settingsPaneRef.current;
+    const syncPaneHeight = () => {
+      const active = pane.querySelector('.settings-section.is-active');
+      const height = active ? active.scrollHeight : 0;
+      pane.style.setProperty('--settings-pane-height', `${height}px`);
+    };
+    syncPaneHeight();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(syncPaneHeight);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [settingsCategory, showConfig, readerSettings.ehEnabled, workerReady]);
 
   const probeServerStatus = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!force && serverProbePromiseRef.current) return serverProbePromiseRef.current;
@@ -1888,6 +1938,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setHasMore(true);
   }, []);
 
+  const handleArchiveDisplayModeChange = useCallback((mode) => {
+    const next = mode === ARCHIVE_DISPLAY_MODES.compact ? ARCHIVE_DISPLAY_MODES.compact : ARCHIVE_DISPLAY_MODES.card;
+    setArchiveDisplayMode(next);
+    setArchiveDisplayModeState(next);
+  }, []);
+
   const ehFavoriteCookieValid = hasValidEhCookie(readerSettings.ehCookie || getEhCookie());
   const ehFavoriteSyncReady = ehFavoriteCookieValid && workerReady;
 
@@ -2515,12 +2571,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           })()}
         </div>
 
-        <ArchiveGrid ref={gridRef} className={archiveBrowseMode === ARCHIVE_BROWSE_MODES.paged ? 'is-paged' : ''} data-refresh-phase={archiveRefreshPhase} aria-busy={archivesRefreshing} style={{ gap: isNarrow ? '10px' : '16px' }}>
+        <ArchiveGrid ref={gridRef} displayMode={archiveDisplayMode} className={archiveBrowseMode === ARCHIVE_BROWSE_MODES.paged ? 'is-paged' : ''} data-refresh-phase={archiveRefreshPhase} aria-busy={archivesRefreshing} style={{ gap: isNarrow ? '10px' : '16px' }}>
           {archives.length === 0 && loading ? (
             Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={`gsk-${i}`} showProgress={showGlobalArchiveProgress} />)
           ) : (
             displayArchives.map((arc) => (
-              <ArchiveCard key={arc.arcid || arc.id} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} selectionMode={archiveSelectionMode} selected={selectedArchiveIds.has(arc.arcid || arc.id)} onSelectToggle={toggleArchiveSelection} />
+              <ArchiveCard key={arc.arcid || arc.id} displayMode={archiveDisplayMode} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} selectionMode={archiveSelectionMode} selected={selectedArchiveIds.has(arc.arcid || arc.id)} onSelectToggle={toggleArchiveSelection} />
             ))
           )}
         </ArchiveGrid>
@@ -2597,104 +2653,133 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             <h2 className="settings-title" id="home-settings-title">设置</h2>
           </div>
 
-          <div className="settings-panel-scroll">
+          <div className="settings-panel-scroll" ref={settingsPaneRef}>
 
-          <div className="settings-section">
-            <div className="settings-section-title">通用设置</div>
-            <div className="settings-subgroup">
-              <div className="settings-subgroup-title">缓存</div>
-              <CacheSettings />
-            </div>
-            <div className="settings-subgroup">
-              <div className="settings-subgroup-title">档案显示</div>
-          <div className="settings-row">
-            <SettingHint text={'作用：将横版或方形封面裁成统一的竖向比例。\n影响：只改变书库缩略图，不修改档案原图。'}>裁剪封面</SettingHint>
-            <div className="settings-control settings-toggle-control"><ToggleSwitch checked={cropCover} onChange={handleToggleCropCover} label="裁剪封面" /></div>
-          </div>
-
-          <label className="settings-row">
-            <SettingHint text={'禁止：所有档案卡片都不显示阅读进度。\n仅历史记录：保持历史与待看组件中的进度提示。\n全局：有阅读进度的档案卡片均会显示。'}>显示进度条</SettingHint>
-            <div className="settings-control">
-              <CustomSelect
-                ariaLabel="显示进度条"
-                value={readerSettings.progressBarVisibility}
-                onChange={(value) => updateReaderSettings((settings) => ({ ...settings, progressBarVisibility: value }))}
-                options={[
-                  { label: '禁止', value: ARCHIVE_PROGRESS_VISIBILITY.DISABLED },
-                  { label: '仅历史记录', value: ARCHIVE_PROGRESS_VISIBILITY.HISTORY },
-                  { label: '全局', value: ARCHIVE_PROGRESS_VISIBILITY.GLOBAL },
-                ]}
-                compact
-              />
-            </div>
-          </label>
-            </div>
-            <div className="settings-subgroup">
-              <div className="settings-subgroup-title">浏览与记录</div>
-
-          <label className="settings-row">
-            <SettingHint text={'滚动模式：到达列表底部时自动加载更多。\n分页模式：每次显示一页档案，使用页码切换。'}>档案浏览模式</SettingHint>
-            <div className="settings-control">
-              <CustomSelect
-                value={archiveBrowseMode}
-                onChange={handleArchiveBrowseModeChange}
-                options={[{ label: '滚动', value: ARCHIVE_BROWSE_MODES.scroll }, { label: '分页', value: ARCHIVE_BROWSE_MODES.paged }]}
-                compact
-              />
-            </div>
-          </label>
-
-          <div className="settings-row">
-            <SettingHint text={'开启：阅读进度可随跳转回退到较早页面。\n关闭：只保留已到达的最高页码。'}>允许阅读进度回溯</SettingHint>
-            <div className="settings-control settings-toggle-control"><ToggleSwitch
-              checked={readerSettings.allowProgressRegression}
-              onChange={(checked) => updateReaderSettings((settings) => ({ ...settings, allowProgressRegression: checked }))}
-              label="允许阅读进度回溯"
-            /></div>
-          </div>
-
-          <div className="settings-row">
-            <SettingHint text={'作用：隐藏已读至最后一页的档案。\n影响：只精简阅读历史列表，不会删除阅读记录。'}>历史记录中隐藏已读完</SettingHint>
-            <div className="settings-control settings-toggle-control"><ToggleSwitch checked={hideRead} onChange={handleToggleHideRead} label="历史记录中隐藏已读完" /></div>
-          </div>
-          <div className="settings-row">
-            <SettingHint text={'作用：随机漫游时隐藏已读至最后一页的档案。\n影响：首页和快速跳转使用同一筛选，不会删除阅读记录。'}>随机漫游中隐藏已读完</SettingHint>
-            <div className="settings-control settings-toggle-control"><ToggleSwitch checked={randomHideRead} onChange={handleToggleRandomHideRead} label="随机漫游中隐藏已读完" /></div>
-          </div>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <div className="settings-section-title">E-Hentai 评论区</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <label className="settings-row">
-                <SettingHint text={'作用：在阅读器中显示来源画廊的评论。\n条件：必须填写能访问该画廊的 E-Hentai Cookie。'}>启用 E-Hentai 评论区</SettingHint>
-                <ToggleSwitch checked={readerSettings.ehEnabled} onChange={() => updateReaderSettings((s) => ({ ...s, ehEnabled: !s.ehEnabled }))} label="启用 E-Hentai 评论区" />
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <SettingHint className="settings-field-label" text={'作用：访问 E-Hentai 画廊和评论。\n条件：同步删除收藏还需要 ipb_member_id 与 ipb_pass_hash。'}>E-Hentai Cookie</SettingHint>
-                <span className="secret-input-shell" data-secret={readerSettings.ehCookie || ''}>
-                  <input type="text" name="e-hentai-cookie" autoComplete="off" spellCheck={false} aria-label="E-Hentai Cookie" className="input-glass secret-input"
-                    value={readerSettings.ehCookie || ''}
-                    onChange={(e) => updateReaderSettings((s) => ({ ...s, ehCookie: e.target.value }))}
-                    placeholder="igneous=…; ipb_member_id=…; ipb_pass_hash=…"
-                    style={{ padding: '8px 10px', fontSize: '12px', width: '100%', boxSizing: 'border-box' }}
-                  />
-                </span>
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gap: '12px',
-                  maxHeight: readerSettings.ehEnabled ? '220px' : '0px',
-                  opacity: readerSettings.ehEnabled ? 1 : 0,
-                  overflow: readerSettings.ehEnabled ? 'visible' : 'hidden',
-                  transform: readerSettings.ehEnabled ? 'none' : 'translateY(-6px)',
-                  transition: 'max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, transform 0.28s cubic-bezier(0.4,0,0.2,1)',
-                  pointerEvents: readerSettings.ehEnabled ? 'auto' : 'none',
-                }}
-                aria-hidden={!readerSettings.ehEnabled}
+          <div className="settings-category-tabs" role="tablist" aria-label="设置分类">
+            {[
+              ['general', '通用'],
+              ['worker', 'Worker'],
+              ['palette', '配色'],
+              ['tools', '工具'],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={settingsCategory === key}
+                className={`btn settings-category-tab${settingsCategory === key ? ' is-active' : ''}`}
+                onClick={() => setSettingsCategory(key)}
               >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
+            <div className="settings-section-inner">
+              <div className="settings-group">
+                <CacheSettings />
+              </div>
+              <div className="settings-group">
+                <div className="settings-row">
+                  <SettingHint text={'作用：将横版或方形封面裁成统一的竖向比例。\n影响：只改变书库缩略图，不修改档案原图。'}>裁剪封面</SettingHint>
+                  <div className="settings-control settings-toggle-control"><ToggleSwitch checked={cropCover} onChange={handleToggleCropCover} label="裁剪封面" /></div>
+                </div>
+
+                <label className="settings-row">
+                  <SettingHint text={'禁止：所有档案卡片都不显示阅读进度。\n仅历史记录：保持历史与待看组件中的进度提示。\n全局：有阅读进度的档案卡片均会显示。'}>显示进度条</SettingHint>
+                  <div className="settings-control">
+                    <CustomSelect
+                      ariaLabel="显示进度条"
+                      value={readerSettings.progressBarVisibility}
+                      onChange={(value) => updateReaderSettings((settings) => ({ ...settings, progressBarVisibility: value }))}
+                      options={[
+                        { label: '禁止', value: ARCHIVE_PROGRESS_VISIBILITY.DISABLED },
+                        { label: '仅历史记录', value: ARCHIVE_PROGRESS_VISIBILITY.HISTORY },
+                        { label: '全局', value: ARCHIVE_PROGRESS_VISIBILITY.GLOBAL },
+                      ]}
+                      compact
+                    />
+                  </div>
+                </label>
+              </div>
+              <div className="settings-group">
+                <label className="settings-row">
+                  <SettingHint text={'滚动模式：到达列表底部时自动加载更多。\n分页模式：每次显示一页档案，使用页码切换。'}>档案浏览模式</SettingHint>
+                  <div className="settings-control">
+                    <CustomSelect
+                      value={archiveBrowseMode}
+                      onChange={handleArchiveBrowseModeChange}
+                      options={[{ label: '滚动', value: ARCHIVE_BROWSE_MODES.scroll }, { label: '分页', value: ARCHIVE_BROWSE_MODES.paged }]}
+                      compact
+                    />
+                  </div>
+                </label>
+
+                <label className="settings-row">
+                  <SettingHint text={'卡片模式：显示封面卡片。\n紧凑模式：每行显示标题、进度、日期、作者和标签。'}>档案显示模式</SettingHint>
+                  <div className="settings-control">
+                    <CustomSelect
+                      value={archiveDisplayMode}
+                      onChange={handleArchiveDisplayModeChange}
+                      options={[{ label: '卡片', value: ARCHIVE_DISPLAY_MODES.card }, { label: '紧凑', value: ARCHIVE_DISPLAY_MODES.compact }]}
+                      compact
+                    />
+                  </div>
+                </label>
+
+                <div className="settings-row">
+                  <SettingHint text={'开启：阅读进度可随跳转回退到较早页面。\n关闭：只保留已到达的最高页码。'}>允许阅读进度回溯</SettingHint>
+                  <div className="settings-control settings-toggle-control"><ToggleSwitch
+                    checked={readerSettings.allowProgressRegression}
+                    onChange={(checked) => updateReaderSettings((settings) => ({ ...settings, allowProgressRegression: checked }))}
+                    label="允许阅读进度回溯"
+                  /></div>
+                </div>
+
+                <div className="settings-row">
+                  <SettingHint text={'作用：隐藏已读至最后一页的档案。\n影响：只精简阅读历史列表，不会删除阅读记录。'}>历史记录中隐藏已读完</SettingHint>
+                  <div className="settings-control settings-toggle-control"><ToggleSwitch checked={hideRead} onChange={handleToggleHideRead} label="历史记录中隐藏已读完" /></div>
+                </div>
+                <div className="settings-row">
+                  <SettingHint text={'作用：随机漫游时隐藏已读至最后一页的档案。\n影响：首页和快速跳转使用同一筛选，不会删除阅读记录。'}>随机漫游中隐藏已读完</SettingHint>
+                  <div className="settings-control settings-toggle-control"><ToggleSwitch checked={randomHideRead} onChange={handleToggleRandomHideRead} label="随机漫游中隐藏已读完" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className={`settings-section${settingsCategory === 'worker' ? ' is-active' : ''}`}>
+            <div className="settings-section-inner">
+              <div className="settings-group">
+                <div className="settings-row">
+                  <SettingHint text={'作用：在阅读器中显示来源画廊的评论。\n条件：必须填写能访问该画廊的 E-Hentai Cookie。'}>启用 E-Hentai 评论区</SettingHint>
+                  <ToggleSwitch checked={readerSettings.ehEnabled} onChange={() => updateReaderSettings((s) => ({ ...s, ehEnabled: !s.ehEnabled }))} label="启用 E-Hentai 评论区" />
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: '12px',
+                    maxHeight: readerSettings.ehEnabled ? '320px' : '0px',
+                    opacity: readerSettings.ehEnabled ? 1 : 0,
+                    overflow: readerSettings.ehEnabled ? 'visible' : 'hidden',
+                    transform: readerSettings.ehEnabled ? 'none' : 'translateY(-6px)',
+                    transition: 'max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, transform 0.28s cubic-bezier(0.4,0,0.2,1)',
+                    pointerEvents: readerSettings.ehEnabled ? 'auto' : 'none',
+                  }}
+                  aria-hidden={!readerSettings.ehEnabled}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <SettingHint className="settings-field-label" text={'作用：访问 E-Hentai 画廊和评论。\n条件：同步删除收藏还需要 ipb_member_id 与 ipb_pass_hash。'}>E-Hentai Cookie</SettingHint>
+                    <SecretInput
+                      name="e-hentai-cookie"
+                      ariaLabel="E-Hentai Cookie"
+                      value={readerSettings.ehCookie || ''}
+                      onChange={(e) => updateReaderSettings((s) => ({ ...s, ehCookie: e.target.value }))}
+                      placeholder="igneous=…; ipb_member_id=…; ipb_pass_hash=…"
+                      style={{ fontSize: '12px' }}
+                    />
+                  </div>
                   <label className="settings-row">
                     <SettingHint text={'作用：隐藏低于此分数的评论。\n填 0：显示全部评论，不按分数过滤。'}>最低展示分数</SettingHint>
                     <input type="text" inputMode="numeric" pattern="-?[0-9]*" className="input-glass no-spinner"
@@ -2735,120 +2820,107 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                       />
                     </div>
                   </label>
+                </div>
               </div>
-            </div>
-          </div>
+              <div className="settings-group">
+                {workerReady && <div className="settings-row">
+                  <SettingHint text={ehFavoriteSyncReady ? '作用：删除档案时，同时移除 source 指向的 E-Hentai 收藏。\n控制：仍可在每次删除确认时单独取消同步。' : '当前不可用。\n条件：配置 Worker、访问 Token，并提供含 ipb_member_id 与 ipb_pass_hash 的 E-Hentai Cookie。'}>同步删除 E-Hentai 收藏夹</SettingHint>
+                  <ToggleSwitch checked={ehFavoriteDeleteSync && ehFavoriteSyncReady} onChange={handleToggleEhFavoriteDeleteSync} disabled={!ehFavoriteSyncReady} label="同步删除 E-Hentai 收藏夹" />
+                </div>}
+                <div>
+                  <SettingHint className="settings-field-label" text={'作用：启用多设备阅读历史、待看列表和收藏删除同步。\n条件：Worker 端点必须是可访问的 HTTPS 地址。'}>Cloudflare Worker 端点</SettingHint>
+                  <input type="url" inputMode="url" name="worker-url" autoComplete="off" spellCheck={false} aria-label="Cloudflare Worker 端点" className="input-glass"
+                    value={cfgWorkerUrl}
+                    onChange={(e) => setCfgWorkerUrl(e.target.value)}
+                    placeholder="https://lrr-sync.example.workers.dev"
+                    style={{ padding: '8px 12px', fontSize: '13px' }}
+                  />
+                </div>
 
-          {workerReady && <div className="settings-row">
-            <SettingHint text={ehFavoriteSyncReady ? '作用：删除档案时，同时移除 source 指向的 E-Hentai 收藏。\n控制：仍可在每次删除确认时单独取消同步。' : '当前不可用。\n条件：配置 Worker、访问 Token，并提供含 ipb_member_id 与 ipb_pass_hash 的 E-Hentai Cookie。'}>同步删除 E-Hentai 收藏夹</SettingHint>
-            <ToggleSwitch checked={ehFavoriteDeleteSync && ehFavoriteSyncReady} onChange={handleToggleEhFavoriteDeleteSync} disabled={!ehFavoriteSyncReady} label="同步删除 E-Hentai 收藏夹" />
-          </div>}
-
-          <div className="settings-section">
-            <div className="settings-section-title">Worker 设置</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <SettingHint className="settings-field-label" text={'作用：启用多设备阅读历史、待看列表和收藏删除同步。\n条件：Worker 端点必须是可访问的 HTTPS 地址。'}>Cloudflare Worker 端点</SettingHint>
-                <input type="url" inputMode="url" name="worker-url" autoComplete="off" spellCheck={false} aria-label="Cloudflare Worker 端点" className="input-glass"
-                  value={cfgWorkerUrl}
-                  onChange={(e) => setCfgWorkerUrl(e.target.value)}
-                  placeholder="https://lrr-sync.example.workers.dev"
-                  style={{ padding: '8px 12px', fontSize: '13px' }}
-                />
-              </div>
-
-              <div>
-                <SettingHint className="settings-field-label" text={'作用：识别同一同步账户；使用相同 Token 的设备会共享数据。\n条件：先将 Token 写入 Worker KV 的 tokens 字段。'}>访问 Token</SettingHint>
-                <span className="secret-input-shell" data-secret={cfgSyncToken}>
-                  <input type="text" name="sync-token" autoComplete="off" spellCheck={false} aria-label="访问 Token" className="input-glass secret-input"
+                <div>
+                  <SettingHint className="settings-field-label" text={'作用：识别同一同步账户；使用相同 Token 的设备会共享数据。\n条件：先将 Token 写入 Worker KV 的 tokens 字段。'}>访问 Token</SettingHint>
+                  <SecretInput
+                    name="sync-token"
+                    ariaLabel="访问 Token"
                     value={cfgSyncToken}
                     onChange={(e) => setCfgSyncToken(e.target.value)}
                     placeholder="需与 KV 空间 tokens 字段中的 Token 保持一致"
-                    style={{ padding: '8px 12px', fontSize: '13px' }}
                   />
-                </span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="settings-section">
-            <div className="settings-section-title">工具</div>
-            <div className="settings-tool-grid">
-              <button type="button" className="btn" onClick={handleNavigateUpload} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>上传档案</button>
-              <button type="button" className="btn" onClick={handleNavigateDeduplicate} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>重复档案检测</button>
+          <div className={`settings-section${settingsCategory === 'palette' ? ' is-active' : ''}`}>
+            <div className="settings-section-inner">
+              <div className="settings-group">
+              <div className="theme-palette-mode-tabs" role="tablist" aria-label="自定义配色模式">
+                {['light', 'dark'].map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="tab"
+                    aria-selected={themePaletteMode === mode}
+                    className={`btn theme-palette-mode-tab${themePaletteMode === mode ? ' is-active' : ''}`}
+                    onClick={() => setThemePaletteMode(mode)}
+                  >
+                    {mode === 'light' ? '浅色模式' : '深色模式'}
+                  </button>
+                ))}
+              </div>
+              <div className="theme-palette-grid">
+                {[
+                  ['accent', '主强调色'],
+                  ['secondary', '辅助色'],
+                  ['background', '底色'],
+                ].map(([key, label]) => (
+                  <ThemeColorPicker
+                    key={key}
+                    label={label}
+                    value={themePalettesDraft?.[themePaletteMode]?.[key] || DEFAULT_THEME_PALETTES[themePaletteMode][key]}
+                    onChange={(value) => setThemePalettesDraft((current) => ({
+                      ...(current || {}),
+                      [themePaletteMode]: {
+                        ...(current?.[themePaletteMode] || DEFAULT_THEME_PALETTES[themePaletteMode]),
+                        [key]: value,
+                      },
+                    }))}
+                  />
+                ))}
+              </div>
+              <div className="theme-palette-actions">
+                <span className="theme-palette-status" aria-live="polite">
+                  {themePalettesDraft?.[themePaletteMode] ? `${themePaletteMode === 'light' ? '浅色' : '深色'}模式已启用自定义色彩语言` : `当前使用${themePaletteMode === 'light' ? '浅色' : '深色'}内置主题配色`}
+                </span>
+                <button type="button" className="btn theme-palette-reset" onClick={() => setThemePalettesDraft((current) => {
+                  if (!current?.[themePaletteMode]) return current;
+                  const next = { ...current };
+                  delete next[themePaletteMode];
+                  return next.light || next.dark ? next : null;
+                })}>
+                  恢复当前模式默认配色
+                </button>
+              </div>
+              </div>
             </div>
-            <div style={{ borderTop: '1px solid var(--glass-border)', marginTop: '14px' }} />
           </div>
 
-          <div className="settings-section">
-            <div className="settings-section-title">
-              <SettingHint className="settings-section-title-label" text={'分别为浅色和深色模式设定主色、辅助色和底色。\n应用后会自动生成按钮、面板、状态与评论区的统一色彩语言。'}>自定义配色</SettingHint>
-            </div>
-            <div className="theme-palette-mode-tabs" role="tablist" aria-label="自定义配色模式">
-              {['light', 'dark'].map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  role="tab"
-                  aria-selected={themePaletteMode === mode}
-                  className={`btn theme-palette-mode-tab${themePaletteMode === mode ? ' is-active' : ''}`}
-                  onClick={() => setThemePaletteMode(mode)}
-                >
-                  {mode === 'light' ? '浅色模式' : '深色模式'}
-                </button>
-              ))}
-            </div>
-            <div className="theme-palette-grid">
-              {[
-                ['accent', '主强调色'],
-                ['secondary', '辅助色'],
-                ['background', '底色'],
-              ].map(([key, label]) => (
-                <ThemeColorPicker
-                  key={key}
-                  label={label}
-                  value={themePalettesDraft?.[themePaletteMode]?.[key] || DEFAULT_THEME_PALETTES[themePaletteMode][key]}
-                  onChange={(value) => setThemePalettesDraft((current) => ({
-                    ...(current || {}),
-                    [themePaletteMode]: {
-                      ...(current?.[themePaletteMode] || DEFAULT_THEME_PALETTES[themePaletteMode]),
-                      [key]: value,
-                    },
-                  }))}
-                />
-              ))}
-            </div>
-            <div className="theme-palette-actions">
-              <span className="theme-palette-status" aria-live="polite">
-                {themePalettesDraft?.[themePaletteMode] ? `${themePaletteMode === 'light' ? '浅色' : '深色'}模式已启用自定义色彩语言` : `当前使用${themePaletteMode === 'light' ? '浅色' : '深色'}内置主题配色`}
-              </span>
-              <button type="button" className="btn theme-palette-reset" onClick={() => setThemePalettesDraft((current) => {
-                if (!current?.[themePaletteMode]) return current;
-                const next = { ...current };
-                delete next[themePaletteMode];
-                return next.light || next.dark ? next : null;
-              })}>
-                恢复当前模式默认配色
-              </button>
+          <div className={`settings-section${settingsCategory === 'tools' ? ' is-active' : ''}`}>
+            <div className="settings-section-inner">
+              <div className="settings-group">
+                <div className="settings-tool-grid">
+                <button type="button" className="btn" onClick={handleNavigateUpload} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>上传档案</button>
+                <button type="button" className="btn" onClick={handleNavigateDeduplicate} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>重复档案检测</button>
+                <button type="button" className="btn" onClick={handleExportConfig} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>导出配置</button>
+                <button type="button" className="btn" onClick={handleImportConfig} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>导入配置</button>
+              </div>
+              </div>
             </div>
           </div>
 
           </div>
 
           <div className="settings-panel-footer">
-            <div className="settings-panel-actions">
-              <button type="button" className="btn"
-                onClick={handleExportConfig}
-                style={{ padding: '9px', fontSize: '12px' }}>
-                导出配置
-              </button>
-              <button type="button" className="btn"
-                onClick={handleImportConfig}
-                style={{ padding: '9px', fontSize: '12px' }}>
-                导入配置
-              </button>
-            </div>
-
             <div className="settings-panel-actions">
               <button type="button" className="btn" onClick={() => setShowConfig(false)} style={{ padding: '10px' }}>
                 取消
@@ -2964,6 +3036,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       onCancel={() => setConfigTransfer(null)}
       onConfirm={handleConfirmImportConfig}
     />
+    <ConfigExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
     <ConfirmDialog
       open={!!configNotice}
       title={configNotice?.title || ''}

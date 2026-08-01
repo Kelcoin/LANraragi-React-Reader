@@ -48,6 +48,7 @@ export const CONFIG_KEYS = [
   'lrr_filter',
   'lrr_crop_cover',
   'lrr_archive_browse_mode',
+  'lrr_archive_display_mode',
   'lrr_eh_favorite_delete_sync',
   'lrr_image_cache_limit',
   'lrr_theme_mode',
@@ -68,13 +69,16 @@ function decodeUtf8Base64(value) {
   return new TextDecoder().decode(bytes);
 }
 
-export function exportConfig(overrides = {}) {
+export function exportConfig(overrides = {}, selectedKeys = CONFIG_KEYS) {
+  const keys = Array.isArray(selectedKeys) && selectedKeys.length > 0
+    ? selectedKeys.filter((key) => CONFIG_KEYS.includes(key))
+    : CONFIG_KEYS;
   const cfg = {};
-  for (const key of CONFIG_KEYS) {
+  for (const key of keys) {
     const val = localStorage.getItem(key);
     if (val) cfg[key] = val;
   }
-  for (const key of CONFIG_KEYS) {
+  for (const key of keys) {
     if (!Object.hasOwn(overrides, key)) continue;
     const value = overrides[key];
     if (typeof value === 'string' && value) cfg[key] = value;

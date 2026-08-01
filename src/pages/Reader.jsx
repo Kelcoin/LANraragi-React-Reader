@@ -656,7 +656,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
                   {displayTags.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '4px' }}>
                       {displayTags.map((tag, index) => (
-                        <span key={index} style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'var(--surface-3)', whiteSpace: 'nowrap' }}>{tag}</span>
+                        <span key={index} style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'color-mix(in srgb, var(--surface-3) 84%, var(--text-sub))', border: '1px solid color-mix(in srgb, var(--glass-border-hover) 58%, transparent)', whiteSpace: 'nowrap' }}>{tag}</span>
                       ))}
                     </div>
                   )}
