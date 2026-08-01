@@ -185,7 +185,15 @@ export default function App() {
             
             <div>
               <label className="field-label" htmlFor="api-key">LANraragi API Key *</label>
-              <input id="api-key" name="api-key" type="password" autoComplete="off" spellCheck={false} className="input-glass" value={tempConfig.key} onChange={e => setTempConfig({...tempConfig, key: e.target.value})} required />
+                                <SecretInput
+                    id="api-key"
+                    name="api-key"
+                    ariaLabel="LANraragi API Key"
+                    value={tempConfig.key}
+                    onChange={e => setTempConfig({...tempConfig, key: e.target.value})}
+                    required
+                    style={{ padding: '11px 15px', fontSize: '16px' }}
+                  />
             </div>
 
             <div className="login-worker-section-content">

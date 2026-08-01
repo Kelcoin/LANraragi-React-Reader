@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
 
+const MASK_CHAR = '•';
+
+function maskValue(value) {
+  const length = String(value || '').length;
+  if (length === 0) return '';
+  return MASK_CHAR.repeat(Math.min(length, 24));
+}
+
 export default function SecretInput({
   value,
   onChange,
@@ -9,26 +17,29 @@ export default function SecretInput({
   placeholder,
   autoComplete = 'off',
   spellCheck = false,
+  required = false,
   style,
   className = '',
 }) {
-  const [revealed, setRevealed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const shown = focused ? String(value ?? '') : maskValue(value);
   return (
     <span className={`secret-input-shell${className ? ` ${className}` : ''}`}>
       <input
-        type={revealed ? 'text' : 'password'}
+        type="text"
         id={id}
         name={name}
         autoComplete={autoComplete}
         spellCheck={spellCheck}
+        required={required}
         aria-label={ariaLabel}
         className="input-glass secret-input"
-        value={value}
+        value={shown}
         onChange={onChange}
         placeholder={placeholder}
         style={{ padding: '8px 12px', fontSize: '13px', ...style }}
-        onFocus={() => setRevealed(true)}
-        onBlur={() => setRevealed(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
       />
     </span>
   );
