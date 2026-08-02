@@ -10,6 +10,8 @@ import {
 
 const EMPTY_API_DATA = Object.freeze({ apiuid: null, apikey: null, gid: null, token: null, apiUrl: 'https://api.e-hentai.org/api.php' });
 const EH_REQUEST_TIMEOUT_MS = 20 * 1000;
+// Minimum gap between background SWR re-fetches of an EH gallery (cache TTL is 24h).
+const EH_SWR_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 const VoteIcon = ({ direction, active = false }) => (
   <svg
@@ -312,7 +314,11 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
           setLoaded(true);
           setError(null);
           setNeedsCookie(false);
+          // Serve from cache; only re-fetch in the background after the SWR
+          // window expires, so re-entering the reader does not re-download the
+          // whole gallery HTML each time.
           if (!ehWorker || !cookie) return;
+          if (cachedState.ts && Date.now() - cachedState.ts < EH_SWR_REFRESH_INTERVAL_MS) return;
         }
       }
 
@@ -393,7 +399,14 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       const galleryState = classifyEhGalleryPage(htmlText, 200);
       if (galleryState === 'not_found' || galleryState === 'copyright_removed' || galleryState === 'unavailable') {
         if (!isCurrent()) return;
-        if (!cachedComments) setComments([]);
+        if (cachedComments) {
+          // Background SWR refresh hit a terminal page (worker hiccup, cookie
+          // expiry, ...): keep the valid cached comments instead of replacing
+          // them with a 24h error state.
+          setLoaded(true);
+          return;
+        }
+        setComments([]);
         setLoaded(true);
         const terminalCode = galleryState === 'not_found' ? 'GALLERY_NOT_FOUND' : galleryState === 'copyright_removed' ? 'GALLERY_COPYRIGHT_REMOVED' : 'GALLERY_UNAVAILABLE';
         showError(terminalCode);
@@ -435,9 +448,15 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       }
 
       if (!isCurrent()) return;
-      setComments(finalComments);
-      setLoaded(true);
-      writeEhCommentsCache(cacheKey, finalComments).catch(() => {});
+      if (finalComments.length > 0 || !cachedComments) {
+        setComments(finalComments);
+        setLoaded(true);
+        writeEhCommentsCache(cacheKey, finalComments).catch(() => {});
+      } else {
+        // Parsed zero comments over valid cached ones (challenge page, login
+        // variant): keep the cached comments instead of blanking them.
+        setLoaded(true);
+      }
     } catch (e) {
       if (requestSeqRef.current !== requestSeq) return;
       if (controller.signal.aborted && !timedOut) return;
@@ -449,7 +468,9 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         showError(e.ehCode || 'UNKNOWN_WORKER_ERROR', e.ehDetail || e.message);
       }
       if (isTerminalGalleryError(e?.ehCode)) {
-        await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
+        if (!cachedComments) {
+          await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
+        }
       }
       if (cachedComments) setLoaded(true);
     } finally {
@@ -627,7 +648,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
             {(() => {
               const hasUserCommented = comments.some(c => c.isEditable);
               return filteredAndSorted.map(c => {
-                const scoreClass = c.score > 0 ? 'var(--comment-positive)' : c.score < 0 ? 'var(--comment-negative)' : 'var(--text-sub)';
+                const scoreClass = c.score > 0 ? 'var(--comment-positive)' : c.score < 0 ? 'var(--comment-negative)' : 'var(--comment-meta)';
                 const scoreSign = c.score > 0 ? '+' : '';
                 const canVote = !c.isUploader && ehWorker && cookie && apiData.apikey && apiData.apiuid && apiData.gid && apiData.token;
 
@@ -638,7 +659,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid var(--comment-card-border)', fontSize: '12px', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
-                      <span style={{ color: c.isEditable ? 'var(--good-text)' : 'var(--accent)', fontWeight: 'bold', fontSize: '13px' }}>
+                      <span style={{ color: c.isEditable ? 'var(--comment-user-self)' : 'var(--comment-user)', fontWeight: 'bold', fontSize: '13px' }}>
                         {c.user}{c.isEditable ? ' (你)' : ''}
                       </span>
                     </div>
@@ -663,26 +684,26 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                           ) : (
                             <>
                               <button className="eh-vote-button" onClick={() => doVote(c.id, 1)} style={{
-                                background: 'none', border: 'none', color: c.myVote === 1 ? 'var(--comment-positive)' : 'var(--text-muted)',
+                                background: 'none', border: 'none', color: c.myVote === 1 ? 'var(--comment-positive)' : 'var(--comment-meta)',
                                 cursor: 'pointer', width: '20px', height: '20px', padding: 0,
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 borderRadius: '3px', flexShrink: 0,
                                 lineHeight: 0, verticalAlign: 'middle',
                               }}
                               onMouseEnter={e => { if (c.myVote !== 1) e.currentTarget.style.color = 'var(--comment-positive)'; }}
-                              onMouseLeave={e => { if (c.myVote !== 1) e.currentTarget.style.color = 'var(--text-muted)'; }}
+                              onMouseLeave={e => { if (c.myVote !== 1) e.currentTarget.style.color = 'var(--comment-meta)'; }}
                               title="赞同"
                               aria-label="赞同"
                               ><VoteIcon direction="up" active={c.myVote === 1} /></button>
                               <button className="eh-vote-button" onClick={() => doVote(c.id, -1)} style={{
-                                background: 'none', border: 'none', color: c.myVote === -1 ? 'var(--comment-negative)' : 'var(--text-muted)',
+                                background: 'none', border: 'none', color: c.myVote === -1 ? 'var(--comment-negative)' : 'var(--comment-meta)',
                                 cursor: 'pointer', width: '20px', height: '20px', padding: 0,
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 borderRadius: '3px', flexShrink: 0,
                                 lineHeight: 0, verticalAlign: 'middle',
                               }}
                               onMouseEnter={e => { if (c.myVote !== -1) e.currentTarget.style.color = 'var(--comment-negative)'; }}
-                              onMouseLeave={e => { if (c.myVote !== -1) e.currentTarget.style.color = 'var(--text-muted)'; }}
+                              onMouseLeave={e => { if (c.myVote !== -1) e.currentTarget.style.color = 'var(--comment-meta)'; }}
                               title="反对"
                               aria-label="反对"
                               ><VoteIcon direction="down" active={c.myVote === -1} /></button>
@@ -718,8 +739,8 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div dangerouslySetInnerHTML={{ __html: c.content }} style={{ fontSize: '14px', lineHeight: '1.7', color: 'var(--text-main)', wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: '100%', overflow: 'hidden' }} />
-                      <div style={{ fontSize: '11px', color: 'var(--text-sub)', textAlign: 'right', lineHeight: 1.4 }}>
+                      <div dangerouslySetInnerHTML={{ __html: c.content }} style={{ fontSize: '14px', lineHeight: '1.7', color: 'var(--comment-text)', wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: '100%', overflow: 'hidden' }} />
+                      <div style={{ fontSize: '11px', color: 'var(--comment-meta)', textAlign: 'right', lineHeight: 1.4 }}>
                         {formatTimeCN(c.timestamp)}
                       </div>
                     </div>

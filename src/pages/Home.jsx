@@ -69,7 +69,6 @@ const RANDOMS_FILL_MAX_ITEMS = 24;
 const RANDOMS_FETCH_ATTEMPTS = 3;
 const RANDOMS_RECENT_LIMIT = 48;
 const RANDOMS_REQUEST_TIMEOUT_MS = 6500;
-const RANDOMS_RETRY_DELAY_MS = 350;
 const ARCHIVES_SCROLL_KEY = 'lrr_scroll_archives_on_arrival';
 const RANDOMS_REVALIDATE_STALE_MS = 10 * 60 * 1000;
 const RANDOMS_RESTORE_GRACE_MS = 90 * 1000;
@@ -606,6 +605,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     saveCurrentHomeForNavigation();
     onSelectArchive(archiveId);
   }, [onSelectArchive, saveCurrentHomeForNavigation]);
+
+  const handleArchiveCardActivate = useCallback((archive) => {
+    handleSelectArchive(archive?.arcid || archive?.id);
+  }, [handleSelectArchive]);
 
   const handleNavigateHistory = useCallback(() => {
     saveCurrentHomeForNavigation();
@@ -1150,6 +1153,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   useEffect(() => {
     const update = () => {
+      // Paged mode only: in scroll mode the batch size is fixed
+      // (ARCHIVE_PAGE_SIZE) and re-fetching on resize would reset the list.
+      if (archiveBrowseMode === ARCHIVE_BROWSE_MODES.scroll) return;
       const gridWidth = gridRef.current?.clientWidth || window.innerWidth - 32;
       const gap = window.innerWidth <= HOME_NARROW_MAX_WIDTH ? 10 : 16;
       const cols = Math.max(1, Math.floor((gridWidth + gap) / (150 + gap)));
@@ -1165,7 +1171,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     update();
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
-  }, [cropCover]);
+  }, [archiveBrowseMode, cropCover]);
 
   const archiveSideEffectsRef = useRef({ exitColdRestoreMode, scrollToArchives });
   archiveSideEffectsRef.current = { exitColdRestoreMode, scrollToArchives };
@@ -1351,7 +1357,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           doFetch(false);
         }
       },
-      { rootMargin: '200px' },
+      // Fetch the next batch while the bottom is still 800px away: on a
+      // remote server the round-trip should finish before the user arrives.
+      { rootMargin: '800px' },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -1421,32 +1429,38 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     const currentIds = new Set(getRandomBatchIds(randomsRef.current));
     const recentIds = new Set(readRecentRandomIds());
     try {
+      const requestCount = append ? RANDOMS_BATCH_SIZE : RANDOMS_BATCH_SIZE * RANDOMS_DEFAULT_BATCHES;
+      // Fire the freshness attempts in parallel instead of serially: same
+      // worst-case latency as one request, but more candidates to score, and
+      // remote round-trips no longer stack (3 x 6.5s serial before).
+      const attemptCount = preferFresh ? RANDOMS_FETCH_ATTEMPTS : 1;
       let bestBatch = [];
       let bestScore = Number.NEGATIVE_INFINITY;
-      const requestCount = append ? RANDOMS_BATCH_SIZE : RANDOMS_BATCH_SIZE * RANDOMS_DEFAULT_BATCHES;
-
-      for (let attempt = 0; attempt < RANDOMS_FETCH_ATTEMPTS; attempt += 1) {
-        let batch = [];
+      let lastError = null;
+      const results = await Promise.all(Array.from({ length: attemptCount }, async () => {
         try {
           const res = await withAbortTimeout(
             (signal) => lrrApi.getRandom(requestCount, { signal }),
             RANDOMS_REQUEST_TIMEOUT_MS,
           );
-          batch = filterRandomArchives(Array.isArray(res?.data) ? res.data : [], history, randomHideRead);
-        } catch (e) {
-          if (attempt >= RANDOMS_FETCH_ATTEMPTS - 1) throw e;
-          await delay(RANDOMS_RETRY_DELAY_MS);
-          continue;
+          return filterRandomArchives(Array.isArray(res?.data) ? res.data : [], history, randomHideRead);
+        } catch (error) {
+          lastError = error;
+          return null;
         }
-        const score = preferFresh ? scoreRandomBatch(batch, currentIds, recentIds) : attempt;
-
+      }));
+      for (const batch of results) {
+        if (!batch) continue;
+        const score = preferFresh ? scoreRandomBatch(batch, currentIds, recentIds) : 0;
         if (score > bestScore) {
           bestBatch = batch;
           bestScore = score;
         }
-
-        if (!preferFresh || score >= requestCount * 5) break;
       }
+      // Only fail when every attempt failed; a successful (even empty) batch is
+      // a valid result — empty just means hide-read filtered everything.
+      const allAttemptsFailed = results.every((batch) => !batch);
+      if (allAttemptsFailed && lastError) throw lastError;
 
       const plannedAdditions = [];
       if (append) {
@@ -2174,7 +2188,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               {filteredHistory.length > 0 ? (
                 <>
                   {filteredHistory.slice(0, 10).map(h => (
-                    <ArchiveCard key={`hist-${h.id}`} className={watchlistIds.has(h.id) ? 'watchlist-card' : undefined} archive={h} onClick={() => handleSelectArchive(h.id)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveHistory: true })} longPressTitle="打开菜单" currentPage={h.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} />
+                    <ArchiveCard key={`hist-${h.id}`} className={watchlistIds.has(h.id) ? 'watchlist-card' : undefined} archive={h} onClick={() => handleSelectArchive(h.id)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveHistory: true })} longPressTitle="打开菜单" currentPage={h.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
                   ))}
                   {filteredHistory.length > 10 && (
                     <button
@@ -2254,7 +2268,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div style={{ overflow: 'hidden', transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)', maxHeight: watchlistCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
             <div ref={watchlistScroller.ref} onWheelCapture={watchlistScroller.onWheelCapture} onScroll={watchlistScroller.onScroll} onMouseDown={watchlistScroller.onMouseDown} onClickCapture={watchlistScroller.onClickCapture} onDragStart={watchlistScroller.onDragStart} style={{ display: 'flex', gap: isNarrow ? '10px' : '16px', overflowX: 'auto', overflowY: 'hidden', padding: getHomeCarouselPadding(isNarrow), position: 'relative', zIndex: 1, ...watchlistScroller.getTouchScrollStyle(), ...watchlistScroller.getMouseScrollStyle() }} className="no-scrollbar">
               {watchlistWithProgress.map(item => (
-                <ArchiveCard key={`watch-${item.id || item.arcid}`} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} />
+                <ArchiveCard key={`watch-${item.id || item.arcid}`} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
               {watchlistOverflow && (
                 <button
@@ -2322,7 +2336,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               {randomsRefreshing ? Array.from({ length: Math.max(5, Math.min(8, randoms.length || 5)) }).map((_, i) => (
                 <SkeletonCard key={`rrsk-${i}`} showProgress={showGlobalArchiveProgress} />
               )) : randoms.map(arc => (
-                <ArchiveCard key={`rnd-${arc.arcid}`} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} />
+                <ArchiveCard key={`rnd-${arc.arcid}`} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
             </div>
           </div>
@@ -2576,7 +2590,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={`gsk-${i}`} showProgress={showGlobalArchiveProgress} />)
           ) : (
             displayArchives.map((arc) => (
-              <ArchiveCard key={arc.arcid || arc.id} displayMode={archiveDisplayMode} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} selectionMode={archiveSelectionMode} selected={selectedArchiveIds.has(arc.arcid || arc.id)} onSelectToggle={toggleArchiveSelection} />
+              <ArchiveCard key={arc.arcid || arc.id} displayMode={archiveDisplayMode} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={handleArchiveCardActivate} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} selectionMode={archiveSelectionMode} selected={selectedArchiveIds.has(arc.arcid || arc.id)} onSelectToggle={toggleArchiveSelection} />
             ))
           )}
         </ArchiveGrid>

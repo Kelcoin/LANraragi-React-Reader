@@ -127,8 +127,19 @@ export default function ArchivePageThumbnail({ archiveId, pageIndex, active, cac
       className="archive-page-thumbnail-image"
       onLoad={() => setThumbState('ready')}
       onError={() => {
-        setSrc(null);
-        setThumbState('error');
+        // Blob URL may have been revoked by cache eviction — recover from
+        // the memory/disk cache first instead of showing a permanent error.
+        getCachedImage(`thumb:drawer:v3:${archiveId}:${pageIndex + 1}`).then((recovered) => {
+          if (recovered) {
+            setSrc(recovered);
+          } else {
+            setSrc(null);
+            setThumbState('error');
+          }
+        }).catch(() => {
+          setSrc(null);
+          setThumbState('error');
+        });
       }}
       loading="eager"
     />

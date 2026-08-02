@@ -81,6 +81,7 @@ export async function readEhCommentsCacheState(key, { now = Date.now() } = {}) {
   return {
     comments: Array.isArray(accessed.comments) ? accessed.comments : [],
     unavailable: typeof accessed.unavailable === 'string' ? accessed.unavailable : null,
+    ts: Number(accessed.ts || 0),
   };
 }
 

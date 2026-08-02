@@ -175,7 +175,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
 
   const basePanel = {
     overflowY: 'auto',
-    overflowX: 'hidden',
+    overflowX: 'clip',
     WebkitOverflowScrolling: 'touch',
     background: 'var(--dropdown-bg)',
     backdropFilter: 'blur(24px)',
@@ -184,6 +184,10 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
     borderRadius: '12px',
     boxShadow: 'var(--shadow)',
     padding: '6px 0',
+    paddingRight: 0,
+    scrollbarGutter: 'auto',
+    boxSizing: 'border-box',
+    contain: 'layout paint',
   };
 
   const panelStyle = {
@@ -196,7 +200,7 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
   return createPortal(
       <div
         ref={listRef}
-        className="dropdown-animate no-scrollbar"
+        className="dropdown-animate no-scrollbar tag-suggest-panel"
         data-filter-popover="true"
         style={panelStyle}
         onKeyDown={handleKeyDown}

@@ -37,5 +37,5 @@ test('EH comment cache pruning removes expired records then oldest overflow', ()
 test('EH comment cache persists terminal gallery unavailable states', async () => {
   const key = cache.createEhCommentsCacheKey('https://e-hentai.org/g/2/b', 'cookie');
   await cache.writeEhCommentsCache(key, [], { now: 1000, unavailable: 'GALLERY_NOT_FOUND' });
-  assert.deepEqual(await cache.readEhCommentsCacheState(key, { now: 1001 }), { comments: [], unavailable: 'GALLERY_NOT_FOUND' });
+  assert.deepEqual(await cache.readEhCommentsCacheState(key, { now: 1001 }), { comments: [], unavailable: 'GALLERY_NOT_FOUND', ts: 1000 });
 });

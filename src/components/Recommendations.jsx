@@ -128,6 +128,8 @@ export default function Recommendations({ currentArchive }) {
   const [archiveDeleting, setArchiveDeleting] = useState(false);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
   const [archiveFailureReport, setArchiveFailureReport] = useState(null);
+  const sectionRef = useRef(null);
+  const [nearViewport, setNearViewport] = useState(false);
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
   const scroller = useHorizontalScroller();
@@ -172,7 +174,24 @@ export default function Recommendations({ currentArchive }) {
   }, [currentArchive?.tags]);
 
   useEffect(() => {
+    if (nearViewport || typeof IntersectionObserver === 'undefined') {
+      setNearViewport(true);
+      return undefined;
+    }
+    if (!sectionRef.current) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '400px 0px' });
+    observer.observe(sectionRef.current);
+    return () => observer.disconnect();
+  }, [nearViewport]);
+
+  useEffect(() => {
     if (!currentArchive?.arcid || !currentArchive?.tags) return;
+    if (!nearViewport) return;
     const cacheKey = scopedStorageKey(`lrr_rec_cache_v3_${sameCreatorType}_${currentArchive.arcid}`);
     let cancelled = false;
 
@@ -209,7 +228,7 @@ export default function Recommendations({ currentArchive }) {
     };
     fetchAll();
     return () => { cancelled = true; };
-  }, [currentArchive?.arcid, retryTick, sameCreatorType]);
+  }, [currentArchive?.arcid, nearViewport, retryTick, sameCreatorType]);
 
   const buildYouMayLike = async () => {
     const tags = currentArchive.tags.split(',').map(t => t.trim()).filter(Boolean);
@@ -421,7 +440,7 @@ export default function Recommendations({ currentArchive }) {
 
   return (
     <>
-    <div data-lrr-recommendations className="section-reveal section-reveal-delay-2" style={{ width: '100%', marginTop: '20px', boxSizing: 'border-box' }}>
+    <div ref={sectionRef} data-lrr-recommendations className="section-reveal section-reveal-delay-2" style={{ width: '100%', marginTop: '20px', boxSizing: 'border-box' }}>
       <div className="glass-panel" style={{
         width: '100%', maxWidth: '1400px', margin: '0 auto', boxSizing: 'border-box',
         padding: 0,
@@ -499,22 +518,15 @@ export default function Recommendations({ currentArchive }) {
             {loading ? (
               <>
               {Array.from({ length: skeletonCount }).map((_, i) => (
-                <div key={`rsk-${i}`} style={{
-                  flexShrink: 0, width: '150px', minWidth: '150px',
-                  background: 'var(--surface-2)', borderRadius: '12px',
-                  border: '1px solid var(--glass-border)',
-                  overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '12px',
-                }}>
-                  <div style={{
-                    width: '100%', height: '210px',
-                    background: 'linear-gradient(90deg, var(--reader-skeleton-base) 25%, var(--reader-skeleton-highlight) 50%, var(--reader-skeleton-base) 75%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'shimmer 1.5s infinite',
-                  }} />
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ height: '12px', borderRadius: '4px', background: 'var(--reader-skeleton-base)', width: '84%', marginTop: '12px' }} />
-                    <div style={{ height: '12px', borderRadius: '4px', background: 'var(--reader-skeleton-base)', width: '66%', marginTop: '8px' }} />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}><span style={{ height: '8px', width: '36%', borderRadius: '4px', background: 'var(--reader-skeleton-base)' }} /><span style={{ height: '8px', width: '30%', borderRadius: '4px', background: 'var(--reader-skeleton-base)' }} /></div>
+                <div key={`rsk-${i}`} className="recommendation-loading-card">
+                  <div className="recommendation-loading-cover shimmer-strip" />
+                  <div className="recommendation-loading-body">
+                    <div className="recommendation-loading-line shimmer-strip" />
+                    <div className="recommendation-loading-line recommendation-loading-line-short shimmer-strip" />
+                    <div className="recommendation-loading-meta">
+                      <span className="recommendation-loading-chip shimmer-strip" />
+                      <span className="recommendation-loading-chip recommendation-loading-chip-short shimmer-strip" />
+                    </div>
                   </div>
                 </div>
               ))}

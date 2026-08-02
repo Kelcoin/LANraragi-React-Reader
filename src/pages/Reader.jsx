@@ -67,6 +67,29 @@ import {
 
 const readerImageDecodeQueue = createImageDecodeQueue({ maxConcurrent: 3 });
 
+// Pre-generate the scaled preview for an adjacent page while the decode queue
+// is idle. The page blob comes from the shared fetch queue (key-deduped with
+// primePageBlob), and the produced preview lands in previewCache so a later
+// flip only decodes the small image instead of the full original + webp encode.
+async function primePagePreview(pageUrl, { enabled = true, sourceSize, priority = IMAGE_LOAD_PRIORITY.PRELOAD } = {}) {
+  if (!pageUrl || !enabled || typeof createImageBitmap !== 'function') return;
+  const src = await resolvePageImageSource(pageUrl, {
+    cacheOnly: false,
+    allowNetworkFallback: true,
+    priority,
+  });
+  if (!src) return;
+  const { promise } = readerImageDecodeQueue.schedule(`preview:${pageUrl}`, async (signal) => {
+    await getReaderPreviewSource(src, {
+      enabled,
+      fullPrecision: false,
+      sourceSize,
+      signal,
+    });
+  }, IMAGE_LOAD_PRIORITY.PRELOAD);
+  await promise.catch(() => {});
+}
+
 // ===== Authenticated Image Component =====
 const getConfiguredServerUrl = () => {
   try {
@@ -3350,7 +3373,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       const pageUrl = pages[idx];
       if (pageUrl) primePageBlob(pageUrl, IMAGE_LOAD_PRIORITY.ADJACENT - order).catch(() => {});
     });
-  }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.preloadCount]);
+    // Pre-generate previews for the two adjacent pages (front/back) at the
+    // lowest decode priority: skipped while flipping, so the next flip only
+    // decodes the small preview instead of the full original + webp encode.
+    indices.slice(0, 2).forEach((idx) => {
+      const pageUrl = pages[idx];
+      if (pageUrl) {
+        primePagePreview(pageUrl, {
+          enabled: settings.optimizedImageDecodeEnabled,
+          sourceSize: pageSizesRef.current[idx],
+        }).catch(() => {});
+      }
+    });
+  }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.optimizedImageDecodeEnabled, settings.preloadCount]);
 
   // ===== Outside-click to close panels =====
   useEffect(() => {
@@ -4070,9 +4105,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                 >
                   <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: 'var(--immersive-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
                     {pageSwitchLabel}
-                  </div>
-                  <div style={{ fontSize: 'clamp(16px, 2.6vw, 26px)', fontWeight: 600, color: 'color-mix(in srgb, var(--immersive-text) 62%, transparent)' }}>
-                    正在解码图像
                   </div>
                 </div>
               )}

@@ -103,7 +103,7 @@ function calculatePanelPosition(cardRect, panelHeight, pointerY = null, pointerX
   };
 }
 
-export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, displayMode = 'card', archiveGridItemKey, archiveGridGap = 16, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange }) {
+function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, displayMode = 'card', archiveGridItemKey, archiveGridGap = 16, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange, eagerThumbnail = false }) {
   const id = archive.arcid || archive.id;
   const [hovered, setHovered] = useState(false);
   const [compactPanelKind, setCompactPanelKind] = useState(null);
@@ -111,7 +111,9 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
   const [measureRevision, setMeasureRevision] = useState(0);
   const [closing, setClosing] = useState(false);
   const [thumbSrc, setThumbSrc] = useState(null);
-  const [thumbState, setThumbState] = useState('loading');
+  const [thumbState, setThumbState] = useState(() => (
+    typeof IntersectionObserver === 'undefined' ? 'loading' : 'idle'
+  ));
   const [retryKey, setRetryKey] = useState(0);
   const [panelPos, setPanelPos] = useState({ top: 0, left: 0 });
   const isMobile = useViewportWidth() < 768;
@@ -124,7 +126,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
   const [aspectRatio, setAspectRatio] = useState(() => archiveAspectRatioCache.get(aspectCacheKey) ?? null);
   const cardRef = useRef(null);
   const [thumbnailEligible, setThumbnailEligible] = useState(() => (
-    typeof IntersectionObserver === 'undefined'
+    eagerThumbnail || typeof IntersectionObserver === 'undefined'
   ));
   const panelRef = useRef(null);
   const compactTagsRef = useRef(null);
@@ -142,6 +144,9 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
   const pointerStartRef = useRef(null);
   const hoverPointerYRef = useRef(null);
   const hoverPointerXRef = useRef(null);
+  const activateArchive = useCallback((event) => {
+    onClick?.(archive, event);
+  }, [archive, onClick]);
 
   useEffect(() => {
     if (thumbnailEligible || !cardRef.current) return undefined;
@@ -570,6 +575,14 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     if (!isPanelVisible) return;
     const handleScroll = (event) => {
       if (!cardRef.current) return;
+      const scrollTarget = event.target;
+      if (
+        panelRef.current
+        && scrollTarget instanceof Node
+        && panelRef.current.contains(scrollTarget)
+      ) {
+        return;
+      }
       const rect = cardRef.current.getBoundingClientRect();
       if (rect.bottom < 0 || rect.top > window.innerHeight) {
         setHovered(false);
@@ -577,7 +590,6 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
         setClosing(false);
         return;
       }
-      const scrollTarget = event.target;
       if (
         scrollTarget instanceof Element
         && scrollTarget.contains(cardRef.current)
@@ -643,7 +655,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
       onSelectToggle(archive, e);
       return;
     }
-    onClick(e);
+    activateArchive(e);
   };
 
   const handleTitleClick = (e) => {
@@ -714,7 +726,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
         onSelectToggle(archive, event);
         return;
       }
-      onClick?.(event);
+      activateArchive(event);
     };
 
     const compactProgressPct = getArchiveProgressPercent(archive);
@@ -816,6 +828,10 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
                 maxWidth: '320px',
                 maxHeight: '440px',
                 overflowY: 'auto',
+                overflowX: 'clip',
+                scrollbarGutter: 'auto',
+                boxSizing: 'border-box',
+                contain: 'layout paint',
                 boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
                 pointerEvents: 'auto',
                 animation: closing ? 'fadeOut 0.1s ease-out forwards' : 'slideDown 0.15s ease-out forwards',
@@ -932,7 +948,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
           if (disabled || (event.key !== 'Enter' && event.key !== ' ')) return;
           event.preventDefault();
           if (selectionMode && onSelectToggle) onSelectToggle(archive, event);
-          else onClick?.(event);
+          else activateArchive(event);
         }}
         onPointerDown={(event) => {
           const nextTouchInteraction = event.pointerType === 'touch' || event.pointerType === 'pen';
@@ -952,7 +968,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
             setMobilePanelOpen((value) => !value);
             return;
           }
-          if (!touchInteractionRef.current) onClick(e);
+          if (!touchInteractionRef.current) activateArchive(e);
         }}
         onMouseEnter={!hasTouchInteraction ? showPanel : undefined}
         onMouseDown={startLongPress}
@@ -991,6 +1007,17 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
           {selectionMode && (
             <span className={`archive-card-selection-checkbox${selected ? ' is-selected' : ''}`} aria-hidden="true" />
           )}
+          {thumbState === 'idle' && !thumbSrc && (
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'var(--cover-bg)',
+              }}
+            />
+          )}
+
           {thumbState === 'loading' && !thumbSrc && (
             <div
               className="reader-skeleton-fade"
@@ -1172,6 +1199,10 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
             maxWidth: '320px',
             maxHeight: '440px',
             overflowY: 'auto',
+            overflowX: 'clip',
+            scrollbarGutter: 'auto',
+            boxSizing: 'border-box',
+            contain: 'layout paint',
             boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
             pointerEvents: 'auto',
             animation: closing ? 'fadeOut 0.1s ease-out forwards' : 'slideDown 0.15s ease-out forwards',
@@ -1254,5 +1285,7 @@ export default function ArchiveCard({ archive, onClick, onLongPress, onArchiveCo
     </div>
   );
 }
+
+export default React.memo(ArchiveCard);
 
 

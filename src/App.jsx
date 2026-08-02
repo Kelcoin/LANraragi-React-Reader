@@ -10,6 +10,8 @@ import SecretInput from './components/SecretInput';
 import AppVersion from './components/AppVersion';
 import ConfigTransferDialog from './components/ConfigTransferDialog';
 import { cacheServerInfo } from './lib/serverInfoCache';
+import { flushHistorySync } from './lib/history';
+import { flushWatchlistSync } from './lib/watchlist';
 import { resolveInitialRoute } from './lib/sessionState';
 import './index.css';
 
@@ -23,6 +25,170 @@ const UploadPage = lazy(() => import('./pages/UploadPage'));
 
 function AppRouteFallback() {
   return <div className="metadata-loading-state" role="status">正在加载页面…</div>;
+}
+
+function RouteSkeletonCards({ count = 8, compact = false }) {
+  return Array.from({ length: count }, (_, index) => (
+    <div className={`archive-list-loading-card${compact ? ' is-compact' : ''}`} key={`route-skeleton-${index}`}>
+      <div className="archive-list-loading-cover shimmer-strip" />
+      <div className="archive-list-loading-line shimmer-strip" />
+      <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+    </div>
+  ));
+}
+
+function HomeRouteFallback() {
+  return (
+    <main className="home-route-fallback" role="status" aria-label="正在加载首页">
+      <div className="home-route-fallback-topbar">
+        <div className="home-route-fallback-brand shimmer-strip" />
+        <div className="home-route-fallback-actions">
+          <span className="home-route-fallback-action shimmer-strip" />
+          <span className="home-route-fallback-action shimmer-strip" />
+        </div>
+      </div>
+
+      <section className="home-route-fallback-section">
+        <div className="home-route-fallback-heading shimmer-strip" />
+        <div className="home-route-fallback-carousel">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div className="home-route-fallback-card" key={`home-fallback-carousel-${index}`}>
+              <div className="home-route-fallback-cover shimmer-strip" />
+              <div className="home-route-fallback-line shimmer-strip" />
+              <div className="home-route-fallback-line home-route-fallback-line-short shimmer-strip" />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="home-route-fallback-section home-route-fallback-archive-section">
+        <div className="home-route-fallback-heading shimmer-strip" />
+        <div className="home-route-fallback-grid">
+          {Array.from({ length: 12 }, (_, index) => (
+            <div className="home-route-fallback-card" key={`home-fallback-archive-${index}`}>
+              <div className="home-route-fallback-cover shimmer-strip" />
+              <div className="home-route-fallback-line shimmer-strip" />
+              <div className="home-route-fallback-line home-route-fallback-line-short shimmer-strip" />
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ReaderRouteFallback() {
+  return (
+    <main className="route-fallback-shell reader-route-fallback" role="status" aria-label="正在加载阅读器">
+      <div className="reader-route-fallback-toolbar">
+        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-left">
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+        </div>
+        <span className="reader-route-fallback-title shimmer-strip" />
+        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-right">
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-icon shimmer-strip" />
+        </div>
+      </div>
+      <div className="reader-route-fallback-stage-layout">
+        <div className="reader-route-fallback-stage-frame reader-stage-frame">
+          <div className="reader-route-fallback-slot reader-stage-slot" aria-hidden="true">
+            <span className="shimmer-strip" />
+          </div>
+        </div>
+        <div className="reader-route-fallback-nav-row">
+          <span className="reader-route-fallback-nav-button shimmer-strip" />
+          <span className="reader-route-fallback-page-count shimmer-strip" />
+          <span className="reader-route-fallback-nav-button shimmer-strip" />
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function MetadataRouteFallback() {
+  return (
+    <main className="route-fallback-shell metadata-route-fallback" role="status" aria-label="正在加载元数据">
+      <section className="route-fallback-panel metadata-route-fallback-panel">
+        <div className="route-fallback-heading shimmer-strip" />
+        <div className="metadata-route-fallback-field shimmer-strip" />
+        <div className="metadata-route-fallback-area shimmer-strip" />
+        <div className="metadata-route-fallback-tags">
+          {Array.from({ length: 10 }, (_, index) => <span className="metadata-route-fallback-tag shimmer-strip" key={`metadata-route-tag-${index}`} />)}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ArchiveListRouteFallback({ title }) {
+  return (
+    <main className="route-fallback-shell archive-list-route-fallback" role="status" aria-label={`正在加载${title}`}>
+      <header className="archive-list-route-fallback-header">
+        <span className="route-fallback-heading shimmer-strip" />
+        <span className="archive-list-route-fallback-pill shimmer-strip" />
+      </header>
+      <section className="route-fallback-panel">
+        <div className="archive-list-loading-grid">
+          <RouteSkeletonCards count={8} />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function DedupeRouteFallback() {
+  return (
+    <main className="route-fallback-shell dedupe-route-fallback" role="status" aria-label="正在加载重复检测">
+      <section className="route-fallback-panel dedupe-route-fallback-panel">
+        <div className="route-fallback-heading shimmer-strip" />
+        <div className="dedupe-route-fallback-controls">
+          <span className="dedupe-route-fallback-control shimmer-strip" />
+          <span className="dedupe-route-fallback-control shimmer-strip" />
+          <span className="dedupe-route-fallback-control shimmer-strip" />
+        </div>
+        <div className="archive-list-loading-grid">
+          <RouteSkeletonCards count={6} />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function UploadRouteFallback() {
+  return (
+    <main className="route-fallback-shell upload-route-fallback" role="status" aria-label="正在加载上传页">
+      <section className="route-fallback-panel upload-route-fallback-panel">
+        <div className="route-fallback-heading shimmer-strip" />
+        <div className="upload-route-fallback-dropzone shimmer-strip" />
+        <div className="upload-route-fallback-field shimmer-strip" />
+      </section>
+    </main>
+  );
+}
+
+function getRouteFallback(route) {
+  switch (route?.kind) {
+    case 'home':
+      return <HomeRouteFallback />;
+    case 'reader':
+      return <ReaderRouteFallback />;
+    case 'metadata':
+      return <MetadataRouteFallback />;
+    case 'history':
+      return <ArchiveListRouteFallback title="阅读历史" />;
+    case 'watchlist':
+      return <ArchiveListRouteFallback title="待看档案" />;
+    case 'dedupe':
+      return <DedupeRouteFallback />;
+    case 'upload':
+      return <UploadRouteFallback />;
+    default:
+      return <AppRouteFallback />;
+  }
 }
 
 export default function App() {
@@ -121,6 +287,9 @@ export default function App() {
     setLoginNotice(null);
     setLoginLoading(true);
     try {
+      // Flush the old config's pending sync data before switching scope,
+      // otherwise queued progress/watchlist writes are dropped on the floor.
+      await Promise.allSettled([flushHistorySync(), flushWatchlistSync()]);
       const serverInfo = await checkServerStatus(tempConfig.url, tempConfig.key);
       localStorage.setItem('lrr_server_url', tempConfig.url);
       localStorage.setItem('lrr_api_key', tempConfig.key);
@@ -142,6 +311,8 @@ export default function App() {
   };
 
   const handleConfirmImportConfig = async (encoded) => {
+    // Same guard as handleConnect: never drop unsynced data on a scope switch.
+    await Promise.allSettled([flushHistorySync(), flushWatchlistSync()]);
     const count = importConfig(encoded);
     const next = {
       url: localStorage.getItem('lrr_server_url') || '',
@@ -287,7 +458,7 @@ export default function App() {
 
   return (
     <>
-      <Suspense fallback={<AppRouteFallback />}>
+      <Suspense fallback={getRouteFallback(route)}>
         {routeContent}
       </Suspense>
       <PwaStatus />

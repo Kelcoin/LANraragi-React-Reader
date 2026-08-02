@@ -18,11 +18,26 @@ function HeaderGlyph() {
   return <HomeSectionGlyph name="watchlist" size={24} color={getSectionGlyphColor('watchlist')} />;
 }
 
+function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
+  return (
+    <ArchiveGrid className="archive-list-loading-grid" displayMode={displayMode} aria-busy="true">
+      {Array.from({ length: count }, (_, index) => (
+        <div className="archive-list-loading-card" key={`watchlist-loading-${index}`}>
+          <div className="archive-list-loading-cover shimmer-strip" />
+          <div className="archive-list-loading-line shimmer-strip" />
+          <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+        </div>
+      ))}
+    </ArchiveGrid>
+  );
+}
+
 export default function WatchlistPage({ onSelectArchive, onBack }) {
   const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [items, setItems] = useState(() => getWatchlist());
   const [history, setHistory] = useState(() => getHistory());
+  const [initialLoading, setInitialLoading] = useState(true);
   const [cropCover] = useState(getCropCover);
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
   const showHistoricalArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, true);
@@ -38,14 +53,40 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
   const gridRef = useRef(null);
 
   useEffect(() => {
-    loadWatchlistState().then((state) => setItems(state.items)).catch(() => setItems(getWatchlist()));
+    let active = true;
+    loadWatchlistState().then((state) => {
+      if (!active) return;
+      // Keep items written while hydrating (removed/added elsewhere); snapshot
+      // enhancement fields only survive when the entry was not touched.
+      const latest = getWatchlist();
+      const stateById = new Map(state.items.map((item) => [item.id, item]));
+      setItems(latest.map((item) => {
+        const enhanced = stateById.get(item.id);
+        return enhanced && enhanced.addedAt === item.addedAt ? { ...item, ...enhanced } : item;
+      }));
+    }).catch(() => {
+      if (active) setItems(getWatchlist());
+    }).finally(() => {
+      if (active) setInitialLoading(false);
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    loadHistoryState().then((state) => setHistory(state.histories)).catch(() => setHistory(getHistory()));
-    const refresh = () => setHistory(getHistory());
+    let active = true;
+    loadHistoryState().then((state) => {
+      if (active) setHistory(state.histories);
+    }).catch(() => {
+      if (active) setHistory(getHistory());
+    });
+    const refresh = () => {
+      if (active) setHistory(getHistory());
+    };
     window.addEventListener('lrr:history-changed', refresh);
-    return () => window.removeEventListener('lrr:history-changed', refresh);
+    return () => {
+      active = false;
+      window.removeEventListener('lrr:history-changed', refresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -260,7 +301,9 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
             <ArchiveSearchBox query={query} setQuery={setQuery} placeholder="在待看档案中搜索标题或标签" />
           </div>
 
-          {filteredItems.length > 0 ? (
+          {initialLoading && filteredItems.length === 0 ? (
+            <ArchiveListLoadingGrid count={8} displayMode={archiveDisplayMode} />
+          ) : filteredItems.length > 0 ? (
             <ArchiveGrid ref={gridRef} displayMode={archiveDisplayMode} style={{ gap: isNarrow ? '10px' : '16px' }}>
               {filteredItems.map((item) => {
                 const selected = selectedIds.has(item.id);

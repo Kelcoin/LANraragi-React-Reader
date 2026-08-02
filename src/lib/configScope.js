@@ -127,12 +127,17 @@ export function migrateLegacyStorageKey(base) {
   const scoped = scopedStorageKey(base);
   if (scoped.endsWith(':unconfigured')) return scoped;
   try {
-    if (localStorage.getItem(scoped) === null) {
+    // A one-time migration marker per key: legacy (pre-scope) data may only be
+    // claimed by the first scope that touches it, so switching to a fresh
+    // config later cannot inherit another config's data.
+    const marker = `lrr_legacy_migrated_v1:${base}`;
+    if (localStorage.getItem(scoped) === null && !localStorage.getItem(marker)) {
       const legacy = localStorage.getItem(base);
       if (legacy !== null) {
         localStorage.setItem(scoped, legacy);
         localStorage.removeItem(base);
       }
+      localStorage.setItem(marker, '1');
     }
   } catch {}
   return scoped;
