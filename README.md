@@ -6,10 +6,6 @@
   </picture>
 </p>
 
-<p align="center">
-  <img src="public/preview.svg" alt="Readoshi 首页预览" width="820">
-</p>
-
 <h1 align="center">Readoshi</h1>
 
 Readoshi 是一个面向 [LANraragi](https://github.com/Difegue/LANraragi) 的现代漫画阅读器，支持浏览、阅读、管理和多设备同步。使用前需要可访问的 LANraragi 实例及其 API Key；Cloudflare Worker 和 E-Hentai 功能均为可选增强。
