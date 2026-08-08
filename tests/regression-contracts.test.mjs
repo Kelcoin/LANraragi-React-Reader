@@ -1507,7 +1507,7 @@ test('EH comments use semantic theme tokens without fixed uploader colors', () =
   assert.match(comments, /readEhCommentsCacheState/);
   assert.match(comments, /writeEhCommentsCache\(cacheKey, \[\], \{ unavailable/);
   assert.match(comments, /isTerminalGalleryError\(error\?\.code\)/);
-  assert.match(comments, /!isTerminalGalleryError\(error\?\.code\) && \(\n\s*<div className="eh-comments-actions"/);
+  assert.match(comments, /!isTerminalGalleryError\(error\?\.code\) && \(\r?\n\s*<div className="eh-comments-actions"/);
   assert.match(comments, /is-gallery-missing/);
   assert.match(css, /\.eh-comment-error\.is-gallery-missing/);
 });
