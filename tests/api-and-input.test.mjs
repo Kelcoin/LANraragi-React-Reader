@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import * as api from '../src/lib/api.js';
 import * as categories from '../src/lib/categories.js';
+import * as metadataEditor from '../src/lib/metadataEditor.js';
 import * as upload from '../src/lib/upload.js';
 import * as workerConfig from '../src/lib/worker-config.js';
 
@@ -17,6 +18,17 @@ try {
 test('API keys are Base64 encoded from UTF-8 bytes', () => {
   assert.equal(typeof api.encodeApiKey, 'function', 'encodeApiKey must exist');
   assert.equal(api.encodeApiKey('密钥'), Buffer.from('密钥', 'utf8').toString('base64'));
+});
+
+test('metadata plugins keep descriptions without treating parameter defaults as plugin defaults', () => {
+  const plugins = metadataEditor.normalizeMetadataPlugins([
+    { namespace: 'first', name: 'First', description: 'Line<br>Two &amp; more', parameters: [{ default_value: '1', type: 'bool' }] },
+    { namespace: 'ehplugin', name: 'E-Hentai', login_from: 'ehlogin', description: 'Searches g.e-hentai for tags.', parameters: [] },
+  ]);
+  assert.equal('isDefault' in plugins[0], false);
+  assert.equal(plugins[0].description, 'Line\nTwo & more');
+  assert.equal(plugins[1].value, 'ehplugin');
+  assert.equal(plugins[1].description, 'Searches g.e-hentai for tags.');
 });
 
 test('archive search responses are reused briefly and can be cleared', async () => {
@@ -158,6 +170,22 @@ test('drag and drop keeps only supported archive files', () => {
   const result = upload.partitionUploadFiles(files);
   assert.deepEqual(result.accepted.map((file) => file.name), ['book.cbz', 'scan.PDF']);
   assert.deepEqual(result.rejected.map((file) => file.name), ['notes.txt']);
+});
+
+test('upload tasks report per-item progress from the worker callback', async () => {
+  const updates = [];
+  const tasks = [{ id: 'one' }, { id: 'two' }];
+  const results = await upload.runUploadTasks(tasks, async (task, index, updateProgress) => {
+    updateProgress(index === 0 ? 37 : 82);
+    return { id: task.id };
+  }, (update) => {
+    updates.push({ index: update.index, status: update.status, progress: update.progress });
+  });
+
+  assert.deepEqual(results.map((item) => item.status), ['success', 'success']);
+  assert.ok(updates.some((item) => item.index === 0 && item.status === 'running' && item.progress === 37));
+  assert.ok(updates.some((item) => item.index === 1 && item.status === 'running' && item.progress === 82));
+  assert.deepEqual(updates.filter((item) => item.status === 'success').map((item) => item.progress), [100, 100]);
 });
 
 test('config import ignores non-string field values', () => {

@@ -7,6 +7,7 @@ const metadataRequests = new Map();
 const archiveCatalogs = new Map();
 const HYDRATE_CONCURRENCY = 6;
 const METADATA_STORAGE_KEY = 'lrr_archive_metadata_cache_v1';
+const ARCHIVE_CATALOG_DIRTY_KEY = 'lrr_archive_catalog_dirty';
 const METADATA_STORAGE_LIMIT = 300;
 let persistTimer = null;
 
@@ -139,6 +140,21 @@ export function removeArchivesFromCatalog(ids) {
 export function invalidateArchiveCatalog() {
   const entry = getCatalogEntry();
   entry.items = null;
+}
+
+export function markArchiveCatalogDirty() {
+  invalidateArchiveCatalog();
+  try { sessionStorage.setItem(ARCHIVE_CATALOG_DIRTY_KEY, '1'); } catch {}
+}
+
+export function consumeArchiveCatalogDirty() {
+  try {
+    const dirty = sessionStorage.getItem(ARCHIVE_CATALOG_DIRTY_KEY) === '1';
+    if (dirty) sessionStorage.removeItem(ARCHIVE_CATALOG_DIRTY_KEY);
+    return dirty;
+  } catch {
+    return false;
+  }
 }
 
 export function decorateArchiveRecord(record) {

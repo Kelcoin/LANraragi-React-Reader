@@ -2001,36 +2001,111 @@ textarea:focus-visible,
   align-items: center;
 }
 
-.metadata-status-wrap {
+.metadata-plugin-arg-wrap {
+  position: relative;
+}
+
+.metadata-plugin-arg-input {
+  width: 100%;
+}
+
+.metadata-plugin-arg-input.has-help {
+  padding-right: 44px;
+}
+
+.metadata-plugin-help {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 22px;
+  height: 22px;
   display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.26s ease;
+  place-items: center;
+  color: var(--text-sub);
+  cursor: help;
+  transform: translateY(-50%);
 }
 
-.metadata-status-wrap[data-open="true"] {
-  grid-template-rows: 1fr;
+.metadata-plugin-help:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
-.metadata-status-clip {
-  min-height: 0;
-  overflow: hidden;
+.metadata-plugin-help-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.metadata-plugin-help-bubble {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 20;
+  width: min(360px, calc(100vw - 40px));
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border-hover);
+  border-radius: var(--radius-panel);
+  background: var(--surface-2);
+  color: var(--text-main);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.metadata-plugin-help:hover .metadata-plugin-help-bubble,
+.metadata-plugin-help:focus-visible .metadata-plugin-help-bubble {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.metadata-toast-stack {
+  position: fixed;
+  top: max(16px, calc(var(--app-safe-area-top) + 16px));
+  left: max(16px, calc(var(--app-safe-area-left) + 16px));
+  z-index: 100002;
+  width: min(408px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  pointer-events: none;
 }
 
 .metadata-status-card {
-  width: fit-content;
-  max-width: min(100%, 560px);
+  width: 100%;
   box-sizing: border-box;
   min-width: 0;
+  max-height: 360px;
   overflow-wrap: anywhere;
-  margin: 0 auto;
-  padding: 10px 16px;
+  overflow: hidden;
+  position: relative;
+  margin: 0;
+  padding: 16px 14px 19px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
   border: 1px solid var(--glass-border-hover);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--surface-2);
-  color: var(--text-sub);
-  text-align: center;
+  color: var(--text-main);
+  text-align: left;
   line-height: 1.55;
-  animation: metadata-status-enter 0.22s ease both;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  transform-origin: left top;
+  animation: metadata-status-enter 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   transition: opacity 0.22s ease, transform 0.22s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
@@ -2047,13 +2122,86 @@ textarea:focus-visible,
 }
 
 .metadata-status-card.is-closing {
-  opacity: 0;
-  transform: translateY(-4px);
+  animation: metadata-status-exit 0.28s ease both;
+}
+
+.metadata-status-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.metadata-status-card.is-success .metadata-status-icon {
+  background: var(--good);
+  color: var(--good-contrast);
+}
+
+.metadata-status-card.is-error .metadata-status-icon {
+  background: var(--danger);
+  color: var(--danger-contrast);
+}
+
+.metadata-status-text {
+  min-width: 0;
+  font-weight: 650;
+}
+
+.metadata-status-close {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-sub);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.metadata-status-close:hover,
+.metadata-status-close:focus-visible {
+  background: var(--surface-3);
+  color: var(--text-main);
+}
+
+.metadata-status-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: metadata-status-progress var(--toast-duration, 3600ms) linear forwards;
+}
+
+.metadata-status-card.is-success .metadata-status-progress {
+  background: var(--good);
+}
+
+.metadata-status-card.is-error .metadata-status-progress {
+  background: var(--danger);
 }
 
 @keyframes metadata-status-enter {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; transform: translateY(-12px) scale(0.98); }
+  to { opacity: 1; max-height: 360px; padding-top: 16px; padding-bottom: 19px; transform: translateY(0) scale(1); }
+}
+
+@keyframes metadata-status-exit {
+  from { opacity: 1; max-height: 360px; padding-top: 16px; padding-bottom: 19px; transform: translateY(0) scale(1); }
+  to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; transform: translateY(-10px) scale(0.98); }
+}
+
+@keyframes metadata-status-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 .metadata-field {
@@ -4648,6 +4796,7 @@ textarea:focus-visible,
 .upload-progress { height: 5px; margin: 16px 0; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
 .upload-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
 .upload-task-row { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 10px 11px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--glass-border); overflow: hidden; }
+.upload-task-row.has-menu { cursor: context-menu; }
 .upload-task-row::before { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--task-progress, 0%); background: var(--accent-soft); pointer-events: none; transition: width .22s ease; }
 .upload-task-row > * { position: relative; z-index: 1; }
 .upload-task-row > div { min-width: 0; display: grid; gap: 3px; }
@@ -4676,8 +4825,10 @@ textarea:focus-visible,
   .tag-suggest-option,
   .archive-tag-button,
   .archive-card-selection-checkbox,
-  .metadata-status-wrap,
+  .metadata-plugin-help-bubble,
+  .metadata-toast-stack,
   .metadata-status-card,
+  .metadata-status-progress,
   .reader-toolbar-button,
   .reader-toolbar-icon,
   .reader-toolbar-label,

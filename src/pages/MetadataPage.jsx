@@ -10,10 +10,13 @@ import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
 import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
-import { rememberArchiveInCatalog } from '../lib/archiveMetadataCache';
+import { markArchiveCatalogDirty, rememberArchiveInCatalog } from '../lib/archiveMetadataCache';
 import { loadTagDB, translateTag } from '../lib/tags';
 
 const field = { width: '100%', boxSizing: 'border-box' };
+const TOAST_DURATION_MS = 3600;
+const TOAST_ERROR_DURATION_MS = 7000;
+const TOAST_CLOSE_MS = 280;
 
 function MetadataTagsBox({ children, onPointerMove, onPointerLeave }) {
   const contentRef = useRef(null);
@@ -78,7 +81,7 @@ export default function MetadataPage({ archiveId }) {
   const [plugins, setPlugins] = useState([]);
   const [plugin, setPlugin] = useState('');
   const [pluginArg, setPluginArg] = useState('');
-  const [status, setStatus] = useState(null);
+  const [toasts, setToasts] = useState([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteSync, setDeleteSync] = useState(true);
   const [deleting, setDeleting] = useState(false);
@@ -88,7 +91,7 @@ export default function MetadataPage({ archiveId }) {
   const [revealedTag, setRevealedTag] = useState('');
   const [, setTagDBRevision] = useState(0);
   const tagInputRef = useRef(null);
-  const statusTimerRef = useRef(null);
+  const statusTimersRef = useRef(new Map());
   const statusIdRef = useRef(0);
   const loadSequenceRef = useRef(0);
   const operationControllerRef = useRef(null);
@@ -146,15 +149,31 @@ export default function MetadataPage({ archiveId }) {
     return () => { active = false; };
   }, []);
 
-  const showStatus = (text, type = 'info', { autoHide = type === 'error' } = {}) => {
-    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+  const clearStatusTimer = useCallback((id) => {
+    const timer = statusTimersRef.current.get(id);
+    if (timer) clearTimeout(timer);
+    statusTimersRef.current.delete(id);
+  }, []);
+
+  const closeStatus = useCallback((id) => {
+    clearStatusTimer(id);
+    setToasts(current => current.map(toast => (
+      toast.id === id ? { ...toast, closing: true } : toast
+    )));
+    const timer = setTimeout(() => {
+      statusTimersRef.current.delete(id);
+      setToasts(current => current.filter(toast => toast.id !== id));
+    }, TOAST_CLOSE_MS);
+    statusTimersRef.current.set(id, timer);
+  }, [clearStatusTimer]);
+
+  const showStatus = (text, type = 'info', { autoHide = true, duration = type === 'error' ? TOAST_ERROR_DURATION_MS : TOAST_DURATION_MS } = {}) => {
     statusIdRef.current += 1;
-    setStatus({ id: statusIdRef.current, text, type, closing: false });
+    const id = statusIdRef.current;
+    setToasts(current => [...current, { id, text, type, closing: false, autoHide, duration }]);
     if (autoHide) {
-      statusTimerRef.current = setTimeout(() => {
-        setStatus(current => current ? { ...current, closing: true } : current);
-        statusTimerRef.current = setTimeout(() => setStatus(null), 260);
-      }, 1800);
+      const timer = setTimeout(() => closeStatus(id), duration);
+      statusTimersRef.current.set(id, timer);
     }
   };
 
@@ -175,7 +194,8 @@ export default function MetadataPage({ archiveId }) {
       const next = { title: data.title || '', summary: data.summary || '', tags: parseTags(data.tags) };
       setArchive(data); setForm(next); setBaseline(metadataFingerprint({ ...next, tags: next.tags.join(',') }));
       const values = normalizeMetadataPlugins(list);
-      setPlugins(values); setPlugin(values[0]?.value || '');
+      const defaultPlugin = values.find(option => option.value === 'ehplugin' || option.label === 'E-Hentai') || values[0];
+      setPlugins(values); setPlugin(defaultPlugin?.value || '');
     }).catch((error) => {
       if (sequence === loadSequenceRef.current && error?.name !== 'AbortError') showStatus(error.message, 'error');
     }).finally(() => {
@@ -185,7 +205,8 @@ export default function MetadataPage({ archiveId }) {
   }, [archiveId]);
 
   useEffect(() => () => {
-    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimersRef.current.forEach(clearTimeout);
+    statusTimersRef.current.clear();
     operationControllerRef.current?.abort();
   }, []);
 
@@ -223,6 +244,7 @@ export default function MetadataPage({ archiveId }) {
       const updatedArchive = { ...latest, ...form, id: archiveId, arcid: archiveId, tags: form.tags.join(',') };
       await lrrApi.updateArchiveMetadata(archiveId, updatedArchive, { signal: controller.signal });
       rememberArchiveInCatalog(updatedArchive, { immediate: true });
+      markArchiveCatalogDirty();
       await lrrApi.clearSearchCache().catch(() => {});
       setArchive(updatedArchive);
       setBaseline(metadataFingerprint(updatedArchive)); showStatus('已保存', 'success', { autoHide: true });
@@ -259,8 +281,23 @@ export default function MetadataPage({ archiveId }) {
       setBusy('');
     }
   };
-  if (!archive) return <div className="metadata-loading-state">{status?.text || '正在载入元数据…'}</div>;
+  const pluginDescription = plugins.find(option => option.value === plugin)?.description || '';
+  const latestToast = toasts[toasts.length - 1];
+  if (!archive) return <div className="metadata-loading-state">{latestToast?.text || '正在载入元数据…'}</div>;
   return <main className="metadata-page">
+    <div className="metadata-toast-stack" aria-live="polite">
+      {toasts.map(status => <div
+        key={status.id}
+        className={`metadata-status-card is-${status.type}${status.closing ? ' is-closing' : ''}`}
+        role={status.type === 'error' ? 'alert' : 'status'}
+        style={{ '--toast-duration': `${status.duration}ms` }}
+      >
+        <span className="metadata-status-icon" aria-hidden="true">{status.type === 'success' ? '✓' : status.type === 'error' ? '!' : 'i'}</span>
+        <span className="metadata-status-text">{status.text}</span>
+        <button type="button" className="metadata-status-close" aria-label="关闭提示" onClick={() => closeStatus(status.id)}>×</button>
+        {status.autoHide && <span className="metadata-status-progress" aria-hidden="true" />}
+      </div>)}
+    </div>
     <h2 className="metadata-page-title">编辑 {archive.title}</h2>
     <section className="glass-panel metadata-panel">
       <label className="metadata-field">当前文件名<input className="input-glass" style={field} readOnly value={archive.filename || archive.filepath || ''} /></label>
@@ -280,12 +317,7 @@ export default function MetadataPage({ archiveId }) {
           }}
         >{form.tags.map(tag => <MetadataTagChip key={tag} tag={tag} translatedTag={formatMetadataTag(tag, translateTag)} revealed={revealedTag === tag} onToggle={() => setRevealedTag(current => current === tag ? '' : tag)} onCopy={async () => { try { await navigator.clipboard.writeText(tag); showStatus(`已复制标签：${tag}`, 'success'); } catch { showStatus('复制标签失败', 'error'); } }} onDelete={() => { setRevealedTag(current => current === tag ? '' : current); setForm({ ...form, tags: form.tags.filter(item => item !== tag) }); }} />)}</MetadataTagsBox>
       </div>
-      <div className="metadata-plugin-row"><CustomSelect value={plugin} options={plugins} onChange={setPlugin} /><input className="input-glass" value={pluginArg} onChange={e => setPluginArg(e.target.value)} placeholder="插件参数或 URL" disabled={!!busy} /><button className="btn" onClick={runPlugin} disabled={!!busy}>执行插件</button></div>
-      <div className="metadata-status-wrap" data-open={status && !status.closing ? 'true' : 'false'} aria-live="polite">
-        <div className="metadata-status-clip">
-          {status && <div key={status.id} className={`metadata-status-card is-${status.type}${status.closing ? ' is-closing' : ''}`}>{status.text}</div>}
-        </div>
-      </div>
+      <div className="metadata-plugin-row"><CustomSelect value={plugin} options={plugins} onChange={setPlugin} /><div className="metadata-plugin-arg-wrap"><input className={`input-glass metadata-plugin-arg-input${pluginDescription ? ' has-help' : ''}`} value={pluginArg} onChange={e => setPluginArg(e.target.value)} placeholder="插件参数或 URL" disabled={!!busy} />{pluginDescription && <span className="metadata-plugin-help" tabIndex={0} aria-label="插件说明"><svg className="metadata-plugin-help-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.8 9.2a2.4 2.4 0 0 1 4.6 1c0 1.8-2.4 1.9-2.4 3.7" /><circle cx="12" cy="17" r=".7" /></svg><span className="metadata-plugin-help-bubble" role="tooltip">{pluginDescription}</span></span>}</div><button className="btn" onClick={runPlugin} disabled={!!busy}>执行插件</button></div>
       <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 14 }}><button className="btn" onClick={() => navigateToArchive(archiveId)} disabled={!!busy}>阅读档案</button><button className="btn metadata-delete-button" onClick={() => { setDeleteSync(true); setDeleteOpen(true); }} disabled={!!busy}>删除档案</button><button className="btn" onClick={save} disabled={!!busy}>{busy === 'save' ? '保存中…' : '保存元数据'}</button><button className="btn" disabled={!!busy} onClick={() => { if (window.history.length > 1) window.history.back(); else navigateHome(); }}>返回</button></div>
     </section>
     <ConfirmDialog open={deleteOpen} title="确认删除档案" message={`将永久删除“${archive.title}”。`} confirmLabel={deleting ? '删除中…' : '确认删除'} confirmDisabled={deleting} onCancel={() => !deleting && setDeleteOpen(false)} onConfirm={handleArchiveDelete} dismissOnBackdrop={!deleting}>

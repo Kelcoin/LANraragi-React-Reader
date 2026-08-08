@@ -355,8 +355,8 @@ export default function Recommendations({ currentArchive }) {
     ? `loading-${currentArchive?.arcid || ''}`
     : `${tab}-${data.map((arc) => arc.arcid || arc.id).join('-')}`;
 
-  const handleCardClick = (arc) => {
-    navigateToArchive(arc.arcid || arc.id);
+  const handleCardClick = (arc, options) => {
+    navigateToArchive(arc.arcid || arc.id, options);
   };
 
   const handleOpenArchiveMenu = useCallback((archive, point) => {
@@ -545,10 +545,10 @@ export default function Recommendations({ currentArchive }) {
     <ArchiveContextMenu
       menu={archiveMenu}
       onClose={() => setArchiveMenu(null)}
-      onRead={(archive) => handleCardClick(archive)}
-      onReadIncognito={(archive) => navigateToArchive(archive.arcid || archive.id, { incognito: true })}
+      onRead={(archive, options) => handleCardClick(archive, options)}
+      onReadIncognito={(archive, options) => navigateToArchive(archive.arcid || archive.id, { ...options, incognito: true })}
       onClearProgress={handleClearArchiveProgress}
-      onEditMetadata={(archive) => navigateToMetadata(archive.arcid || archive.id)}
+      onEditMetadata={(archive, options) => navigateToMetadata(archive.arcid || archive.id, options)}
       onDownload={handleArchiveDownload}
       onCopyLink={handleArchiveCopyLink}
       onDelete={(archive) => { setArchiveDeleteSyncConfirmed(true); setArchiveDeleteTarget(archive); }}

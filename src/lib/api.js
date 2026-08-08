@@ -86,12 +86,64 @@ async function readResponse(res) {
   }
 
   const text = await res.text();
+  return parseResponseText(text);
+}
+
+function parseResponseText(text) {
   if (!text) return null;
   try {
     return JSON.parse(text);
   } catch {
     return text;
   }
+}
+
+function readXhrResponse(xhr) {
+  const status = xhr.status;
+  if (status < 200 || status >= 300) {
+    if (status === 401) throw createApiError(status, 'API Error: 401 (API Key 错误或未授权)');
+    throw createApiError(status, xhr.responseText || `API Error: ${status}`);
+  }
+  return parseResponseText(xhr.responseText || '');
+}
+
+function uploadFormData(endpoint, body, { signal, onProgress } = {}) {
+  if (typeof XMLHttpRequest === 'undefined') {
+    return fetch(getApiUrl(endpoint), {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body,
+      signal,
+    }).then(readResponse);
+  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    xhr.open('PUT', getApiUrl(endpoint));
+    Object.entries(getAuthHeaders()).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onload = () => {
+      signal?.removeEventListener('abort', abort);
+      try { resolve(readXhrResponse(xhr)); }
+      catch (error) { reject(error); }
+    };
+    xhr.onerror = () => {
+      signal?.removeEventListener('abort', abort);
+      reject(createApiError(xhr.status || 0, '上传失败'));
+    };
+    xhr.onabort = () => {
+      signal?.removeEventListener('abort', abort);
+      reject(signal ? abortReason(signal) : createApiError(0, '上传已取消'));
+    };
+    if (signal?.aborted) {
+      xhr.abort();
+      return;
+    }
+    signal?.addEventListener('abort', abort, { once: true });
+    xhr.send(body);
+  });
 }
 
 const request = async (endpoint, method = 'GET', body = null, options = {}) => {
@@ -232,15 +284,10 @@ export const lrrApi = {
     const params = new URLSearchParams({ plugin, arg });
     return request(`/plugins/use?${params}`, 'POST');
   },
-  uploadArchive: async (file) => {
+  uploadArchive: async (file, options = {}) => {
     const body = new FormData();
     body.append('file', file, file.name);
-    const res = await fetch(getApiUrl('/archives/upload'), {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body,
-    });
-    return readResponse(res);
+    return uploadFormData('/archives/upload', body, options);
   },
   getArchiveFiles: (id, options = {}) => request(`/archives/${id}/files`, 'GET', null, options),
   deleteArchive: (id) => request(`/archives/${encodeURIComponent(id)}`, 'DELETE'),

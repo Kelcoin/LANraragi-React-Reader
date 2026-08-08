@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lrrApi } from '../lib/api';
-import { navigateHome } from '../lib/navigation';
+import { navigateHome, navigateToArchive, navigateToMetadata } from '../lib/navigation';
 import {
   dedupeUploadFiles,
   partitionUploadFiles,
@@ -11,7 +11,15 @@ import {
 } from '../lib/upload';
 import CustomSelect from '../components/CustomSelect';
 import { ToolbarGlyph } from '../components/AppGlyphs';
-import { invalidateArchiveCatalog } from '../lib/archiveMetadataCache';
+import ArchiveContextMenu from '../components/ArchiveContextMenu';
+import ConfirmDialog from '../components/ConfirmDialog';
+import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
+import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
+import { markArchiveCatalogDirty } from '../lib/archiveMetadataCache';
+import { addWatchlistItem } from '../lib/watchlist';
+import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
+import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
+import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
 
 const ACCEPTED_FILES = '.zip,.cbz,.rar,.cbr,.7z,.pdf';
 
@@ -22,6 +30,13 @@ function taskKey(type, value, index) {
 function responseMessage(value) {
   if (typeof value === 'string') return value;
   return value?.message || value?.data?.message || '已提交到 LANraragi';
+}
+
+function archiveFromUploadResponse(value, fallbackTitle) {
+  const data = value?.data && typeof value.data === 'object' ? value.data : value;
+  const id = data?.id || data?.arcid || data?.archive_id;
+  if (!id) return null;
+  return { ...data, id, arcid: id, title: data?.title || fallbackTitle || id };
 }
 
 function statusLabel(status) {
@@ -42,6 +57,11 @@ export default function UploadPage() {
   const [running, setRunning] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [notice, setNotice] = useState('');
+  const [archiveMenu, setArchiveMenu] = useState(null);
+  const [archiveDeleteTarget, setArchiveDeleteTarget] = useState(null);
+  const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(getEhFavoriteDeleteSync);
+  const [archiveDeleting, setArchiveDeleting] = useState(false);
+  const [archiveFailureReport, setArchiveFailureReport] = useState(null);
 
   const parsedUrls = useMemo(() => parseUploadUrls(urlText), [urlText]);
   const unmatchedUrlCount = useMemo(() => (
@@ -78,25 +98,111 @@ export default function UploadPage() {
     setNotice(rejected.length ? `已忽略不支持的文件：${rejected.map((file) => file.name).join('、')}` : '');
   }, []);
 
-  const clearSearchCache = async () => {
+  const clearSearchCache = useCallback(async (successLabel = '档案已提交') => {
     try {
       await lrrApi.clearSearchCache();
     } catch (error) {
-      setNotice(`档案已提交，但搜索缓存清理失败：${error.message || '请稍后在首页刷新'}`);
+      setNotice(`${successLabel}，但搜索缓存清理失败：${error.message || '请稍后在首页刷新'}`);
     }
-  };
+  }, []);
 
   const updateTask = useCallback((update) => {
     setResults(current => current.map((item, index) => {
       if (index !== update.index) return item;
+      const archive = update.status === 'success'
+        ? archiveFromUploadResponse(update.value, item.label)
+        : null;
       return {
         ...item,
         status: update.status,
         progress: update.progress ?? item.progress ?? 0,
+        archive: archive || item.archive,
         message: update.error || (update.status === 'success' ? responseMessage(update.value) : item.message),
       };
     }));
   }, []);
+
+  const handleTaskContextMenu = useCallback((event, item) => {
+    const archive = item?.status === 'success' ? item.archive : null;
+    const archiveId = archive?.arcid || archive?.id;
+    if (!archiveId) return;
+    event.preventDefault();
+    setArchiveMenu({ archive, x: event.clientX, y: event.clientY, showAddWatchlist: true });
+  }, []);
+
+  const handleArchiveDownload = useCallback(async (archive) => {
+    const archiveId = archive?.arcid || archive?.id;
+    if (!archiveId) return;
+    try {
+      const { blob, filename } = await lrrApi.downloadArchive(archiveId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || `${archiveId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      alert(err.message || '下载失败');
+    }
+  }, []);
+
+  const handleArchiveCopyLink = useCallback(async (archive) => {
+    const archiveId = archive?.arcid || archive?.id;
+    if (!archiveId) return;
+    const url = `${window.location.origin}/?id=${encodeURIComponent(archiveId)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      prompt('复制档案链接:', url);
+    }
+  }, []);
+
+  const handleClearArchiveProgress = useCallback(async (archive) => {
+    const result = await clearConfiguredArchiveReadingProgress(archive);
+    const archiveId = archive?.arcid || archive?.id;
+    setResults(current => current.map(item => (
+      (item.archive?.arcid || item.archive?.id) === archiveId
+        ? { ...item, archive: { ...item.archive, progress: result.page, page: result.page } }
+        : item
+    )));
+    return result;
+  }, []);
+
+  const handleArchiveDelete = useCallback(async () => {
+    const archiveId = archiveDeleteTarget?.arcid || archiveDeleteTarget?.id;
+    if (!archiveId) return;
+    const title = archiveDeleteTarget?.title || archiveId;
+    const ehFailures = [];
+    setArchiveDeleting(true);
+    try {
+      const deletedId = await deleteArchiveWithFavoriteSync(archiveDeleteTarget, {
+        syncEnabled: getEhFavoriteDeleteSync(),
+        confirmationEnabled: archiveDeleteSyncConfirmed,
+        continueOnFavoriteError: true,
+        onFavoriteError: ({ galleryUrl, error }) => {
+          ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
+        },
+      });
+      markArchiveCatalogDirty();
+      await clearSearchCache('档案已删除');
+      setResults(current => current.filter(item => (item.archive?.arcid || item.archive?.id) !== deletedId));
+      setArchiveDeleteTarget(null);
+      if (ehFailures.length > 0) {
+        setArchiveFailureReport({ ehFailures, lrrFailures: [], message: 'LANraragi 档案已删除，但 E-Hentai 收藏夹移除失败。' });
+      }
+    } catch (err) {
+      setArchiveDeleteTarget(null);
+      setArchiveFailureReport({
+        ehFailures,
+        lrrFailures: [{ id: archiveId, title, message: err?.message || '删除失败' }],
+        message: '档案删除未全部完成，可稍后重试。',
+      });
+    } finally {
+      setArchiveDeleting(false);
+    }
+  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, clearSearchCache]);
 
   const runFiles = async () => {
     if (running || files.length === 0) return;
@@ -104,8 +210,10 @@ export default function UploadPage() {
     setResults(tasks.map(task => ({ ...task, type: 'file', status: 'queued', progress: 0, message: '' })));
     setRunning(true);
     try {
-      const uploadResults = await runUploadTasks(tasks, task => lrrApi.uploadArchive(task.file), updateTask);
-      if (uploadResults.some((result) => result.status === 'success')) invalidateArchiveCatalog();
+      const uploadResults = await runUploadTasks(tasks, (task, index, updateProgress) => (
+        lrrApi.uploadArchive(task.file, { onProgress: updateProgress })
+      ), updateTask);
+      if (uploadResults.some((result) => result.status === 'success')) markArchiveCatalogDirty();
       await clearSearchCache();
     } finally {
       setRunning(false);
@@ -128,7 +236,7 @@ export default function UploadPage() {
         if (!plugin) throw new Error('没有下载插件匹配该 URL，请手动选择插件');
         return lrrApi.useDownloadPlugin(plugin.value, task.url);
       }, updateTask);
-      if (uploadResults.some((result) => result.status === 'success')) invalidateArchiveCatalog();
+      if (uploadResults.some((result) => result.status === 'success')) markArchiveCatalogDirty();
       await clearSearchCache();
     } finally {
       setRunning(false);
@@ -221,13 +329,46 @@ export default function UploadPage() {
         </div>
         <div className="upload-progress"><span style={{ width: `${totalProgress}%` }} /></div>
         <div className="upload-task-list">
-          {results.map(item => <div key={item.id} className="upload-task-row" style={{ '--task-progress': `${Number(item.progress) || 0}%` }}>
+          {results.map(item => <div
+            key={item.id}
+            className={`upload-task-row${item.archive ? ' has-menu' : ''}`}
+            style={{ '--task-progress': `${Number(item.progress) || 0}%` }}
+            onContextMenu={(event) => handleTaskContextMenu(event, item)}
+          >
             <span className={`upload-status-dot is-${item.status}`} />
             <div><strong title={item.label}>{item.label}</strong>{item.message && <small>{item.message}</small>}</div>
             <span className={`upload-status-text is-${item.status}`}>{statusLabel(item.status)}</span>
           </div>)}
         </div>
       </section>}
+      <ArchiveContextMenu
+        menu={archiveMenu}
+        onClose={() => setArchiveMenu(null)}
+        onRead={(archive, options) => navigateToArchive(archive.arcid || archive.id, options)}
+        onReadIncognito={(archive, options) => navigateToArchive(archive.arcid || archive.id, { ...options, incognito: true })}
+        onClearProgress={handleClearArchiveProgress}
+        onEditMetadata={(archive, options) => navigateToMetadata(archive.arcid || archive.id, options)}
+        onDownload={handleArchiveDownload}
+        onCopyLink={handleArchiveCopyLink}
+        onAddWatchlist={(archive) => addWatchlistItem(archive)}
+        onDelete={(archive) => { setArchiveDeleteSyncConfirmed(true); setArchiveDeleteTarget(archive); }}
+      />
+      <ConfirmDialog
+        open={!!archiveDeleteTarget}
+        title="确认删除档案"
+        message={archiveDeleteTarget ? `将从 LANraragi 中删除“${archiveDeleteTarget.title || archiveDeleteTarget.arcid || archiveDeleteTarget.id}”。此操作不可撤销。` : ''}
+        confirmLabel={archiveDeleting ? '删除中…' : '确认删除'}
+        cancelLabel="取消"
+        onConfirm={handleArchiveDelete}
+        onCancel={() => { if (!archiveDeleting) setArchiveDeleteTarget(null); }}
+        confirmDisabled={archiveDeleting}
+        dismissOnBackdrop={!archiveDeleting}
+      >
+        {getEhFavoriteDeleteSync() && (
+          <EhFavoriteDeleteSwitch checked={archiveDeleteSyncConfirmed} onChange={setArchiveDeleteSyncConfirmed} disabled={archiveDeleting} />
+        )}
+      </ConfirmDialog>
+      <ArchiveDeletionFailureDialog report={archiveFailureReport} message={archiveFailureReport?.message} onClose={() => setArchiveFailureReport(null)} />
     </main>
   );
 }

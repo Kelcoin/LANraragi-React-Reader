@@ -13,6 +13,10 @@ function dispatchRouteChange(detail) {
   window.dispatchEvent(new CustomEvent('lrr:navigate', { detail }));
 }
 
+function openRouteInNewTab(url) {
+  window.open(url, '_blank', 'noopener');
+}
+
 export function parseRouteSearch(search = '') {
   const params = new URLSearchParams(search);
   const archiveId = params.get('id');
@@ -44,20 +48,28 @@ export function parseRouteFromLocation() {
   return parseRouteSearch(window.location.search);
 }
 
-export function navigateToArchive(archiveId, { replace = false, incognito = false } = {}) {
+export function navigateToArchive(archiveId, { replace = false, incognito = false, newTab = false } = {}) {
   if (!archiveId) return;
   if (!canNavigate({ kind: 'reader', archiveId: String(archiveId), incognito })) return false;
   const url = incognito ? `/?id=${encodeURIComponent(archiveId)}&incognito=1` : `/?id=${encodeURIComponent(archiveId)}`;
+  if (newTab) {
+    openRouteInNewTab(url);
+    return true;
+  }
   if (replace) window.history.replaceState({}, '', url);
   else window.history.pushState({}, '', url);
   dispatchRouteChange({ kind: 'reader', archiveId: String(archiveId), incognito });
   return true;
 }
 
-export function navigateToMetadata(archiveId, { replace = false } = {}) {
+export function navigateToMetadata(archiveId, { replace = false, newTab = false } = {}) {
   if (!archiveId) return;
   if (!canNavigate({ kind: 'metadata', archiveId: String(archiveId) })) return false;
   const url = `/?view=metadata&id=${encodeURIComponent(archiveId)}`;
+  if (newTab) {
+    openRouteInNewTab(url);
+    return true;
+  }
   if (replace) window.history.replaceState({}, '', url);
   else window.history.pushState({}, '', url);
   dispatchRouteChange({ kind: 'metadata', archiveId: String(archiveId) });

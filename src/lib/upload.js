@@ -79,21 +79,28 @@ export function dedupeUploadFiles(files = []) {
   });
 }
 
+function clampProgress(value) {
+  const progress = Math.round(Number(value) || 0);
+  return Math.max(0, Math.min(100, progress));
+}
+
 export async function runUploadTasks(items, worker, onUpdate = () => {}) {
   const results = [];
-  const total = Math.max(1, items.length);
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
-    onUpdate({ index, item, status: 'running', progress: Math.round((index / total) * 100) });
+    const updateProgress = (progress) => {
+      onUpdate({ index, item, status: 'running', progress: clampProgress(progress) });
+    };
+    onUpdate({ index, item, status: 'running', progress: 0 });
     try {
-      const value = await worker(item, index);
+      const value = await worker(item, index, updateProgress);
       const result = { item, status: 'success', value };
       results.push(result);
-      onUpdate({ index, ...result, progress: Math.round((results.length / total) * 100) });
+      onUpdate({ index, ...result, progress: 100 });
     } catch (error) {
       const result = { item, status: 'failed', error: error?.message || String(error) };
       results.push(result);
-      onUpdate({ index, ...result, progress: Math.round((results.length / total) * 100) });
+      onUpdate({ index, ...result, progress: 100 });
     }
   }
   return results;
