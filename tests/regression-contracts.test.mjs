@@ -776,6 +776,8 @@ test('iOS wrapper sends the left-edge gesture through web history', () => {
   assert.match(workflow, /backGesture\.edges = \.left/);
   assert.match(workflow, /guard let webView = bridge\?\.webView, webView\.canGoBack\(\) else \{ return \}/);
   assert.match(workflow, /webView\.goBack\(\)/);
+  assert.match(workflow, /Main\.storyboard/);
+  assert.match(workflow, /customClass="ViewController"/);
 });
 
 test('mobile settings respect safe areas and reveal animations release compositor layers', () => {

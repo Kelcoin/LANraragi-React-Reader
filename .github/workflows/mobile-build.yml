@@ -395,27 +395,34 @@ jobs:
 
           node <<'NODE'
           const fs = require('node:fs');
-          const viewControllerPath = 'ios/App/App/ViewController.swift';
-          if (!fs.existsSync(viewControllerPath)) throw new Error('Capacitor iOS ViewController.swift missing');
-          fs.writeFileSync(viewControllerPath, `import UIKit
-          import Capacitor
-
-          class ViewController: CAPBridgeViewController {
-              private lazy var backGesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleBackGesture(_:)))
-
-              override func viewDidLoad() {
-                  super.viewDidLoad()
-                  backGesture.edges = .left
-                  view.addGestureRecognizer(backGesture)
-              }
-
-              @objc private func handleBackGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
-                  guard gesture.state == .ended else { return }
-                  guard let webView = bridge?.webView, webView.canGoBack() else { return }
-                  webView.goBack()
-              }
+          const storyboardPath = 'ios/App/App/Base.lproj/Main.storyboard';
+          if (!fs.existsSync(storyboardPath)) throw new Error('Capacitor iOS Main.storyboard missing');
+          let storyboard = fs.readFileSync(storyboardPath, 'utf8');
+          if (!storyboard.includes('customClass="CAPBridgeViewController"')) {
+            throw new Error('storyboard CAPBridgeViewController anchor missing');
           }
-          `);
+          storyboard = storyboard.replace('customClass="CAPBridgeViewController"', 'customClass="ViewController"');
+          fs.writeFileSync(storyboardPath, storyboard);
+          const viewControllerPath = 'ios/App/App/ViewController.swift';
+          fs.writeFileSync(viewControllerPath, `import UIKit
+import Capacitor
+
+class ViewController: CAPBridgeViewController {
+    private lazy var backGesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleBackGesture(_:)))
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        backGesture.edges = .left
+        view.addGestureRecognizer(backGesture)
+    }
+
+    @objc private func handleBackGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        guard let webView = bridge?.webView, webView.canGoBack() else { return }
+        webView.goBack()
+    }
+}
+`);
           NODE
 
           npx --no-install capacitor-assets generate --ios \
@@ -487,6 +494,7 @@ jobs:
           grep -q 'backGesture.edges = .left' "$IOS_VIEW_CONTROLLER"
           grep -q 'canGoBack()' "$IOS_VIEW_CONTROLLER"
           grep -q 'goBack()' "$IOS_VIEW_CONTROLLER"
+          grep -q 'customClass="ViewController"' 'ios/App/App/Base.lproj/Main.storyboard'
 
       - name: Build unsigned iOS app
         env:
