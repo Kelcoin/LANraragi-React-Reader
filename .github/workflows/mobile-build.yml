@@ -159,10 +159,20 @@ jobs:
 
           node <<'NODE'
           const fs = require('node:fs');
+          const manifestPath = 'android/app/src/main/AndroidManifest.xml';
+          let manifest = fs.readFileSync(manifestPath, 'utf8');
+          if (!manifest.includes('android:enableOnBackInvokedCallback')) {
+            manifest = manifest.replace('<application', '<application android:enableOnBackInvokedCallback="true"');
+          }
+          fs.writeFileSync(manifestPath, manifest);
+
           const mainActivityPath = 'android/app/src/main/java/com/kelcoin/readoshi/MainActivity.java';
           fs.writeFileSync(mainActivityPath, `package com.kelcoin.readoshi;
 
+          import android.os.Build;
           import android.os.Bundle;
+          import android.window.OnBackInvokedCallback;
+          import android.window.OnBackInvokedDispatcher;
           import android.webkit.JavascriptInterface;
           import androidx.activity.OnBackPressedCallback;
           import androidx.core.view.ViewCompat;
@@ -171,6 +181,22 @@ jobs:
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
+              private void navigateBackOrFinish() {
+                  final android.webkit.WebView webView = getBridge().getWebView();
+                  if (webView == null) {
+                      finish();
+                      return;
+                  }
+                  if (webView.canGoBack()) {
+                      webView.goBack();
+                      return;
+                  }
+                  webView.evaluateJavascript("window.history.length > 1", value -> {
+                      if ("true".equals(value)) webView.evaluateJavascript("window.history.back()", null);
+                      else finish();
+                  });
+              }
+
               @JavascriptInterface
               public void setStatusBarHidden(boolean hidden) {
                   runOnUiThread(() -> {
@@ -189,16 +215,23 @@ jobs:
                   super.onCreate(savedInstanceState);
                   getBridge().getWebView().getSettings().setTextZoom(100);
                   getBridge().getWebView().addJavascriptInterface(this, "ReadoshiAndroid");
-                  getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-                      @Override
-                      public void handleOnBackPressed() {
-                          if (getBridge().getWebView().canGoBack()) {
-                              getBridge().getWebView().goBack();
-                              return;
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                          OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                          new OnBackInvokedCallback() {
+                              @Override
+                              public void onBackInvoked() {
+                                  navigateBackOrFinish();
+                              }
+                          });
+                  } else {
+                      getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+                          @Override
+                          public void handleOnBackPressed() {
+                              navigateBackOrFinish();
                           }
-                          finish();
-                      }
-                  });
+                      });
+                  }
               }
           }
           `);
@@ -280,12 +313,16 @@ jobs:
           if (!indexHtml.includes('viewport-fit=cover')) throw new Error('viewport patch failed');
           const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
           if (!manifest.includes('android.permission.INTERNET')) throw new Error('INTERNET permission missing');
+          if (!manifest.includes('android:enableOnBackInvokedCallback="true"')) throw new Error('Android predictive back callback missing');
           const mainActivity = fs.readFileSync('android/app/src/main/java/com/kelcoin/readoshi/MainActivity.java', 'utf8');
           if (!mainActivity.includes('getWebView().getSettings().setTextZoom(100)')) throw new Error('Android text zoom guard missing');
           if (!mainActivity.includes('ReadoshiAndroid')) throw new Error('Android status bar bridge missing');
           if (!mainActivity.includes('setStatusBarHidden')) throw new Error('Android status bar toggle missing');
           if (!mainActivity.includes('OnBackPressedCallback')) throw new Error('Android back callback missing');
           if (!mainActivity.includes('getOnBackPressedDispatcher()')) throw new Error('Android back dispatcher missing');
+          if (!mainActivity.includes('OnBackInvokedDispatcher')) throw new Error('Android predictive back dispatcher missing');
+          if (!mainActivity.includes('getOnBackInvokedDispatcher()')) throw new Error('Android predictive back registration missing');
+          if (!mainActivity.includes('window.history.length > 1')) throw new Error('Web history fallback missing');
           if (!mainActivity.includes('canGoBack()')) throw new Error('Android WebView back guard missing');
           if (!mainActivity.includes('goBack()')) throw new Error('Android WebView back navigation missing');
           const gradle = fs.readFileSync('android/app/build.gradle', 'utf8');
@@ -418,8 +455,15 @@ jobs:
 
               @objc private func handleBackGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
                   guard gesture.state == .ended else { return }
-                  guard let webView = bridge?.webView, webView.canGoBack() else { return }
-                  webView.goBack()
+                  guard let webView = bridge?.webView else { return }
+                  if webView.canGoBack {
+                      webView.goBack()
+                      return
+                  }
+                  webView.evaluateJavaScript("window.history.length > 1") { result, _ in
+                      guard (result as? Bool) == true else { return }
+                      webView.evaluateJavaScript("window.history.back()")
+                  }
               }
           }
           `);
@@ -492,8 +536,9 @@ jobs:
           IOS_VIEW_CONTROLLER='ios/App/App/ViewController.swift'
           grep -q 'UIScreenEdgePanGestureRecognizer' "$IOS_VIEW_CONTROLLER"
           grep -q 'backGesture.edges = .left' "$IOS_VIEW_CONTROLLER"
-          grep -q 'canGoBack()' "$IOS_VIEW_CONTROLLER"
+          grep -q 'canGoBack' "$IOS_VIEW_CONTROLLER"
           grep -q 'goBack()' "$IOS_VIEW_CONTROLLER"
+          grep -q 'window.history.length > 1' "$IOS_VIEW_CONTROLLER"
           grep -q 'customClass="ViewController"' 'ios/App/App/Base.lproj/Main.storyboard'
 
       - name: Build unsigned iOS app

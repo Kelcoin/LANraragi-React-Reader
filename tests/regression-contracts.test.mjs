@@ -786,9 +786,14 @@ test('mobile wrapper sends system back through web history before exiting', () =
   const workflow = read('.github/workflows/mobile-build.yml');
 
   assert.match(workflow, /import androidx\.activity\.OnBackPressedCallback;/);
+  assert.match(workflow, /import android\.os\.Build;/);
+  assert.match(workflow, /import android\.window\.OnBackInvokedDispatcher;/);
+  assert.match(workflow, /getOnBackInvokedDispatcher\(\)\.registerOnBackInvokedCallback/);
   assert.match(workflow, /getOnBackPressedDispatcher\(\)\.addCallback\(this, new OnBackPressedCallback\(true\)/);
-  assert.match(workflow, /getBridge\(\)\.getWebView\(\)\.canGoBack\(\)/);
-  assert.match(workflow, /getBridge\(\)\.getWebView\(\)\.goBack\(\)/);
+  assert.match(workflow, /webView\.canGoBack\(\)/);
+  assert.match(workflow, /window\.history\.length > 1/);
+  assert.match(workflow, /webView\.goBack\(\)/);
+  assert.match(workflow, /android:enableOnBackInvokedCallback="true"/);
   assert.match(workflow, /finish\(\);/);
 });
 
@@ -799,8 +804,10 @@ test('iOS wrapper sends the left-edge gesture through web history', () => {
   assert.match(workflow, /class ViewController: CAPBridgeViewController/);
   assert.match(workflow, /UIScreenEdgePanGestureRecognizer/);
   assert.match(workflow, /backGesture\.edges = \.left/);
-  assert.match(workflow, /guard let webView = bridge\?\.webView, webView\.canGoBack\(\) else \{ return \}/);
+  assert.match(workflow, /guard let webView = bridge\?\.webView else \{ return \}/);
+  assert.match(workflow, /if webView\.canGoBack/);
   assert.match(workflow, /webView\.goBack\(\)/);
+  assert.match(workflow, /window\.history\.length > 1/);
   assert.match(workflow, /Main\.storyboard/);
   assert.match(workflow, /customClass="ViewController"/);
 });
