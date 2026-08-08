@@ -42,7 +42,7 @@ test('sync mutations serialize and retain timestamp tombstones', () => {
 test('Worker owns an independent SemVer and has no remote update checker', () => {
   const workerVersion = worker.match(/const WORKER_VERSION\s*=\s*['"]([^'"]+)['"]/);
   assert.match(workerVersion?.[1] || '', /^\d+\.\d+\.\d+$/);
-  assert.equal(workerVersion?.[1], '1.1.1');
+  assert.equal(workerVersion?.[1], '1.1.2');
   assert.match(worker, /const workerVersion = `v\$\{WORKER_VERSION\}`/);
   assert.doesNotMatch(worker, /APP_RELEASE|APP_VERSION|FALLBACK_APP_VERSION/);
   assert.doesNotMatch(worker, /WORKER_RELEASE|WORKER_UPDATE_BRANCH|checkWorkerUpdate|getWorkerSourceUrl|raw\.githubusercontent\.com\/Kelcoin\/Readoshi\/.+\/worker\.js/);

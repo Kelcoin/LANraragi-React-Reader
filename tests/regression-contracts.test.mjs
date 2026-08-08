@@ -1141,6 +1141,20 @@ test('Worker-dependent controls are hidden without a valid Worker configuration'
   assert.match(ehFavoriteSync, /hasValidWorkerConfig\(\)/);
 });
 
+test('EH cookie settings provide a Worker-backed check action', () => {
+  const home = read('src/pages/Home.jsx');
+  const worker = read('worker.js');
+  const css = read('src/index.css');
+  assert.match(home, /handleCheckEhCookie/);
+  assert.match(home, /\/eh\/check/);
+  assert.match(home, /eh-cookie-check-btn/);
+  assert.match(home, /data\.cookie && data\.cookie !== cookie/);
+  assert.match(worker, /url\.pathname === '\/eh\/check'/);
+  assert.match(worker, /readSetCookieValue\(exHentai\.response, 'igneous'\)/);
+  assert.match(worker, /writeCookieValue\(cookie, 'igneous', igneous\)/);
+  assert.match(css, /\.eh-cookie-input-row\s*\{/);
+});
+
 test('scheduled history cleanup force-validates cached records without UI feedback', () => {
   const maintenance = read('src/lib/historyMaintenance.js');
   const watchlist = read('src/lib/watchlist.js');

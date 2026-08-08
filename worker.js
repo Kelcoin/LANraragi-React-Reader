@@ -13,7 +13,7 @@ const DEDUPE_KEY_PREFIX = 'dedupe:';
 const SYNC_SCHEMA_VERSION = 3;
 const PROJECT_NAME = 'Readoshi';
 const PROJECT_URL = 'https://github.com/Kelcoin/Readoshi';
-const WORKER_VERSION = '1.1.1';
+const WORKER_VERSION = '1.1.2';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -297,6 +297,83 @@ function detectNonGallery(html) {
     return 'empty-or-redirect';
   }
   return null;
+}
+
+function readCookieValue(cookie, name) {
+  const match = String(cookie || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`, 'i'));
+  return match?.[1] || '';
+}
+
+function writeCookieValue(cookie, name, value) {
+  const parts = String(cookie || '').split(';').map((part) => part.trim()).filter(Boolean);
+  const index = parts.findIndex((part) => part.toLowerCase().startsWith(`${name.toLowerCase()}=`));
+  const next = `${name}=${value}`;
+  if (index >= 0) parts[index] = next;
+  else parts.push(next);
+  return parts.join('; ');
+}
+
+function readSetCookieValue(response, name) {
+  const header = response.headers.get('set-cookie') || '';
+  const match = header.match(new RegExp(`(?:^|,\\s*)${name}=([^;,\\s]+)`, 'i'));
+  return match?.[1] || '';
+}
+
+async function probeEhSite(hostname, cookie) {
+  try {
+    const response = await safeEhFetch(`https://${hostname}/`, {
+      headers: buildEHHeaders(hostname, cookie),
+      cf: { cacheEverything: false },
+    }, { galleryOnly: true });
+    const html = await response.text();
+    const blocked = detectNonGallery(html) || (/sad panda/i.test(html) ? 'sad-panda' : null);
+    const ok = response.ok && !blocked && html.length >= 500;
+    return {
+      ok,
+      status: response.status,
+      detail: ok ? '访问正常' : (blocked || `HTTP ${response.status}`),
+      response,
+    };
+  } catch (error) {
+    return { ok: false, status: 0, detail: error?.message || '访问失败', response: null };
+  }
+}
+
+async function ehCheckProxy(request) {
+  const authErr = await requireAuth(request);
+  if (authErr) return authErr;
+  incrementCounter();
+
+  let body;
+  try { body = await request.json(); } catch {
+    return json({ error: 'Invalid JSON' }, 400);
+  }
+  const originalCookie = String(body?.cookie || '').trim();
+  const memberId = readCookieValue(originalCookie, 'ipb_member_id');
+  const passHash = readCookieValue(originalCookie, 'ipb_pass_hash');
+  if (!memberId || !passHash) return json({ error: 'Missing EH login cookies' }, 400);
+
+  let cookie = writeCookieValue(originalCookie, 'nw', '1');
+  const eHentai = await probeEhSite('e-hentai.org', cookie);
+  let exHentai = await probeEhSite('exhentai.org', cookie);
+  let refreshed = false;
+
+  if (!exHentai.ok) {
+    const igneous = readSetCookieValue(exHentai.response, 'igneous');
+    if (igneous && igneous !== 'mystery') {
+      cookie = writeCookieValue(cookie, 'igneous', igneous);
+      refreshed = igneous !== readCookieValue(originalCookie, 'igneous');
+    }
+    exHentai = await probeEhSite('exhentai.org', cookie);
+    const retryIgneous = readSetCookieValue(exHentai.response, 'igneous');
+    if (retryIgneous && retryIgneous !== 'mystery') {
+      cookie = writeCookieValue(cookie, 'igneous', retryIgneous);
+      refreshed = retryIgneous !== readCookieValue(originalCookie, 'igneous') || refreshed;
+    }
+  }
+
+  const clean = ({ response, ...result }) => result;
+  return json({ eHentai: clean(eHentai), exHentai: clean(exHentai), cookie, refreshed });
 }
 
 async function ehProxy(request) {
@@ -1500,6 +1577,10 @@ async function handleRequest(request) {
 
   if (url.pathname === '/api' && request.method === 'POST') {
     return ehApiProxy(request);
+  }
+
+  if (url.pathname === '/eh/check' && request.method === 'POST') {
+    return ehCheckProxy(request);
   }
 
   if (url.pathname === '/comment' && request.method === 'POST') {

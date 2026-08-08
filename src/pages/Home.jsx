@@ -420,6 +420,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [ehFavoriteDeleteSync, setEhFavoriteDeleteSyncState] = useState(getEhFavoriteDeleteSync);
   const [historySyncing, setHistorySyncing] = useState(false);
   const [watchlistChecking, setWatchlistChecking] = useState(false);
+  const [ehCookieChecking, setEhCookieChecking] = useState(false);
+  const [ehCookieCheck, setEhCookieCheck] = useState(null);
 
   const [cfgWorkerUrl, setCfgWorkerUrl] = useState(getWorkerUrl());
   const [cfgSyncToken, setCfgSyncToken] = useState(getSyncToken());
@@ -670,6 +672,35 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       return next;
     });
   }, []);
+
+  const handleCheckEhCookie = useCallback(async () => {
+    const cookie = String(readerSettings.ehCookie || '').trim();
+    if (!hasValidEhCookie(cookie)) {
+      setEhCookieCheck({ error: '请先填写包含 ipb_member_id 和 ipb_pass_hash 的 Cookie。' });
+      return;
+    }
+    if (!hasValidWorkerConfig(cfgWorkerUrl, cfgSyncToken)) {
+      setEhCookieCheck({ error: '请先填写有效的 Worker 端点和访问 Token。' });
+      return;
+    }
+    setEhCookieChecking(true);
+    setEhCookieCheck(null);
+    try {
+      const response = await fetch(`${cfgWorkerUrl.replace(/\/$/, '')}/eh/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-token': cfgSyncToken },
+        body: JSON.stringify({ cookie }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.detail || data?.error || `检测失败（HTTP ${response.status}）`);
+      if (data.cookie && data.cookie !== cookie) updateReaderSettings((settings) => ({ ...settings, ehCookie: data.cookie }));
+      setEhCookieCheck(data);
+    } catch (error) {
+      setEhCookieCheck({ error: error?.message || '检测失败。' });
+    } finally {
+      setEhCookieChecking(false);
+    }
+  }, [cfgSyncToken, cfgWorkerUrl, readerSettings.ehCookie, updateReaderSettings]);
 
   const watchlistWithProgress = useMemo(() => mergeWatchlistProgress(watchlist, history), [history, watchlist]);
   const watchlistAutoRemoveIds = useMemo(() => getWatchlistAutoRemoveIds(watchlistWithProgress), [watchlistWithProgress]);
@@ -2790,14 +2821,24 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <SettingHint className="settings-field-label" text={'作用：访问 E-Hentai 画廊和评论。\n条件：同步删除收藏还需要 ipb_member_id 与 ipb_pass_hash。'}>E-Hentai Cookie</SettingHint>
-                    <SecretInput
-                      name="e-hentai-cookie"
-                      ariaLabel="E-Hentai Cookie"
-                      value={readerSettings.ehCookie || ''}
-                      onChange={(e) => updateReaderSettings((s) => ({ ...s, ehCookie: e.target.value }))}
-                      placeholder="igneous=…; ipb_member_id=…; ipb_pass_hash=…"
-                      style={{ fontSize: '12px' }}
-                    />
+                    <div className="eh-cookie-input-row">
+                      <SecretInput
+                        name="e-hentai-cookie"
+                        ariaLabel="E-Hentai Cookie"
+                        value={readerSettings.ehCookie || ''}
+                        onChange={(e) => updateReaderSettings((s) => ({ ...s, ehCookie: e.target.value }))}
+                        placeholder="igneous=…; ipb_member_id=…; ipb_pass_hash=…"
+                        style={{ fontSize: '12px' }}
+                      />
+                      <button type="button" className="btn eh-cookie-check-btn" onClick={handleCheckEhCookie} disabled={ehCookieChecking}>
+                        {ehCookieChecking ? '检测中' : '检测'}
+                      </button>
+                    </div>
+                    {ehCookieCheck && (
+                      <div className={`eh-cookie-check-result${ehCookieCheck.error ? ' is-error' : ''}`} role="status">
+                        {ehCookieCheck.error || `E-Hentai：${ehCookieCheck.eHentai?.ok ? '正常' : '失败'}；ExHentai：${ehCookieCheck.exHentai?.ok ? '正常' : '失败'}${ehCookieCheck.refreshed ? '；已更新 igneous' : ''}`}
+                      </div>
+                    )}
                   </div>
                   <label className="settings-row">
                     <SettingHint text={'作用：隐藏低于此分数的评论。\n填 0：显示全部评论，不按分数过滤。'}>最低展示分数</SettingHint>

@@ -115,6 +115,32 @@ test('Worker returns structured data for unknown upstream errors', async () => {
   });
 });
 
+test('Worker checks both EH sites and refreshes igneous after an invalid ExHentai page', async () => {
+  const calls = [];
+  const validPage = '<html><body>' + 'gallery '.repeat(120) + '</body></html>';
+  const dispatch = createWorker([], {
+    fetch: async (url, options) => {
+      calls.push({ url: String(url), cookie: options.headers.Cookie });
+      if (String(url).includes('e-hentai.org')) return new Response(validPage, { status: 200 });
+      if (calls.length === 2) return new Response('Sad Panda', { status: 200 });
+      return new Response(validPage, { status: 200, headers: { 'set-cookie': 'igneous=refreshed; Path=/' } });
+    },
+  });
+  const response = await dispatch('/eh/check', {
+    method: 'POST',
+    body: { cookie: 'ipb_member_id=123; ipb_pass_hash=hash' },
+  });
+
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.eHentai.ok, true);
+  assert.equal(result.exHentai.ok, true);
+  assert.equal(result.refreshed, true);
+  assert.match(result.cookie, /igneous=refreshed/);
+  assert.equal(calls.length, 3);
+  assert.match(calls[2].cookie, /nw=1/);
+});
+
 test('Worker status page input fields have explicit hover and focus states', async () => {
   const html = await (await createWorker()('/')).text();
   assert.match(html, /input:hover, textarea:hover \{ border-color:rgba\(255,255,255,\.24\); background:#141b26; \}/);
