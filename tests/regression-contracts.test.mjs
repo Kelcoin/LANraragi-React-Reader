@@ -7,6 +7,12 @@ import { hslToHex, parseHexColor, rgbToHsl } from '../src/lib/color.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
+test('EH comment client delegates page error classification to Worker', () => {
+  const client = read('src/components/EhComments.jsx');
+  assert.doesNotMatch(client, /classifyEhGalleryPage/);
+  assert.doesNotMatch(client, /isContentWarningOrLogin/);
+});
+
 test('incognito reader routes are explicit and do not change normal archive links', () => {
   const navigation = read('src/lib/navigation.js');
   const app = read('src/App.jsx');
@@ -749,6 +755,27 @@ test('archive title uses one cross-platform two-line geometry contract', () => {
   assert.doesNotMatch(card, /document\.createRange\(\)/);
   assert.doesNotMatch(card, /titleLayoutIndex|titleMeasurementKeyRef|fontRevision/);
   assert.match(workflow, /getWebView\(\)\.getSettings\(\)\.setTextZoom\(100\)/);
+});
+
+test('mobile wrapper sends system back through web history before exiting', () => {
+  const workflow = read('.github/workflows/mobile-build.yml');
+
+  assert.match(workflow, /import androidx\.activity\.OnBackPressedCallback;/);
+  assert.match(workflow, /getOnBackPressedDispatcher\(\)\.addCallback\(this, new OnBackPressedCallback\(true\)/);
+  assert.match(workflow, /getBridge\(\)\.getWebView\(\)\.canGoBack\(\)/);
+  assert.match(workflow, /getBridge\(\)\.getWebView\(\)\.goBack\(\)/);
+  assert.match(workflow, /finish\(\);/);
+});
+
+test('iOS wrapper sends the left-edge gesture through web history', () => {
+  const workflow = read('.github/workflows/mobile-build.yml');
+
+  assert.match(workflow, /ios\/App\/App\/ViewController\.swift/);
+  assert.match(workflow, /class ViewController: CAPBridgeViewController/);
+  assert.match(workflow, /UIScreenEdgePanGestureRecognizer/);
+  assert.match(workflow, /backGesture\.edges = \.left/);
+  assert.match(workflow, /guard let webView = bridge\?\.webView, webView\.canGoBack\(\) else \{ return \}/);
+  assert.match(workflow, /webView\.goBack\(\)/);
 });
 
 test('mobile settings respect safe areas and reveal animations release compositor layers', () => {

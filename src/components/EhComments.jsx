@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ToolbarGlyph } from './AppGlyphs';
-import { classifyEhGalleryPage, isTerminalGalleryError, presentEhError } from '../lib/ehCommentsState';
+import { isTerminalGalleryError, presentEhError } from '../lib/ehCommentsState';
 import {
   createEhCommentsCacheKey,
   deleteEhCommentsCache,
@@ -67,10 +67,6 @@ function parseEHCommentsFromDOM(htmlText) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlText, 'text/html');
 
-  if (doc.querySelector('h1')?.textContent.includes('Content Warning')) {
-    return { comments: [], contentWarning: true, apiData: null };
-  }
-
   const commentDivs = doc.querySelectorAll('#cdiv .c1');
   const comments = [];
 
@@ -133,7 +129,7 @@ function parseEHCommentsFromDOM(htmlText) {
     } catch {}
   });
 
-  return { comments, contentWarning: false, apiData: null };
+  return { comments };
 }
 
 function parseEHCommentsFromAPI(apiResp) {
@@ -152,15 +148,6 @@ function parseEHCommentsFromAPI(apiResp) {
     isEditable: false,
     myVote: 0,
   }));
-}
-
-function isContentWarningOrLogin(htmlText) {
-  if (htmlText.toLowerCase().includes('you are seeing this page because')) return 'warning';
-  if (htmlText.includes('<title>Login</title>') || htmlText.includes('Please login')) return 'login';
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(htmlText, 'text/html');
-  if (doc.querySelector('h1')?.textContent.includes('Content Warning')) return 'warning';
-  return null;
 }
 
 function ehUrl(rawUrl, worker) {
@@ -330,102 +317,38 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       const realUrl = normaliseEhUrl(sourceUrl);
       const workerUrl = ehUrl(realUrl, ehWorker);
 
-      let htmlText;
+      if (!ehWorker) throw ehRequestError('EH_WORKER_NOT_CONFIGURED');
+      if (!ehToken) throw ehRequestError('TOKEN_MISSING');
+      const workerHeaders = { 'Content-Type': 'application/json', 'x-sync-token': ehToken };
+      const galleryRes = await fetch(workerUrl, {
+        method: 'POST',
+        headers: workerHeaders,
+        body: JSON.stringify({ url: realUrl, cookie: cookie || '' }),
+        signal: controller.signal,
+      });
 
-      if (ehWorker) {
-        if (!ehToken) throw ehRequestError('TOKEN_MISSING');
-        const workerHeaders = { 'Content-Type': 'application/json', 'x-sync-token': ehToken };
-        const galleryRes = await fetch(workerUrl, {
-          method: 'POST',
-          headers: workerHeaders,
-          body: JSON.stringify({ url: realUrl, cookie: cookie || '' }),
-          signal: controller.signal,
-        });
+      if (!galleryRes.ok) {
+        let jsonErr = null;
+        try { jsonErr = await galleryRes.json(); } catch {}
 
-        if (!galleryRes.ok) {
-          // Try reading as JSON (Worker may return structured error)
-          let jsonErr = null;
-          let errBody = '';
-          try { errBody = await galleryRes.text(); jsonErr = JSON.parse(errBody); } catch {}
-
-          if (jsonErr && jsonErr.error) {
-            throw ehRequestError(jsonErr.error, jsonErr.detail);
-          }
-
-          const galleryState = classifyEhGalleryPage(errBody, galleryRes.status);
-          if (galleryState === 'blocked') throw ehRequestError('ACCESS_BLOCKED');
-          if (galleryState === 'unavailable') throw ehRequestError('GALLERY_UNAVAILABLE');
-          throw ehRequestError('UNKNOWN_WORKER_ERROR', `请求失败 (${galleryRes.status})`);
+        if (jsonErr?.error) {
+          throw ehRequestError(jsonErr.error, jsonErr.detail);
         }
-
-        // Check for JSON error even on 200
-        const rawResponse = await galleryRes.text();
-        let jsonErr200 = null;
-        try { jsonErr200 = JSON.parse(rawResponse); } catch {}
-        if (jsonErr200 && jsonErr200.error) {
-          throw ehRequestError(jsonErr200.error, jsonErr200.detail);
-        }
-
-        htmlText = rawResponse;
-      } else {
-        const headers = {};
-        if (cookie) headers['X-EH-Cookie'] = cookie;
-        const galleryRes = await fetch(workerUrl, { headers, redirect: 'manual', signal: controller.signal });
-
-        if (galleryRes.type === 'opaqueredirect') {
-          throw ehRequestError('NETWORK_ERROR', '请求被重定向到外部域名。');
-        }
-
-        if (!galleryRes.ok) {
-          const galleryState = classifyEhGalleryPage('', galleryRes.status);
-          if (galleryState === 'blocked') throw ehRequestError('ACCESS_BLOCKED');
-          if (galleryState === 'unavailable') throw ehRequestError('GALLERY_UNAVAILABLE');
-          throw ehRequestError('NETWORK_ERROR', `请求失败 (${galleryRes.status})`);
-        }
-
-        htmlText = await galleryRes.text();
+        throw ehRequestError('EH_WORKER_ERROR', `Worker 请求失败 (${galleryRes.status})`);
       }
 
-      const blockType = isContentWarningOrLogin(htmlText);
-
-      if (blockType) {
-        if (!isCurrent()) return;
-        if (!cachedComments) setComments([]);
-        setLoaded(true);
-        showError(blockType === 'warning' ? 'CONTENT_WARNING' : 'EH_REQUIRES_LOGIN');
-        return;
+      const rawResponse = await galleryRes.text();
+      let jsonErr = null;
+      try { jsonErr = JSON.parse(rawResponse); } catch {}
+      if (jsonErr?.error) {
+        throw ehRequestError(jsonErr.error, jsonErr.detail);
       }
-
-      const galleryState = classifyEhGalleryPage(htmlText, 200);
-      if (galleryState === 'not_found' || galleryState === 'copyright_removed' || galleryState === 'unavailable') {
-        if (!isCurrent()) return;
-        if (cachedComments) {
-          // Background SWR refresh hit a terminal page (worker hiccup, cookie
-          // expiry, ...): keep the valid cached comments instead of replacing
-          // them with a 24h error state.
-          setLoaded(true);
-          return;
-        }
-        setComments([]);
-        setLoaded(true);
-        const terminalCode = galleryState === 'not_found' ? 'GALLERY_NOT_FOUND' : galleryState === 'copyright_removed' ? 'GALLERY_COPYRIGHT_REMOVED' : 'GALLERY_UNAVAILABLE';
-        showError(terminalCode);
-        writeEhCommentsCache(cacheKey, [], { unavailable: terminalCode }).catch(() => {});
-        return;
-      }
+      const htmlText = rawResponse;
 
       const parsedApi = extractApiData(htmlText);
       if (parsedApi.apiuid && isCurrent()) setApiData(parsedApi);
 
       const domResult = parseEHCommentsFromDOM(htmlText);
-      if (domResult.contentWarning) {
-        if (!isCurrent()) return;
-        if (!cachedComments) setComments([]);
-        setLoaded(true);
-        showError('CONTENT_WARNING');
-        return;
-      }
-
       let finalComments = domResult.comments;
 
       // If the DOM exposes no comments, try the authenticated API when possible.
@@ -470,6 +393,12 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       if (isTerminalGalleryError(e?.ehCode)) {
         if (!cachedComments) {
           await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
+        }
+        if (cachedComments) {
+          // Background SWR refresh hit a terminal page (Worker error): keep the valid
+          // cached comments instead of replacing them with an error state.
+          setLoaded(true);
+          return;
         }
       }
       if (cachedComments) setLoaded(true);
