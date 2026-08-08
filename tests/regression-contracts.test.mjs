@@ -292,11 +292,36 @@ test('metadata tag entry rejects an already attached tag without hiding its sugg
 test('metadata save updates visible archive state and writes metadata cache immediately', () => {
   const page = read('src/pages/MetadataPage.jsx');
   const cache = read('src/lib/archiveMetadataCache.js');
+  assert.match(cache, /import \{ clearHomeNavigationSnapshot \} from '\.\/sessionState';/);
   assert.match(cache, /export function rememberArchiveInCatalog\(archive, options = \{\}\)/);
   assert.match(page, /rememberArchiveInCatalog\(updatedArchive, \{ immediate: true \}\)/);
   assert.match(page, /markArchiveCatalogDirty\(\)/);
   assert.match(page, /setArchive\(updatedArchive\)/);
   assert.match(page, /await lrrApi\.clearSearchCache\(\)\.catch\(\(\) => \{\}\)/);
+  assert.match(cache, /clearHomeNavigationSnapshot\(\);/);
+});
+
+test('upload result rows keep a stable one-line status layout', () => {
+  const page = read('src/pages/UploadPage.jsx');
+  const css = read('src/index.css');
+
+  assert.match(page, /const \[pluginStatus, setPluginStatus\] = useState\(''\)/);
+  assert.doesNotMatch(page, /正在载入下载插件/);
+  assert.doesNotMatch(page, /function statusLabel/);
+  assert.doesNotMatch(page, /responseMessage/);
+  assert.doesNotMatch(page, /upload-status-text/);
+  assert.doesNotMatch(page, /<small>\{item\.message\}<\/small>/);
+  assert.match(page, /title=\{item\.message \? `\$\{item\.label\}：\$\{item\.message\}` : item\.label\}/);
+  assert.match(page, /<div><strong>\{item\.label\}<\/strong><\/div>\s*<span className=\{`upload-status-dot is-\$\{item\.status\}`\} title=\{statusTitle\(item\.status\)\}/);
+  assert.match(css, /\.upload-task-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.match(css, /\.upload-task-row\s*\{[^}]*min-height:\s*40px;/s);
+  assert.doesNotMatch(css, /\.upload-status-text/);
+  assert.match(css, /\.upload-status-dot\.is-queued\s*\{[^}]*background:\s*var\(--text-sub\)/s);
+  assert.match(css, /\.upload-status-dot\.is-running\s*\{[^}]*background:\s*var\(--accent\)/s);
+  assert.match(css, /\.upload-status-dot\.is-success\s*\{[^}]*background:\s*var\(--good\)/s);
+  assert.match(css, /\.upload-status-dot\.is-failed\s*\{[^}]*background:\s*var\(--danger\)/s);
+  assert.match(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--glass-border\)/s);
+  assert.doesNotMatch(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--danger-border\)/s);
 });
 
 test('tag suggestion panel hides scrollbars without reserving a hidden gutter', () => {

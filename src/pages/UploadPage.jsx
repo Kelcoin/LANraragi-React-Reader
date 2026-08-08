@@ -27,11 +27,6 @@ function taskKey(type, value, index) {
   return `${type}:${value}:${index}`;
 }
 
-function responseMessage(value) {
-  if (typeof value === 'string') return value;
-  return value?.message || value?.data?.message || '已提交到 LANraragi';
-}
-
 function archiveFromUploadResponse(value, fallbackTitle) {
   const data = value?.data && typeof value.data === 'object' ? value.data : value;
   const id = data?.id || data?.arcid || data?.archive_id;
@@ -39,7 +34,7 @@ function archiveFromUploadResponse(value, fallbackTitle) {
   return { ...data, id, arcid: id, title: data?.title || fallbackTitle || id };
 }
 
-function statusLabel(status) {
+function statusTitle(status) {
   if (status === 'running') return '处理中';
   if (status === 'success') return '成功';
   if (status === 'failed') return '失败';
@@ -52,7 +47,7 @@ export default function UploadPage() {
   const [urlText, setUrlText] = useState('');
   const [pluginValue, setPluginValue] = useState('auto');
   const [pluginState, setPluginState] = useState({ plugins: [], options: [{ label: '自动匹配', value: 'auto' }], warnings: [] });
-  const [pluginStatus, setPluginStatus] = useState('正在载入下载插件…');
+  const [pluginStatus, setPluginStatus] = useState('');
   const [results, setResults] = useState([]);
   const [running, setRunning] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -117,7 +112,7 @@ export default function UploadPage() {
         status: update.status,
         progress: update.progress ?? item.progress ?? 0,
         archive: archive || item.archive,
-        message: update.error || (update.status === 'success' ? responseMessage(update.value) : item.message),
+        message: update.error || (update.status === 'success' ? '' : item.message),
       };
     }));
   }, []);
@@ -333,11 +328,11 @@ export default function UploadPage() {
             key={item.id}
             className={`upload-task-row${item.archive ? ' has-menu' : ''}`}
             style={{ '--task-progress': `${Number(item.progress) || 0}%` }}
+            title={item.message ? `${item.label}：${item.message}` : item.label}
             onContextMenu={(event) => handleTaskContextMenu(event, item)}
           >
-            <span className={`upload-status-dot is-${item.status}`} />
-            <div><strong title={item.label}>{item.label}</strong>{item.message && <small>{item.message}</small>}</div>
-            <span className={`upload-status-text is-${item.status}`}>{statusLabel(item.status)}</span>
+            <div><strong>{item.label}</strong></div>
+            <span className={`upload-status-dot is-${item.status}`} title={statusTitle(item.status)} />
           </div>)}
         </div>
       </section>}
