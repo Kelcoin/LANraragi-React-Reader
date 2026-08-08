@@ -510,6 +510,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         menu={menu}
         onClose={() => setMenu(null)}
         onRead={(archive) => onSelectArchive(archive.arcid || archive.id)}
+        onReadIncognito={(archive) => onSelectArchive(archive.arcid || archive.id, { incognito: true })}
         onClearProgress={handleClearArchiveProgress}
         onEditMetadata={(archive) => navigateToMetadata(archive.arcid || archive.id)}
         onDownload={handleDownload}

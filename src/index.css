@@ -3625,7 +3625,7 @@ textarea:focus-visible,
 
 .history-page-summary {
   border: 1px solid var(--glass-border);
-  border-radius: 999px;
+  border-radius: var(--radius-chip);
   background: var(--surface-2);
   color: var(--text-sub);
   font-family: 'Noto Sans SC Variable', system-ui, sans-serif;
@@ -3782,18 +3782,19 @@ textarea:focus-visible,
 
   .history-page-actions {
     display: flex;
-    flex-wrap: nowrap;
-    justify-content: center;
+    flex-wrap: wrap;
+    justify-content: flex-start;
     gap: 10px;
   }
 
   .history-page-actions .btn {
     width: auto;
-    flex: 0 1 auto;
+    flex: 1 1 calc((100% - 20px) / 3);
     min-height: 44px;
-    min-width: 0;
+    min-width: max-content;
     padding-inline: 14px;
     font-size: 13px;
+    text-align: center;
   }
 
   .archive-toolbar-primary {

@@ -1114,12 +1114,13 @@ function ReaderStageSlot({ status, onRetry }) {
   );
 }
 
-export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
+export default function Reader({ archiveId, onBack, coldRestoreBoot = false, incognito = false }) {
+  const persistReadingProgress = !incognito;
   const workerReady = hasValidWorkerConfig();
   const bootState = getBootState();
   const readerSnapshotRef = useRef(null);
   if (readerSnapshotRef.current === null) {
-    const fallbackReaderSnapshot = loadReaderSnapshot(archiveId);
+    const fallbackReaderSnapshot = persistReadingProgress ? loadReaderSnapshot(archiveId) : null;
     readerSnapshotRef.current = coldRestoreBoot
       ? fallbackReaderSnapshot
       : ((bootState.wasDiscarded || bootState.navigationType === 'reload') ? fallbackReaderSnapshot : null);
@@ -1337,7 +1338,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   }, [secondaryContentReady]);
 
   const saveReaderStateSnapshot = useCallback(() => {
-    if (!archiveRef.current || pagesRef.current.length === 0) return;
+    if (!persistReadingProgress || !archiveRef.current || pagesRef.current.length === 0) return;
     saveReaderSnapshot({
       archiveId,
       archive: archiveRef.current,
@@ -1351,7 +1352,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       panX: panRef.current.x,
       panY: panRef.current.y,
     });
-  }, [archiveId, showHeader]);
+  }, [archiveId, persistReadingProgress, showHeader]);
   useEffect(() => {
     serverInfoRef.current = { ...(serverInfoRef.current || {}), server_tracks_progress: serverTracksProgress };
   }, [serverTracksProgress]);
@@ -1585,14 +1586,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       if (document.visibilityState === 'visible') {
         bump();
       } else {
-        markBackground({ kind: 'reader', archiveId });
+        if (persistReadingProgress) markBackground({ kind: 'reader', archiveId });
         saveReaderStateSnapshot();
       }
       // No timers to restart in Reader — just bump the ref
     };
     // Release memory on pagehide to reduce kill likelihood
     const handlePageHide = () => {
-      markBackground({ kind: 'reader', archiveId });
+      if (persistReadingProgress) markBackground({ kind: 'reader', archiveId });
       saveReaderStateSnapshot();
     };
     window.addEventListener('pageshow', handlePageShow);
@@ -1603,7 +1604,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       window.removeEventListener('pagehide', handlePageHide);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [archiveId, saveReaderStateSnapshot]);
+  }, [archiveId, persistReadingProgress, saveReaderStateSnapshot]);
 
   // ===== Swipe engine (100% ref+RAF — zero React re-render during drag) =====
   const isSwipingRef = useRef(false);
@@ -1648,7 +1649,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
 
   const enqueueLrrProgressSync = useCallback((id, page, { keepalive = false } = {}) => {
     const targetPage = Math.max(0, Number.parseInt(page, 10) || 0);
-    if (!id || targetPage <= 0) return Promise.resolve();
+    if (!persistReadingProgress || !id || targetPage <= 0) return Promise.resolve();
 
     const syncedPage = highestLrrSyncedPageRef.current.get(id) || 0;
     const queuedPage = highestLrrQueuedPageRef.current.get(id) || 0;
@@ -1692,11 +1693,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       }
     });
     return next;
-  }, []);
+  }, [persistReadingProgress]);
 
   useEffect(() => {
     const flushProgress = ({ keepalive = false } = {}) => {
-      if (!serverTracksProgress || !archiveId) return;
+      if (!persistReadingProgress || !serverTracksProgress || !archiveId) return;
       const page = clampProgressPage(highestObservedPageRef.current.get(archiveId) || 0, pages.length);
       enqueueLrrProgressSync(archiveId, page, { keepalive });
     };
@@ -1711,7 +1712,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       document.removeEventListener('visibilitychange', handleVisibility);
       flushProgress();
     };
-  }, [archiveId, enqueueLrrProgressSync, pages.length, serverTracksProgress]);
+  }, [archiveId, enqueueLrrProgressSync, pages.length, persistReadingProgress, serverTracksProgress]);
 
   // ===== Zoom refs =====
   const zoomScaleRef = useRef(zoomScale);
@@ -2316,7 +2317,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       if (coldRestoreRef.current && readerSnapshot) {
         const progressWasCleared = hasArchiveProgressMarker(archiveId);
         let restoredArchive = readerSnapshot.archive || null;
-        if (archiveHasNewMarker(restoredArchive) && !progressWasCleared) {
+        if (persistReadingProgress && archiveHasNewMarker(restoredArchive) && !progressWasCleared) {
           try {
             await lrrApi.updateProgress(archiveId, 1);
             rememberArchiveProgressInCatalog(archiveId, 1);
@@ -2385,7 +2386,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           archiveRef.current = meta;
           setArchive(meta);
           dispatchRender({ type: 'ready', resource: 'metadata' });
-          if (archiveHasNewMarker(meta) && !hasArchiveProgressMarker(archiveId)) {
+          if (persistReadingProgress && archiveHasNewMarker(meta) && !hasArchiveProgressMarker(archiveId)) {
             void lrrApi.updateProgress(archiveId, 1).then(() => {
               if (!isActive()) return;
               rememberArchiveProgressInCatalog(archiveId, 1);
@@ -2459,11 +2460,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
     };
     void init();
     return () => controller.abort();
-  }, [archiveId, bootstrapRetryToken, readerSnapshot]);
+  }, [archiveId, bootstrapRetryToken, persistReadingProgress, readerSnapshot]);
 
   // ===== 2. Save progress =====
   useEffect(() => {
-    if (archive && pages.length > 0) {
+    if (archive && pages.length > 0 && persistReadingProgress) {
       if (settings.splitWidePagesEnabled && !webtoonActive
         && currentSpread.some((unit) => !pageSizes[unit.pageIndex])) return undefined;
       const page = getSpreadProgressPage(currentSpread);
@@ -2495,7 +2496,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       }
     }
     return undefined;
-  }, [archive, currentSpread, enqueueLrrProgressSync, pageSizes, pages, serverTracksProgress, settings.allowProgressRegression, settings.splitWidePagesEnabled, webtoonActive]);
+  }, [archive, currentSpread, enqueueLrrProgressSync, pageSizes, pages, persistReadingProgress, serverTracksProgress, settings.allowProgressRegression, settings.splitWidePagesEnabled, webtoonActive]);
 
   // ===== Pointer down =====
   const handlePointerDown = useCallback((e) => {
@@ -3126,7 +3127,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           highestObservedPageRef.current.get(archiveId) || 0,
           getSpreadProgressPage(currentSpread),
         ), pages.length);
-        if (shouldPersistArchiveReadingProgress(hasArchiveProgressMarker(archiveId), highestPage)) {
+        if (persistReadingProgress && shouldPersistArchiveReadingProgress(hasArchiveProgressMarker(archiveId), highestPage)) {
           saveHistory(archive, highestPage).then(() => flushHistorySync()).catch(() => {});
           if (serverTracksProgress) enqueueLrrProgressSync(archiveId, highestPage);
           setHistoryEntries(getHistory());
@@ -3134,7 +3135,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       }
       onBack();
     }
-  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, onBack, pages.length, serverTracksProgress, viewMode]);
+  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, onBack, pages.length, persistReadingProgress, serverTracksProgress, viewMode]);
 
   // ===== Preload indices =====
   const getPreloadIndices = () => {

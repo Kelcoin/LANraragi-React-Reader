@@ -546,6 +546,7 @@ export default function Recommendations({ currentArchive }) {
       menu={archiveMenu}
       onClose={() => setArchiveMenu(null)}
       onRead={(archive) => handleCardClick(archive)}
+      onReadIncognito={(archive) => navigateToArchive(archive.arcid || archive.id, { incognito: true })}
       onClearProgress={handleClearArchiveProgress}
       onEditMetadata={(archive) => navigateToMetadata(archive.arcid || archive.id)}
       onDownload={handleArchiveDownload}

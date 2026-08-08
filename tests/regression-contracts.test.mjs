@@ -1,10 +1,65 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { parseRouteSearch } from '../src/lib/navigation.js';
 import { applyThemePalette, createCustomThemeTokens, normalizeThemePalette, normalizeThemePalettes, readStoredThemePalette, readStoredThemePalettes, writeStoredThemePalette, writeStoredThemePalettes } from '../src/lib/theme.js';
 import { hslToHex, parseHexColor, rgbToHsl } from '../src/lib/color.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+
+test('incognito reader routes are explicit and do not change normal archive links', () => {
+  const navigation = read('src/lib/navigation.js');
+  const app = read('src/App.jsx');
+
+  assert.deepEqual(parseRouteSearch('?id=abc123'), { kind: 'reader', archiveId: 'abc123', incognito: false });
+  assert.deepEqual(parseRouteSearch('?id=abc123&incognito=1'), { kind: 'reader', archiveId: 'abc123', incognito: true });
+  assert.match(navigation, /navigateToArchive\(archiveId, \{ replace = false, incognito = false \} = \{\}\)/);
+  assert.match(navigation, /incognito=1/);
+  assert.match(navigation, /dispatchRouteChange\(\{ kind: 'reader', archiveId: String\(archiveId\), incognito \}\)/);
+  assert.match(app, /incognito=\{route\.incognito === true\}/);
+  assert.match(app, /route\.incognito \? 'incognito' : 'normal'/);
+  assert.match(app, /<HistoryPage onSelectArchive=\{\(id, options\) => navigateToArchive\(id, options\)\}/);
+  assert.match(app, /<WatchlistPage onSelectArchive=\{\(id, options\) => navigateToArchive\(id, options\)\}/);
+  assert.match(app, /<Home onSelectArchive=\{\(id, options\) => \{/);
+});
+
+test('archive context menus expose incognito reading everywhere normal reading is offered', () => {
+  const menu = read('src/components/ArchiveContextMenu.jsx');
+  const home = read('src/pages/Home.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const watchlist = read('src/pages/WatchlistPage.jsx');
+  const recommendations = read('src/components/Recommendations.jsx');
+
+  assert.match(menu, /onReadIncognito/);
+  assert.match(menu, /<MenuButton onClick=\{run\(onRead\)\}>阅读<\/MenuButton>\s*<MenuButton onClick=\{run\(onReadIncognito\)\}>无痕阅读<\/MenuButton>/);
+  assert.match(home, /onReadIncognito=\{\(archive\) => handleSelectArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
+  assert.match(history, /onReadIncognito=\{\(archive\) => onSelectArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
+  assert.match(watchlist, /onReadIncognito=\{\(archive\) => onSelectArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
+  assert.match(recommendations, /onReadIncognito=\{\(archive\) => navigateToArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
+});
+
+test('reader incognito mode skips reading progress, history, and cold-restore snapshots', () => {
+  const reader = read('src/pages/Reader.jsx');
+
+  assert.match(reader, /export default function Reader\(\{ archiveId, onBack, coldRestoreBoot = false, incognito = false \}\)/);
+  assert.match(reader, /const persistReadingProgress = !incognito;/);
+  assert.match(reader, /if \(!persistReadingProgress \|\| !archiveRef\.current \|\| pagesRef\.current\.length === 0\) return;/);
+  assert.match(reader, /if \(!persistReadingProgress \|\| !id \|\| targetPage <= 0\) return Promise\.resolve\(\);/);
+  assert.match(reader, /if \(!persistReadingProgress \|\| !serverTracksProgress \|\| !archiveId\) return;/);
+  assert.match(reader, /if \(persistReadingProgress && archiveHasNewMarker\(restoredArchive\) && !progressWasCleared\)/);
+  assert.match(reader, /if \(persistReadingProgress && archiveHasNewMarker\(meta\) && !hasArchiveProgressMarker\(archiveId\)\)/);
+  assert.match(reader, /if \(archive && pages\.length > 0 && persistReadingProgress\)/);
+  assert.match(reader, /if \(persistReadingProgress && shouldPersistArchiveReadingProgress\(hasArchiveProgressMarker\(archiveId\), highestPage\)\)/);
+});
+
+test('random roam skeletons fill the carousel row when space allows', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /function SkeletonCard\(\{ showProgress = false, fillWidth = false \}\)/);
+  assert.match(home, /flex: fillWidth \? '1 1 0' : '0 0 150px'/);
+  assert.match(home, /rsk-\$\{i\}/);
+  assert.match(home, /rrsk-\$\{i\}/);
+  assert.match(home, /<SkeletonCard[^>]+fillWidth[^>]+showProgress=/);
+});
 
 test('archive pagination stops by total or empty pages, not a fixed server batch size', () => {
   const home = read('src/pages/Home.jsx');
@@ -141,6 +196,21 @@ test('history and watchlist keep skeletons while async local state hydrates', ()
   assert.match(watchlist, /<ArchiveListLoadingGrid count=\{8\} displayMode=\{archiveDisplayMode\}/);
   assert.match(css, /\.archive-list-loading-grid\s*\{/);
   assert.match(css, /\.archive-list-loading-card\s*\{/);
+});
+
+test('history and watchlist narrow actions fill wrapped rows and use shared summary radius', () => {
+  const history = read('src/pages/HistoryPage.jsx');
+  const watchlist = read('src/pages/WatchlistPage.jsx');
+  const css = read('src/index.css');
+  const narrowCss = css.slice(css.lastIndexOf('@media (max-width: 600px)'), css.indexOf('@media (hover: none)'));
+
+  assert.match(history, /className="history-page"/);
+  assert.match(watchlist, /className="history-page watchlist-page"/);
+  assert.match(narrowCss, /\.history-page-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
+  assert.match(narrowCss, /\.history-page-actions\s*\{[\s\S]*?justify-content:\s*flex-start;/);
+  assert.match(narrowCss, /\.history-page-actions \.btn\s*\{[\s\S]*?flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);/);
+  assert.match(narrowCss, /\.history-page-actions \.btn\s*\{[\s\S]*?min-width:\s*max-content;/);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*?border-radius:\s*var\(--radius-chip\);/);
 });
 
 test('skeleton shimmer keeps a stable base fill and recommendation placeholders use shared classes', () => {
@@ -614,14 +684,14 @@ test('history page header has ordered narrow-screen layout hooks', () => {
   assert.match(css, /\.history-section-toolbar\s*\{/);
   assert.match(css, /\.history-summary-part\s*\{/);
   assert.doesNotMatch(css, /\.history-hide-read-toggle/);
-  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-2\);[\s\S]*border:\s*1px solid var\(--glass-border\);[\s\S]*border-radius:\s*999px;/s);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-2\);[\s\S]*border:\s*1px solid var\(--glass-border\);[\s\S]*border-radius:\s*var\(--radius-chip\);/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-header\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*align-items:\s*stretch;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-title-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*auto\)\s+minmax\(0,\s*1fr\);[\s\S]*align-items:\s*center;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-summary\s*\{[\s\S]*justify-self:\s*end;[\s\S]*text-align:\s*right;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-summary-part\s*\{[\s\S]*display:\s*block;/s);
-  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*nowrap;[\s\S]*justify-content:\s*center;/s);
+  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*justify-content:\s*flex-start;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-section-header\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
-  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions \.btn\s*\{[\s\S]*width:\s*auto;[\s\S]*flex:\s*0 1 auto;[\s\S]*font-size:\s*13px;/s);
+  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions \.btn\s*\{[\s\S]*width:\s*auto;[\s\S]*flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);[\s\S]*font-size:\s*13px;[\s\S]*text-align:\s*center;/s);
 });
 
 test('home archive toolbar count is styled and empty cold restore fetches archives', () => {

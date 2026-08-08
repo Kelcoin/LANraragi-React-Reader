@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { hasArchiveReadingProgress } from '../lib/archiveProgress';
 import { getFavoriteState, setArchiveFavorite } from '../lib/categories';
 
-function clampMenuPosition(x, y, height = 178) {
+function clampMenuPosition(x, y, height = 214) {
   const width = 150;
   const gap = 8;
   return {
@@ -26,7 +26,7 @@ function MenuButton({ children, danger = false, disabled = false, onClick }) {
   );
 }
 
-export default function ArchiveContextMenu({ menu, onClose, onRead, onClearProgress, onEditMetadata, onDownload, onDelete, onCopyLink, onRemoveHistory, onAddWatchlist, onRemoveWatchlist }) {
+export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncognito, onClearProgress, onEditMetadata, onDownload, onDelete, onCopyLink, onRemoveHistory, onAddWatchlist, onRemoveWatchlist }) {
   const archiveId = menu?.archive?.arcid || menu?.archive?.id || '';
   const [favorite, setFavorite] = useState(false);
   const [favoriteKnown, setFavoriteKnown] = useState(false);
@@ -37,7 +37,7 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onClearProgr
   const showAddWatchlist = !showRemoveWatchlist && !!onAddWatchlist;
   const showClearProgress = !!onClearProgress && hasArchiveReadingProgress(menu?.archive);
   const extraRows = (showRemoveHistory ? 1 : 0) + (showRemoveWatchlist || showAddWatchlist ? 1 : 0) + (onDelete ? 1 : 0) + (onEditMetadata ? 1 : 0) + (showClearProgress ? 1 : 0);
-  const menuHeight = 178 + extraRows * 36 + (favoriteError ? 48 : 0);
+  const menuHeight = 214 + extraRows * 36 + (favoriteError ? 48 : 0);
   const pos = useMemo(() => clampMenuPosition(menu?.x || 0, menu?.y || 0, menuHeight), [menu?.x, menu?.y, menuHeight]);
 
   useEffect(() => {
@@ -127,6 +127,7 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onClearProgr
       }}
     >
       <MenuButton onClick={run(onRead)}>阅读</MenuButton>
+      <MenuButton onClick={run(onReadIncognito)}>无痕阅读</MenuButton>
       {showClearProgress && <MenuButton onClick={runClearProgress}>清除阅读进度</MenuButton>}
       {onEditMetadata && <MenuButton onClick={run(onEditMetadata)}>编辑元数据</MenuButton>}
       <MenuButton onClick={run(onDownload)}>下载</MenuButton>

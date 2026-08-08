@@ -22,7 +22,7 @@ export function parseRouteSearch(search = '') {
   if (archiveId && view === 'metadata') return { kind: 'metadata', archiveId };
 
   if (archiveId) {
-    return { kind: 'reader', archiveId };
+    return { kind: 'reader', archiveId, incognito: params.get('incognito') === '1' };
   }
   if (view === 'history') {
     return { kind: 'history' };
@@ -44,13 +44,13 @@ export function parseRouteFromLocation() {
   return parseRouteSearch(window.location.search);
 }
 
-export function navigateToArchive(archiveId, { replace = false } = {}) {
+export function navigateToArchive(archiveId, { replace = false, incognito = false } = {}) {
   if (!archiveId) return;
-  if (!canNavigate({ kind: 'reader', archiveId: String(archiveId) })) return false;
-  const url = `/?id=${encodeURIComponent(archiveId)}`;
+  if (!canNavigate({ kind: 'reader', archiveId: String(archiveId), incognito })) return false;
+  const url = incognito ? `/?id=${encodeURIComponent(archiveId)}&incognito=1` : `/?id=${encodeURIComponent(archiveId)}`;
   if (replace) window.history.replaceState({}, '', url);
   else window.history.pushState({}, '', url);
-  dispatchRouteChange({ kind: 'reader', archiveId: String(archiveId) });
+  dispatchRouteChange({ kind: 'reader', archiveId: String(archiveId), incognito });
   return true;
 }
 

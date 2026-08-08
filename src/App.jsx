@@ -430,20 +430,20 @@ export default function App() {
 
   let routeContent;
   if (route.kind === 'reader') {
-    routeContent = <Reader key={route.archiveId} archiveId={route.archiveId} onBack={() => navigateHome()} />;
+    routeContent = <Reader key={`${route.archiveId}:${route.incognito ? 'incognito' : 'normal'}`} archiveId={route.archiveId} incognito={route.incognito === true} onBack={() => navigateHome()} />;
   } else if (route.kind === 'metadata') {
     routeContent = <MetadataPage archiveId={route.archiveId} />;
   } else if (route.kind === 'history') {
-    routeContent = <HistoryPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />;
+    routeContent = <HistoryPage onSelectArchive={(id, options) => navigateToArchive(id, options)} onBack={() => navigateHome()} />;
   } else if (route.kind === 'watchlist') {
-    routeContent = <WatchlistPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />;
+    routeContent = <WatchlistPage onSelectArchive={(id, options) => navigateToArchive(id, options)} onBack={() => navigateHome()} />;
   } else if (route.kind === 'dedupe') {
     routeContent = <DeduplicatePage onBack={() => navigateHome()} />;
   } else if (route.kind === 'upload') {
     routeContent = <UploadPage />;
   } else {
-    routeContent = <Home onSelectArchive={(id) => {
-        navigateToArchive(id);
+    routeContent = <Home onSelectArchive={(id, options) => {
+        navigateToArchive(id, options);
       }} onLogout={() => {
         setSavedConfig({ url: '', key: '' });
         setTempConfig({

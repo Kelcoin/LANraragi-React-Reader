@@ -231,10 +231,11 @@ function shouldRevalidateHydratedRandoms(snapshot, boot) {
 const DEFAULT_FILTER = { query: '', sortBy: 'date_added', order: 'desc', active: false };
 const bootState = getBootState();
 
-function SkeletonCard({ showProgress = false }) {
+function SkeletonCard({ showProgress = false, fillWidth = false }) {
   return (
     <div style={{
-      flexShrink: 0, minWidth: '150px', width: '150px',
+      flex: fillWidth ? '1 1 0' : '0 0 150px',
+      minWidth: '150px', width: fillWidth ? 'auto' : '150px',
       background: 'var(--surface-1)',
       borderRadius: 'var(--radius-card)',
       border: '1px solid var(--glass-border)',
@@ -601,9 +602,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     saveHomeNavigationSnapshot(snapshot);
   }, [buildHomeStateSnapshot]);
 
-  const handleSelectArchive = useCallback((archiveId) => {
+  const handleSelectArchive = useCallback((archiveId, options) => {
     saveCurrentHomeForNavigation();
-    onSelectArchive(archiveId);
+    onSelectArchive(archiveId, options);
   }, [onSelectArchive, saveCurrentHomeForNavigation]);
 
   const handleArchiveCardActivate = useCallback((archive) => {
@@ -2314,7 +2315,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           </div>
           <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'contain', padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px', position: 'relative', zIndex: 1 }} className="no-scrollbar">
             {Array.from({ length: 5 }).map((_, i) => (
-              <SkeletonCard key={`rsk-${i}`} showProgress={showGlobalArchiveProgress} />
+              <SkeletonCard key={`rsk-${i}`} fillWidth showProgress={showGlobalArchiveProgress} />
             ))}
           </div>
         </section>
@@ -2334,7 +2335,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div style={{ overflow: 'hidden', transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)', maxHeight: randomCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
             <div ref={randomScroller.ref} onWheelCapture={randomScroller.onWheelCapture} onScroll={randomScroller.onScroll} onMouseDown={randomScroller.onMouseDown} onClickCapture={randomScroller.onClickCapture} onDragStart={randomScroller.onDragStart} style={{ display: 'flex', gap: isNarrow ? '10px' : '16px', overflowX: 'auto', overflowY: 'hidden', padding: getHomeCarouselPadding(isNarrow), position: 'relative', zIndex: 1, ...randomScroller.getTouchScrollStyle(), ...randomScroller.getMouseScrollStyle() }} className="no-scrollbar">
               {randomsRefreshing ? Array.from({ length: Math.max(5, Math.min(8, randoms.length || 5)) }).map((_, i) => (
-                <SkeletonCard key={`rrsk-${i}`} showProgress={showGlobalArchiveProgress} />
+                <SkeletonCard key={`rrsk-${i}`} fillWidth showProgress={showGlobalArchiveProgress} />
               )) : randoms.map(arc => (
                 <ArchiveCard key={`rnd-${arc.arcid}`} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
@@ -2955,6 +2956,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       menu={archiveMenu}
       onClose={() => setArchiveMenu(null)}
       onRead={(archive) => handleSelectArchive(archive.arcid || archive.id)}
+      onReadIncognito={(archive) => handleSelectArchive(archive.arcid || archive.id, { incognito: true })}
       onClearProgress={handleClearArchiveProgress}
       onEditMetadata={(archive) => { saveCurrentHomeForNavigation(); navigateToMetadata(archive.arcid || archive.id); }}
       onDownload={handleArchiveDownload}
