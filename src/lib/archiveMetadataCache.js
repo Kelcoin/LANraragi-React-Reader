@@ -1,6 +1,7 @@
 import { lrrApi } from './api';
 import { mergeArchiveProgress } from './archiveCatalog';
 import { getConfigScopeId, migrateLegacyStorageKey } from './configScope';
+import { clearHomeNavigationSnapshot } from './sessionState';
 
 const metadataCache = new Map();
 const metadataRequests = new Map();
@@ -144,6 +145,7 @@ export function invalidateArchiveCatalog() {
 
 export function markArchiveCatalogDirty() {
   invalidateArchiveCatalog();
+  clearHomeNavigationSnapshot();
   try { sessionStorage.setItem(ARCHIVE_CATALOG_DIRTY_KEY, '1'); } catch {}
 }
 

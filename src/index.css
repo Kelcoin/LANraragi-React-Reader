@@ -4786,8 +4786,7 @@ textarea:focus-visible,
 .upload-field-label { font-size: 12px; font-weight: 650; color: var(--text-sub); }
 .upload-url-input { min-height: 190px; flex: 1 1 190px; resize: vertical; box-sizing: border-box; line-height: 1.6; }
 .upload-url-summary { display: flex; justify-content: space-between; gap: 10px; min-height: 16px; color: var(--text-sub); font-size: 11px; }
-.upload-url-summary .is-error,
-.upload-status-text.is-failed { color: var(--danger-text); }
+.upload-url-summary .is-error { color: var(--danger-text); }
 .upload-notice { padding: 9px 11px; border-radius: 9px; background: var(--warning-surface); border: 1px solid var(--warning-border); color: var(--warning-text); font-size: 11px; line-height: 1.5; }
 .upload-primary-action { width: 100%; padding: 11px; border-color: color-mix(in srgb, var(--accent) 50%, var(--glass-border)); background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
 
@@ -4795,21 +4794,20 @@ textarea:focus-visible,
 .upload-results-heading h2 { font-size: 17px; }
 .upload-progress { height: 5px; margin: 16px 0; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
 .upload-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
-.upload-task-row { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 10px 11px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--glass-border); overflow: hidden; }
+.upload-task-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 11px; align-items: center; min-height: 40px; padding: 10px 11px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--glass-border); overflow: hidden; box-sizing: border-box; }
 .upload-task-row.has-menu { cursor: context-menu; }
 .upload-task-row::before { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--task-progress, 0%); background: var(--accent-soft); pointer-events: none; transition: width .22s ease; }
 .upload-task-row > * { position: relative; z-index: 1; }
-.upload-task-row > div { min-width: 0; display: grid; gap: 3px; }
+.upload-task-row > div { min-width: 0; display: grid; }
 .upload-task-row strong,
 .upload-task-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upload-task-row strong { font-size: 12px; }
 .upload-task-row small { color: var(--text-sub); font-size: 11px; }
 .upload-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-sub); }
+.upload-status-dot.is-queued { background: var(--text-sub); }
 .upload-status-dot.is-running { background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
 .upload-status-dot.is-success { background: var(--good); }
 .upload-status-dot.is-failed { background: var(--danger); }
-.upload-status-text { font-size: 11px; color: var(--text-sub); }
-.upload-status-text.is-success { color: var(--good-text); }
 
 @media (prefers-reduced-motion: reduce) {
   .archive-category-button {
@@ -5152,7 +5150,7 @@ textarea:focus-visible,
 .upload-title-icon {
   border-radius: var(--radius-control);
   background: var(--accent-soft);
-  border-color: var(--danger-border);
+  border-color: var(--glass-border);
 }
 
 .upload-dropzone {
