@@ -164,6 +164,7 @@ jobs:
 
           import android.os.Bundle;
           import android.webkit.JavascriptInterface;
+          import androidx.activity.OnBackPressedCallback;
           import androidx.core.view.ViewCompat;
           import androidx.core.view.WindowInsetsCompat;
           import androidx.core.view.WindowInsetsControllerCompat;
@@ -188,6 +189,16 @@ jobs:
                   super.onCreate(savedInstanceState);
                   getBridge().getWebView().getSettings().setTextZoom(100);
                   getBridge().getWebView().addJavascriptInterface(this, "ReadoshiAndroid");
+                  getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+                      @Override
+                      public void handleOnBackPressed() {
+                          if (getBridge().getWebView().canGoBack()) {
+                              getBridge().getWebView().goBack();
+                              return;
+                          }
+                          finish();
+                      }
+                  });
               }
           }
           `);
@@ -273,6 +284,10 @@ jobs:
           if (!mainActivity.includes('getWebView().getSettings().setTextZoom(100)')) throw new Error('Android text zoom guard missing');
           if (!mainActivity.includes('ReadoshiAndroid')) throw new Error('Android status bar bridge missing');
           if (!mainActivity.includes('setStatusBarHidden')) throw new Error('Android status bar toggle missing');
+          if (!mainActivity.includes('OnBackPressedCallback')) throw new Error('Android back callback missing');
+          if (!mainActivity.includes('getOnBackPressedDispatcher()')) throw new Error('Android back dispatcher missing');
+          if (!mainActivity.includes('canGoBack()')) throw new Error('Android WebView back guard missing');
+          if (!mainActivity.includes('goBack()')) throw new Error('Android WebView back navigation missing');
           const gradle = fs.readFileSync('android/app/build.gradle', 'utf8');
           if (!gradle.includes(`versionName "${process.env.APP_VERSION_NAME}"`)) throw new Error('versionName missing');
           if (!gradle.includes(`versionCode ${process.env.APP_VERSION_CODE}`)) throw new Error('versionCode missing');
@@ -377,6 +392,32 @@ jobs:
 
           npx --no-install cap add ios
           npx --no-install cap sync ios
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const viewControllerPath = 'ios/App/App/ViewController.swift';
+          if (!fs.existsSync(viewControllerPath)) throw new Error('Capacitor iOS ViewController.swift missing');
+          fs.writeFileSync(viewControllerPath, `import UIKit
+          import Capacitor
+
+          class ViewController: CAPBridgeViewController {
+              private lazy var backGesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleBackGesture(_:)))
+
+              override func viewDidLoad() {
+                  super.viewDidLoad()
+                  backGesture.edges = .left
+                  view.addGestureRecognizer(backGesture)
+              }
+
+              @objc private func handleBackGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+                  guard gesture.state == .ended else { return }
+                  guard let webView = bridge?.webView, webView.canGoBack() else { return }
+                  webView.goBack()
+              }
+          }
+          `);
+          NODE
+
           npx --no-install capacitor-assets generate --ios \
             --iconBackgroundColor '#1C1E24' \
             --iconBackgroundColorDark '#1C1E24' \
@@ -441,6 +482,11 @@ jobs:
           find 'ios/App/App/Assets.xcassets/AppIcon.appiconset' -name '*.png' -print -quit | grep -q .
           test "$(/usr/libexec/PlistBuddy -c 'Print :UILaunchScreen:UIColorName' "$PLIST")" = 'LaunchBackground'
           test ! -e 'ios/App/App/Assets.xcassets/LaunchBackground.imageset'
+          IOS_VIEW_CONTROLLER='ios/App/App/ViewController.swift'
+          grep -q 'UIScreenEdgePanGestureRecognizer' "$IOS_VIEW_CONTROLLER"
+          grep -q 'backGesture.edges = .left' "$IOS_VIEW_CONTROLLER"
+          grep -q 'canGoBack()' "$IOS_VIEW_CONTROLLER"
+          grep -q 'goBack()' "$IOS_VIEW_CONTROLLER"
 
       - name: Build unsigned iOS app
         env:

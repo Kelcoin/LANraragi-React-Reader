@@ -76,6 +76,45 @@ test('Worker status reload requires authentication', async () => {
   assert.equal(authorized.status, 302);
 });
 
+test('Worker classifies the original copyright-removal page', async () => {
+  const page = '<title>Gallery Not Available - ExHentai.org</title><p>This gallery is unavailable due to a copyright claim by Irodori Comics.</p>';
+  const dispatch = createWorker([], { fetch: async () => new Response(page, { status: 200 }) });
+  const response = await dispatch('/', {
+    method: 'POST',
+    body: { url: 'https://exhentai.org/g/3951227/838402b64f', cookie: '' },
+  });
+
+  assert.equal(response.status, 410);
+  assert.equal((await response.json()).error, 'GALLERY_COPYRIGHT_REMOVED');
+});
+
+test('Worker classifies content-warning pages', async () => {
+  const page = '<title>Content Warning</title><h1>Content Warning</h1><p>You are seeing this page because this gallery contains content that may be objectionable.</p>';
+  const dispatch = createWorker([], { fetch: async () => new Response(page, { status: 200 }) });
+  const response = await dispatch('/', {
+    method: 'POST',
+    body: { url: 'https://exhentai.org/g/3951227/838402b64f', cookie: '' },
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error, 'CONTENT_WARNING');
+});
+
+test('Worker returns structured data for unknown upstream errors', async () => {
+  const dispatch = createWorker([], { fetch: async () => new Response('temporary upstream error', { status: 503 }) });
+  const response = await dispatch('/', {
+    method: 'POST',
+    body: { url: 'https://exhentai.org/g/3951227/838402b64f', cookie: '' },
+  });
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    error: 'EH_UPSTREAM_ERROR',
+    status: 503,
+    detail: 'EH 返回了 HTTP 503 响应',
+  });
+});
+
 test('Worker status page input fields have explicit hover and focus states', async () => {
   const html = await (await createWorker()('/')).text();
   assert.match(html, /input:hover, textarea:hover \{ border-color:rgba\(255,255,255,\.24\); background:#141b26; \}/);

@@ -289,6 +289,10 @@ function detectNonGallery(html) {
   if (lower.includes('copyright claim')) {
     return 'copyright-removed';
   }
+  if (lower.includes('you are seeing this page because') ||
+      /<h1\b[^>]*>[\s\S]*content warning[\s\S]*<\/h1>/i.test(html)) {
+    return 'content-warning';
+  }
   if (html.length < 500 && !html.includes('gallery')) {
     return 'empty-or-redirect';
   }
@@ -328,6 +332,9 @@ async function ehProxy(request) {
       if (blockType === 'login-or-banned') {
         return json({ error: 'EH_REQUIRES_LOGIN', status: res.status, detail: '画廊需要有效 Cookie 或 IP 被临时封禁' }, res.status);
       }
+      if (blockType === 'content-warning') {
+        return json({ error: 'CONTENT_WARNING', status: res.status, detail: 'EH 返回了内容警告页面' }, 403);
+      }
       if (blockType === 'cloudflare-block') {
         return json({ error: 'EH_CLOUDFLARE_BLOCK', status: res.status, detail: 'EH/EX 返回了 Cloudflare 验证页面' }, res.status);
       }
@@ -337,12 +344,19 @@ async function ehProxy(request) {
       if (blockType === 'copyright-removed') {
         return json({ error: 'GALLERY_COPYRIGHT_REMOVED', status: res.status, detail: 'EH 返回了版权移除页面' }, 410);
       }
-      return text('Upstream returned ' + res.status, res.status);
+      return json({
+        error: 'EH_UPSTREAM_ERROR',
+        status: res.status,
+        detail: `EH 返回了 HTTP ${res.status} 响应`,
+      }, 502);
     }
 
     const blockType = detectNonGallery(htmlText);
     if (blockType === 'login-or-banned') {
       return json({ error: 'EH_REQUIRES_LOGIN', status: 200, detail: 'EH 返回了登录页或封禁页，请检查 Cookie' }, 403);
+    }
+    if (blockType === 'content-warning') {
+      return json({ error: 'CONTENT_WARNING', status: 200, detail: 'EH 返回了内容警告页面' }, 403);
     }
     if (blockType === 'cloudflare-block') {
       return json({ error: 'EH_CLOUDFLARE_BLOCK', status: 200, detail: 'Worker 节点被 EH/EX 的 Cloudflare 防护拦截' }, 403);
