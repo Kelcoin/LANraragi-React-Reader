@@ -85,7 +85,7 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
 
   const run = (action) => (event) => {
     event.stopPropagation();
-    action?.(menu.archive);
+    action?.(menu.archive, { newTab: event.ctrlKey });
     onClose?.();
   };
   const runClearProgress = async (event) => {

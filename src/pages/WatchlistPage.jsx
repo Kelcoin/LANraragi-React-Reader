@@ -371,10 +371,10 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
       <ArchiveContextMenu
         menu={menu}
         onClose={() => setMenu(null)}
-        onRead={(archive) => onSelectArchive(archive.arcid || archive.id)}
-        onReadIncognito={(archive) => onSelectArchive(archive.arcid || archive.id, { incognito: true })}
+        onRead={(archive, options) => onSelectArchive(archive.arcid || archive.id, options)}
+        onReadIncognito={(archive, options) => onSelectArchive(archive.arcid || archive.id, { ...options, incognito: true })}
         onClearProgress={handleClearArchiveProgress}
-        onEditMetadata={(archive) => navigateToMetadata(archive.arcid || archive.id)}
+        onEditMetadata={(archive, options) => navigateToMetadata(archive.arcid || archive.id, options)}
         onDownload={handleDownload}
         onCopyLink={handleCopyLink}
         onRemoveWatchlist={(archive) => requestSingleDelete(archive)}

@@ -13,7 +13,8 @@ test('incognito reader routes are explicit and do not change normal archive link
 
   assert.deepEqual(parseRouteSearch('?id=abc123'), { kind: 'reader', archiveId: 'abc123', incognito: false });
   assert.deepEqual(parseRouteSearch('?id=abc123&incognito=1'), { kind: 'reader', archiveId: 'abc123', incognito: true });
-  assert.match(navigation, /navigateToArchive\(archiveId, \{ replace = false, incognito = false \} = \{\}\)/);
+  assert.match(navigation, /navigateToArchive\(archiveId, \{ replace = false, incognito = false, newTab = false \} = \{\}\)/);
+  assert.match(navigation, /if \(newTab\) \{[\s\S]{0,80}openRouteInNewTab\(url\);/);
   assert.match(navigation, /incognito=1/);
   assert.match(navigation, /dispatchRouteChange\(\{ kind: 'reader', archiveId: String\(archiveId\), incognito \}\)/);
   assert.match(app, /incognito=\{route\.incognito === true\}/);
@@ -31,11 +32,13 @@ test('archive context menus expose incognito reading everywhere normal reading i
   const recommendations = read('src/components/Recommendations.jsx');
 
   assert.match(menu, /onReadIncognito/);
+  assert.match(menu, /action\?\.\(menu\.archive, \{ newTab: event\.ctrlKey \}\)/);
   assert.match(menu, /<MenuButton onClick=\{run\(onRead\)\}>阅读<\/MenuButton>\s*<MenuButton onClick=\{run\(onReadIncognito\)\}>无痕阅读<\/MenuButton>/);
-  assert.match(home, /onReadIncognito=\{\(archive\) => handleSelectArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
-  assert.match(history, /onReadIncognito=\{\(archive\) => onSelectArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
-  assert.match(watchlist, /onReadIncognito=\{\(archive\) => onSelectArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
-  assert.match(recommendations, /onReadIncognito=\{\(archive\) => navigateToArchive\(archive\.arcid \|\| archive\.id, \{ incognito: true \}\)\}/);
+  assert.match(home, /onRead=\{\(archive, options\) => handleSelectArchive\(archive\.arcid \|\| archive\.id, options\)\}/);
+  assert.match(home, /onReadIncognito=\{\(archive, options\) => handleSelectArchive\(archive\.arcid \|\| archive\.id, \{ \.\.\.options, incognito: true \}\)\}/);
+  assert.match(history, /onReadIncognito=\{\(archive, options\) => onSelectArchive\(archive\.arcid \|\| archive\.id, \{ \.\.\.options, incognito: true \}\)\}/);
+  assert.match(watchlist, /onReadIncognito=\{\(archive, options\) => onSelectArchive\(archive\.arcid \|\| archive\.id, \{ \.\.\.options, incognito: true \}\)\}/);
+  assert.match(recommendations, /onReadIncognito=\{\(archive, options\) => navigateToArchive\(archive\.arcid \|\| archive\.id, \{ \.\.\.options, incognito: true \}\)\}/);
 });
 
 test('reader incognito mode skips reading progress, history, and cold-restore snapshots', () => {
@@ -227,7 +230,20 @@ test('skeleton shimmer keeps a stable base fill and recommendation placeholders 
 
 test('metadata error statuses dismiss automatically', () => {
   const page = read('src/pages/MetadataPage.jsx');
-  assert.match(page, /\{ autoHide = type === 'error' \}/);
+  const css = read('src/index.css');
+  assert.match(page, /TOAST_DURATION_MS = 3600/);
+  assert.match(page, /TOAST_ERROR_DURATION_MS = 7000/);
+  assert.match(page, /const \[toasts, setToasts\] = useState\(\[\]\)/);
+  assert.match(page, /setToasts\(current => \[\.\.\.current, \{ id, text, type, closing: false, autoHide, duration \}\]\)/);
+  assert.match(page, /setTimeout\(\(\) => closeStatus\(id\), duration\)/);
+  assert.match(page, /className="metadata-toast-stack"/);
+  assert.doesNotMatch(page, /className="metadata-status-wrap"/);
+  assert.match(page, /className="metadata-status-progress"/);
+  assert.match(css, /\.metadata-toast-stack\s*\{[^}]*position:\s*fixed;[^}]*left:\s*max\(16px, calc\(var\(--app-safe-area-left\) \+ 16px\)\)/s);
+  assert.match(css, /@keyframes metadata-status-enter/);
+  assert.match(css, /@keyframes metadata-status-exit/);
+  assert.match(css, /@keyframes metadata-status-progress[\s\S]*scaleX\(0\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.metadata-toast-stack[\s\S]*?\.metadata-status-progress[\s\S]*?animation:\s*none\s*!important/);
 });
 
 test('metadata status cards contain long plugin messages', () => {
@@ -241,7 +257,15 @@ test('metadata plugins merge returned title, summary, and tags into the editable
   assert.match(editor, /title:\s*data\.title \?\? data\.new_title \?\? result\.title \?\? result\.new_title/);
   assert.match(editor, /summary:\s*data\.summary \?\? data\.new_summary \?\? result\.summary \?\? result\.new_summary/);
   assert.match(editor, /tags:\s*data\.tags \?\? data\.new_tags \?\? result\.tags \?\? result\.new_tags/);
+  assert.doesNotMatch(editor, /hasDefaultValueOne|isDefault:/);
+  assert.match(editor, /description:\s*stripPluginDescription\(item\?\.description\)/);
   assert.match(page, /const \{ title, summary, tags \} = readMetadataPluginResult\(result\)/);
+  assert.match(page, /const defaultPlugin = values\.find\(option => option\.value === 'ehplugin' \|\| option\.label === 'E-Hentai'\) \|\| values\[0\]/);
+  assert.match(page, /setPlugins\(values\); setPlugin\(defaultPlugin\?\.value \|\| ''\)/);
+  assert.match(page, /const pluginDescription = plugins\.find\(option => option\.value === plugin\)\?\.description \|\| ''/);
+  assert.match(page, /className="metadata-plugin-help"/);
+  assert.match(page, /className="metadata-plugin-help-icon"/);
+  assert.match(page, /role="tooltip"\>\{pluginDescription\}<\/span\>/);
   assert.match(page, /const nextForm = \{ \.\.\.form \}/);
   assert.match(page, /if \(title\) \{ nextForm\.title = title; changed\.push\('标题'\); \}/);
   assert.match(page, /if \(summary\) \{ nextForm\.summary = summary; changed\.push\('摘要'\); \}/);
@@ -264,6 +288,7 @@ test('metadata save updates visible archive state and writes metadata cache imme
   const cache = read('src/lib/archiveMetadataCache.js');
   assert.match(cache, /export function rememberArchiveInCatalog\(archive, options = \{\}\)/);
   assert.match(page, /rememberArchiveInCatalog\(updatedArchive, \{ immediate: true \}\)/);
+  assert.match(page, /markArchiveCatalogDirty\(\)/);
   assert.match(page, /setArchive\(updatedArchive\)/);
   assert.match(page, /await lrrApi\.clearSearchCache\(\)\.catch\(\(\) => \{\}\)/);
 });
@@ -703,7 +728,7 @@ test('home archive toolbar count is styled and empty cold restore fetches archiv
   assert.match(home, /className="archive-toolbar-summary"[\s\S]*alignItems:\s*'center'/);
   assert.match(home, /const hasHydratedArchives = homeSnapshot && Array\.isArray\(homeSnapshot\.archives\) && homeSnapshot\.archives\.length > 0;/);
   assert.match(home, /if \(coldRestoreRef\.current && hasHydratedArchives\) return;/);
-  assert.match(home, /if \(navigationRestoreRef\.current && hasHydratedArchives\)/);
+  assert.match(home, /if \(!archiveCatalogDirty && navigationRestoreRef\.current && hasHydratedArchives\)/);
   assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-2\);[\s\S]*border:\s*1px solid var\(--glass-border\);[\s\S]*border-radius:\s*999px;/s);
   assert.match(css, /\.archive-toolbar-summary h2,[\s\S]*\.archive-toolbar-summary h2 > span\s*\{[\s\S]*white-space:\s*nowrap;/s);
 });
@@ -868,11 +893,21 @@ test('archive mutations synchronize catalog and short search caches after succes
   const reader = read('src/pages/Reader.jsx');
 
   assert.match(deletion, /archiveOperation:\s*async \(\) =>\s*assertArchiveDeletionResult\(await lrrApi\.deleteArchive\(archiveId\)\)[\s\S]{0,500}removeArchivesFromCatalog\(archiveId\);[\s\S]{0,200}clearArchiveSearchResponseCache\(\);/);
-  assert.match(metadataPage, /await lrrApi\.updateArchiveMetadata[\s\S]{0,500}rememberArchiveInCatalog\(/);
-  assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,300}uploadResults\.some[\s\S]{0,200}invalidateArchiveCatalog\(\)/);
+  assert.match(metadataPage, /await lrrApi\.updateArchiveMetadata[\s\S]{0,500}rememberArchiveInCatalog\([\s\S]{0,200}markArchiveCatalogDirty\(\)/);
+  assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,300}uploadResults\.some[\s\S]{0,200}markArchiveCatalogDirty\(\)/);
   assert.match(progressActions, /rememberArchiveProgressInCatalog\(id, result\.page/);
   assert.match(reader, /await lrrApi\.updateProgress\(id, targetPage[\s\S]{0,300}rememberArchiveProgressInCatalog\(id, targetPage/);
   assert.doesNotMatch(progressActions, /clearArchiveSearchResponseCache|clearSearchCache/);
+});
+
+test('upload results use per-task progress and expose the archive context menu after success', () => {
+  const uploadPage = read('src/pages/UploadPage.jsx');
+  assert.match(uploadPage, /lrrApi\.uploadArchive\(task\.file, \{ onProgress: updateProgress \}\)/);
+  assert.match(uploadPage, /archiveFromUploadResponse\(update\.value, item\.label\)/);
+  assert.match(uploadPage, /onContextMenu=\{\(event\) => handleTaskContextMenu\(event, item\)\}/);
+  assert.match(uploadPage, /<ArchiveContextMenu[\s\S]*onRead=\{\(archive, options\) => navigateToArchive/);
+  assert.match(uploadPage, /onEditMetadata=\{\(archive, options\) => navigateToMetadata/);
+  assert.match(uploadPage, /onDelete=\{\(archive\) => \{ setArchiveDeleteSyncConfirmed\(true\); setArchiveDeleteTarget\(archive\); \}\}/);
 });
 
 test('server-derived recommendation caches are scoped and the retired sync module is gone', () => {
@@ -1639,12 +1674,12 @@ test('custom palette picker escapes settings clipping, stays above the modal, an
   assert.match(css, /\.theme-color-picker-trigger:hover,[\s\S]*background:\s*var\(--surface-inset\)/s);
 });
 
-test('release version is 1.5.0 across package manifests', () => {
+test('release version is 1.5.1 across package manifests', () => {
   const packageJson = read('package.json');
   const packageLock = read('package-lock.json');
-  assert.match(packageJson, /"version":\s*"1\.5\.0"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.0"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.0"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.0"/);
+  assert.match(packageJson, /"version":\s*"1\.5\.1"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.1"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.1"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.1"/);
 });
 
 test('sync data survives scope switches and failed flushes', () => {

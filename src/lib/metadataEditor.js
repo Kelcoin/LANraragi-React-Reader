@@ -20,16 +20,34 @@ export function readMetadataPluginResult(result) {
   };
 }
 
+function stripPluginDescription(value) {
+  return String(value || '')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&bull;/g, '•')
+    .replace(/&rarr;/g, '→')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .trim();
+}
+
 export function normalizeMetadataPlugins(list) {
   const source = Array.isArray(list) ? list : (list?.data || list?.plugins || []);
   const seen = new Set();
   return source.map((item, index) => {
-    if (typeof item === 'string') return { value: item, label: item };
+    if (typeof item === 'string') return { value: item, label: item, description: '' };
     const candidates = [item?.namespace, item?.plugin_id, item?.id, item?.plugin, item?.name];
     const rawValue = candidates.find(value => ['string', 'number'].includes(typeof value));
     const value = String(rawValue ?? `plugin-${index}`);
     const label = String(item?.name || item?.label || rawValue || `插件 ${index + 1}`);
-    return { value, label };
+    return { value, label, description: stripPluginDescription(item?.description) };
   }).filter(option => option.value && !seen.has(option.value) && seen.add(option.value));
 }
 

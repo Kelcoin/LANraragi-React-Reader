@@ -38,6 +38,7 @@ import { ARCHIVE_BROWSE_MODES, ARCHIVE_PAGE_SIZE, clampArchivePage, getArchivePa
 import { reduceArchiveRefreshPhase } from '../lib/archiveRefreshMotion';
 import { ARCHIVE_PROGRESS_VISIBILITY, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
+import { consumeArchiveCatalogDirty } from '../lib/archiveMetadataCache';
 
 const HOME_COLLAPSE_STORAGE_KEYS = {
   history: 'lrr_home_collapsed_history',
@@ -354,10 +355,12 @@ function writeReaderSettings(settings) {
 export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', onThemeModeChange, themePalettes = null, onThemePalettesChange }) {
   const supportsAutomaticArchiveLoading = typeof IntersectionObserver !== 'undefined';
   const workerReady = hasValidWorkerConfig();
-  const [navSnapshot] = useState(() => consumeHomeNavigationSnapshot());
+  const [archiveCatalogDirty] = useState(() => consumeArchiveCatalogDirty());
+  const [navSnapshot] = useState(() => (archiveCatalogDirty ? null : consumeHomeNavigationSnapshot()));
   const [coldRestoreBoot] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('q')) return false;
+    if (archiveCatalogDirty) return false;
     if (navSnapshot) return false;
     if (claimColdRestoreRoute('home')) return true;
     const boot = getBootState();
@@ -382,6 +385,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   });
   const snapshotFilterKey = `${filter.query}|${filter.sortBy}|${filter.order}|${filter.active}`;
   const homeSnapshot = (() => {
+    if (archiveCatalogDirty) return null;
     const snapshot = navSnapshot || (coldRestoreBoot ? loadHomeSnapshot() : null);
     if (!snapshot) return null;
     const cachedKey = `${snapshot.filter?.query || ''}|${snapshot.filter?.sortBy || DEFAULT_FILTER.sortBy}|${snapshot.filter?.order || DEFAULT_FILTER.order}|${!!snapshot.filter?.active}`;
@@ -1395,15 +1399,15 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   useEffect(() => {
     const hasHydratedArchives = homeSnapshot && Array.isArray(homeSnapshot.archives) && homeSnapshot.archives.length > 0;
     if (coldRestoreRef.current && hasHydratedArchives) return;
-    if (navigationRestoreRef.current && hasHydratedArchives) {
+    if (!archiveCatalogDirty && navigationRestoreRef.current && hasHydratedArchives) {
       didFetchArchivesRef.current = true;
       lastFetchedRef.current = Date.now();
       return;
     }
     const firstFetch = !didFetchArchivesRef.current;
     didFetchArchivesRef.current = true;
-    doFetch(true, { force: firstFetch });
-  }, [archiveBrowseMode, archivePage, archivePageSize, doFetch, filter.query, filter.sortBy, filter.order, filter.active, selectedCategory?.id]);
+    doFetch(true, { force: firstFetch || archiveCatalogDirty, clearSearchCache: archiveCatalogDirty });
+  }, [archiveBrowseMode, archiveCatalogDirty, archivePage, archivePageSize, doFetch, filter.query, filter.sortBy, filter.order, filter.active, selectedCategory?.id]);
 
   // Handle popstate (browser back/forward)
   useEffect(() => {
@@ -2955,10 +2959,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     <ArchiveContextMenu
       menu={archiveMenu}
       onClose={() => setArchiveMenu(null)}
-      onRead={(archive) => handleSelectArchive(archive.arcid || archive.id)}
-      onReadIncognito={(archive) => handleSelectArchive(archive.arcid || archive.id, { incognito: true })}
+      onRead={(archive, options) => handleSelectArchive(archive.arcid || archive.id, options)}
+      onReadIncognito={(archive, options) => handleSelectArchive(archive.arcid || archive.id, { ...options, incognito: true })}
       onClearProgress={handleClearArchiveProgress}
-      onEditMetadata={(archive) => { saveCurrentHomeForNavigation(); navigateToMetadata(archive.arcid || archive.id); }}
+      onEditMetadata={(archive, options) => { saveCurrentHomeForNavigation(); navigateToMetadata(archive.arcid || archive.id, options); }}
       onDownload={handleArchiveDownload}
       onCopyLink={handleArchiveCopyLink}
       onDelete={requestArchiveDelete}
