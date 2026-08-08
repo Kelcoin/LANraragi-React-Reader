@@ -6,8 +6,9 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ArchiveSearchBox from '../components/ArchiveSearchBox';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
-import { HomeSectionGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
-import { getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
+import { HomeSectionGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
+import { getArchiveDisplayMode, getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
+import { mergeLatestHistoryItems } from '../lib/historyProgressCache';
 import { isArchiveMissingError, runHistoryExistenceCheck } from '../lib/historyMaintenance';
 import { hasValidWorkerConfig } from '../lib/worker-config';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
@@ -78,10 +79,26 @@ function groupHistoryByPeriod(items) {
   return order.map((key) => groups.get(key)).filter(Boolean);
 }
 
+function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
+  return (
+    <ArchiveGrid className="archive-list-loading-grid" displayMode={displayMode} aria-busy="true">
+      {Array.from({ length: count }, (_, index) => (
+        <div className="archive-list-loading-card" key={`history-loading-${index}`}>
+          <div className="archive-list-loading-cover shimmer-strip" />
+          <div className="archive-list-loading-line shimmer-strip" />
+          <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+        </div>
+      ))}
+    </ArchiveGrid>
+  );
+}
+
 export default function HistoryPage({ onSelectArchive, onBack }) {
+  const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [history, setHistoryState] = useState(() => getHistory());
   const [hideRead, setHideReadState] = useState(getHideRead);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [cropCover] = useState(getCropCover);
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
   const showHistoricalArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, true);
@@ -102,10 +119,19 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   const [query, setQuery] = useState('');
 
   useEffect(() => {
+    let active = true;
     loadHistoryState().then((state) => {
-      setHistoryState(state.histories);
+      if (!active) return;
+      // Progress may have been written while hydrating; merge keeps those
+      // writes (same-time entries fall back to the hydrated snapshot).
+      setHistoryState(mergeLatestHistoryItems(getHistory(), state.histories));
       setHideReadState(state.hideRead);
-    }).catch(() => setHistoryState(getHistory()));
+    }).catch(() => {
+      if (active) setHistoryState(getHistory());
+    }).finally(() => {
+      if (active) setInitialLoading(false);
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -380,7 +406,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                   style={{
                     background: selectionMode ? 'var(--accent)' : undefined,
                     borderColor: selectionMode ? 'var(--accent)' : undefined,
-                    color: selectionMode ? '#fff' : undefined,
+                    color: selectionMode ? 'var(--accent-contrast)' : undefined,
                   }}
                 >
                   {selectionMode ? '退出多选' : '多选'}
@@ -393,7 +419,9 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
             <ArchiveSearchBox query={query} setQuery={setQuery} placeholder="在阅读历史中搜索标题或标签" />
           </div>
 
-          {searchedHistory.length > 0 ? (
+          {initialLoading && searchedHistory.length === 0 ? (
+            <ArchiveListLoadingGrid count={8} displayMode={archiveDisplayMode} />
+          ) : searchedHistory.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: isNarrow ? '22px' : '28px' }}>
               {groupedHistory.map((group) => (
                 <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: isNarrow ? '12px' : '16px' }}>
@@ -413,7 +441,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                     </div>
                   </div>
 
-                  <ArchiveGrid style={{ gap: isNarrow ? '10px' : '16px' }}>
+                  <ArchiveGrid displayMode={archiveDisplayMode} style={{ gap: isNarrow ? '10px' : '16px' }}>
                     {group.items.map((h) => {
                       const selected = selectedIds.has(h.id);
                       return (
@@ -437,17 +465,17 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                                 width: '28px',
                                 height: '28px',
                                 borderRadius: '8px',
-                                border: selected ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.26)',
-                                background: selected ? 'var(--accent)' : 'rgba(8,10,14,0.78)',
-                                color: '#fff',
+                                border: selected ? '1px solid var(--accent)' : '1px solid color-mix(in srgb, var(--accent-contrast) 26%, transparent)',
+                                background: selected ? 'var(--accent)' : 'var(--overlay-bg)',
+                                color: 'var(--accent-contrast)',
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+                                boxShadow: 'var(--shadow-soft)',
                               }}
                             >
-                              {selected ? '✓' : ''}
+                              {selected && <ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" />}
                             </button>
                           ) : null}
                           onClick={(e) => {
@@ -482,6 +510,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         menu={menu}
         onClose={() => setMenu(null)}
         onRead={(archive) => onSelectArchive(archive.arcid || archive.id)}
+        onReadIncognito={(archive) => onSelectArchive(archive.arcid || archive.id, { incognito: true })}
         onClearProgress={handleClearArchiveProgress}
         onEditMetadata={(archive) => navigateToMetadata(archive.arcid || archive.id)}
         onDownload={handleDownload}

@@ -146,7 +146,7 @@ test('image load queue times out a stalled job and releases the next slot', asyn
 test('paged Reader covers stale bitmaps while the target spread decodes', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /targetPending\s*&&\s*!webtoonActive[\s\S]{0,1200}正在切换到第/);
-  assert.match(reader, /background:\s*'#000'/);
+  assert.match(reader, /background:\s*'(?:#000|var\(--reader-(?:stage|immersive)-bg\))'/);
 });
 
 test('memory image cache policy uses byte budget and oldest-first eviction', () => {
@@ -321,7 +321,22 @@ test('archive covers wait for one shared near-viewport observer', () => {
   const card = read('src/components/ArchiveCard.jsx');
   assert.match(card, /let nearViewportObserver/);
   assert.match(card, /rootMargin:\s*'1200px 800px'/);
+  assert.match(card, /const \[thumbState, setThumbState\] = useState\(\(\) => \(/);
+  assert.match(card, /typeof IntersectionObserver === 'undefined' \? 'loading' : 'idle'/);
   assert.match(card, /if \(!thumbnailEligible\) return undefined;/);
+});
+
+test('eager carousel cards skip the near-viewport gate so covers are ready before scroll-in', () => {
+  const card = read('src/components/ArchiveCard.jsx');
+  assert.match(card, /eagerThumbnail = false/);
+  assert.match(card, /eagerThumbnail \|\| typeof IntersectionObserver === 'undefined'/);
+  // Home top carousels are eager (history/watchlist/random); the in-reader
+  // recommendations stay lazy so covers never compete with the main image.
+  const home = read('src/pages/Home.jsx');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const eagerUses = home.match(/eagerThumbnail/g) || [];
+  assert.equal(eagerUses.length, 3);
+  assert.doesNotMatch(recommendations, /eagerThumbnail/);
 });
 
 test('archive covers use the displayed image as their only decoder', () => {
@@ -334,4 +349,79 @@ test('archive covers use the displayed image as their only decoder', () => {
 test('image cache allows four normal covers beside the reserved critical slot', () => {
   const cache = read('src/lib/imageCache.js');
   assert.match(cache, /createImageLoadQueue\(\{ maxConcurrent: 5 \}\)/);
+});
+
+test('adjacent page previews pre-generate at the lowest decode priority while idle', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /async function primePagePreview\(pageUrl,/);
+  assert.match(reader, /readerImageDecodeQueue\.schedule\(`preview:\$\{pageUrl\}`,/);
+  assert.match(reader, /getReaderPreviewSource\(src, \{\s*enabled,\s*fullPrecision: false,\s*sourceSize,\s*signal,\s*\}\)/);
+  assert.match(reader, /indices\.slice\(0, 2\)\.forEach/);
+  assert.match(reader, /primePagePreview\(pageUrl, \{\s*enabled: settings\.optimizedImageDecodeEnabled,\s*sourceSize: pageSizesRef\.current\[idx\],\s*\}\)/);
+});
+
+test('reader progress sync collapses rapid page flips into one remote write', () => {
+  const history = read('src/lib/history.js');
+  assert.match(history, /const URGENT_FLUSH_DELAY_MS = 1500/);
+  assert.match(history, /scheduleHistoryFlush\(immediateRemote \? URGENT_FLUSH_DELAY_MS : HISTORY_SYNC_INTERVAL_MS\)/);
+});
+
+test('random roaming fires freshness attempts in parallel and fetches the next scroll batch early', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /const attemptCount = preferFresh \? RANDOMS_FETCH_ATTEMPTS : 1;/);
+  assert.match(home, /const results = await Promise\.all\(Array\.from\(\{ length: attemptCount \}/);
+  assert.match(home, /rootMargin: '800px'/);
+});
+
+test('EH comments serve cached comments within the SWR window instead of re-downloading the gallery', () => {
+  const comments = read('src/components/EhComments.jsx');
+  const cache = read('src/lib/ehCommentsCache.js');
+  assert.match(comments, /const EH_SWR_REFRESH_INTERVAL_MS = 30 \* 60 \* 1000/);
+  assert.match(comments, /cachedState\.ts && Date\.now\(\) - cachedState\.ts < EH_SWR_REFRESH_INTERVAL_MS/);
+  assert.match(cache, /ts: Number\(accessed\.ts \|\| 0\),/);
+});
+
+test('failed image decodes throw instead of hanging the decode queue', () => {
+  const preview = read('src/lib/readerPreviewDecode.js');
+  assert.match(preview, /catch \(error\) \{\s*if \(error\?\.name === 'AbortError'\) throw error;\s*\/\/ decode\(\) rejects on load failure[\s\S]*throw new Error\('Image decode failed'\);/);
+  assert.match(preview, /if \(image\.complete && !image\.naturalWidth\) throw new Error\('Image decode failed'\);/);
+  assert.match(preview, /if \(!image\.complete\) \{\s*await waitWithAbort/);
+});
+
+test('preview cache revokes the replaced object URL when the same key is written twice', () => {
+  const preview = read('src/lib/readerPreviewDecode.js');
+  assert.match(preview, /const previous = previewCache\.get\(key\);/);
+  assert.match(preview, /URL\.revokeObjectURL\(previous\.objectUrl\);/);
+  assert.match(preview, /previewCacheBytes = Math\.max\(0, previewCacheBytes - \(previous\.size \|\| 0\)\);/);
+});
+
+test('random roaming only fails when every parallel attempt failed', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /const allAttemptsFailed = results\.every\(\(batch\) => !batch\);/);
+  assert.match(home, /if \(allAttemptsFailed && lastError\) throw lastError;/);
+});
+
+test('scroll mode ignores resize-driven page size changes so the list is never reset', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /if \(archiveBrowseMode === ARCHIVE_BROWSE_MODES\.scroll\) return;/);
+  assert.match(home, /\}, \[archiveBrowseMode, cropCover\]\);/);
+});
+
+test('EH comments keep valid cached comments when a background refresh returns nothing', () => {
+  const comments = read('src/components/EhComments.jsx');
+  assert.match(comments, /if \(cachedComments\) \{\s*\/\/ Background SWR refresh hit a terminal page/);
+  assert.match(comments, /finalComments\.length > 0 \|\| !cachedComments/);
+  assert.match(comments, /if \(isTerminalGalleryError\(e\?\.ehCode\)\) \{\s*if \(!cachedComments\)/);
+});
+
+test('history page merges writes made during hydration instead of overwriting them', () => {
+  const historyPage = read('src/pages/HistoryPage.jsx');
+  const watchlistPage = read('src/pages/WatchlistPage.jsx');
+  assert.match(historyPage, /setHistoryState\(mergeLatestHistoryItems\(getHistory\(\), state\.histories\)\)/);
+  assert.match(watchlistPage, /enhanced && enhanced\.addedAt === item\.addedAt \? \{ \.\.\.item, \.\.\.enhanced \} : item/);
+});
+
+test('drawer thumbnails recover from cache when their object URL is revoked', () => {
+  const thumbnail = read('src/components/ArchivePageThumbnail.jsx');
+  assert.match(thumbnail, /getCachedImage\(`thumb:drawer:v3:\$\{archiveId\}:\$\{pageIndex \+ 1\}`\)\.then/);
 });

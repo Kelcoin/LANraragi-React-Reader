@@ -163,13 +163,31 @@ jobs:
           fs.writeFileSync(mainActivityPath, `package com.kelcoin.readoshi;
 
           import android.os.Bundle;
+          import android.webkit.JavascriptInterface;
+          import androidx.core.view.ViewCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
+              @JavascriptInterface
+              public void setStatusBarHidden(boolean hidden) {
+                  runOnUiThread(() -> {
+                      WindowInsetsControllerCompat controller = ViewCompat.getWindowInsetsController(getWindow().getDecorView());
+                      if (controller == null) return;
+                      if (hidden) {
+                          controller.hide(WindowInsetsCompat.Type.statusBars());
+                      } else {
+                          controller.show(WindowInsetsCompat.Type.statusBars());
+                      }
+                  });
+              }
+
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   getBridge().getWebView().getSettings().setTextZoom(100);
+                  getBridge().getWebView().addJavascriptInterface(this, "ReadoshiAndroid");
               }
           }
           `);
@@ -253,6 +271,8 @@ jobs:
           if (!manifest.includes('android.permission.INTERNET')) throw new Error('INTERNET permission missing');
           const mainActivity = fs.readFileSync('android/app/src/main/java/com/kelcoin/readoshi/MainActivity.java', 'utf8');
           if (!mainActivity.includes('getWebView().getSettings().setTextZoom(100)')) throw new Error('Android text zoom guard missing');
+          if (!mainActivity.includes('ReadoshiAndroid')) throw new Error('Android status bar bridge missing');
+          if (!mainActivity.includes('setStatusBarHidden')) throw new Error('Android status bar toggle missing');
           const gradle = fs.readFileSync('android/app/build.gradle', 'utf8');
           if (!gradle.includes(`versionName "${process.env.APP_VERSION_NAME}"`)) throw new Error('versionName missing');
           if (!gradle.includes(`versionCode ${process.env.APP_VERSION_CODE}`)) throw new Error('versionCode missing');

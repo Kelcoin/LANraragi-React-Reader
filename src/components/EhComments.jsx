@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ToolbarGlyph } from './AppGlyphs';
-import { classifyEhGalleryPage, presentEhError } from '../lib/ehCommentsState';
+import { classifyEhGalleryPage, isTerminalGalleryError, presentEhError } from '../lib/ehCommentsState';
 import {
   createEhCommentsCacheKey,
   deleteEhCommentsCache,
-  readEhCommentsCache,
+  readEhCommentsCacheState,
   writeEhCommentsCache,
 } from '../lib/ehCommentsCache';
 
 const EMPTY_API_DATA = Object.freeze({ apiuid: null, apikey: null, gid: null, token: null, apiUrl: 'https://api.e-hentai.org/api.php' });
 const EH_REQUEST_TIMEOUT_MS = 20 * 1000;
+// Minimum gap between background SWR re-fetches of an EH gallery (cache TTL is 24h).
+const EH_SWR_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 const VoteIcon = ({ direction, active = false }) => (
   <svg
@@ -21,7 +23,7 @@ const VoteIcon = ({ direction, active = false }) => (
   >
     {direction === 'up'
       ? <path d="M8 3L13 11H3L8 3Z" opacity={active ? 1 : 0.96} />
-      : <path d="M8 13L3 5H13L8 13Z" opacity={active ? 1 : 0.96} />}
+      : <path d="M8 11L3 3H13L8 11Z" opacity={active ? 1 : 0.96} />}
   </svg>
 );
 
@@ -284,7 +286,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
 
     const showError = (code, detail = '') => {
       if (requestSeqRef.current !== requestSeq) return;
-      const presentation = presentEhError(code, detail);
+      const presentation = { ...presentEhError(code, detail), code };
       setError(presentation);
       setNeedsCookie(presentation.needsCookie);
     };
@@ -294,15 +296,29 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
 
     try {
       if (!forceRefresh) {
-        cachedComments = await readEhCommentsCache(cacheKey);
+        const cachedState = await readEhCommentsCacheState(cacheKey);
         if (!isCurrent()) return;
-        if (cachedComments) {
+        if (cachedState) {
+          if (cachedState.unavailable) {
+            const presentation = presentEhError(cachedState.unavailable);
+            setComments([]);
+            setLoading(false);
+            setLoaded(true);
+            setError({ ...presentation, code: cachedState.unavailable });
+            setNeedsCookie(presentation.needsCookie);
+            return;
+          }
+          cachedComments = cachedState.comments;
           setComments(cachedComments);
           setLoading(false);
           setLoaded(true);
           setError(null);
           setNeedsCookie(false);
+          // Serve from cache; only re-fetch in the background after the SWR
+          // window expires, so re-entering the reader does not re-download the
+          // whole gallery HTML each time.
           if (!ehWorker || !cookie) return;
+          if (cachedState.ts && Date.now() - cachedState.ts < EH_SWR_REFRESH_INTERVAL_MS) return;
         }
       }
 
@@ -380,11 +396,21 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         return;
       }
 
-      if (classifyEhGalleryPage(htmlText, 200) === 'unavailable') {
+      const galleryState = classifyEhGalleryPage(htmlText, 200);
+      if (galleryState === 'not_found' || galleryState === 'copyright_removed' || galleryState === 'unavailable') {
         if (!isCurrent()) return;
-        if (!cachedComments) setComments([]);
+        if (cachedComments) {
+          // Background SWR refresh hit a terminal page (worker hiccup, cookie
+          // expiry, ...): keep the valid cached comments instead of replacing
+          // them with a 24h error state.
+          setLoaded(true);
+          return;
+        }
+        setComments([]);
         setLoaded(true);
-        showError('GALLERY_UNAVAILABLE');
+        const terminalCode = galleryState === 'not_found' ? 'GALLERY_NOT_FOUND' : galleryState === 'copyright_removed' ? 'GALLERY_COPYRIGHT_REMOVED' : 'GALLERY_UNAVAILABLE';
+        showError(terminalCode);
+        writeEhCommentsCache(cacheKey, [], { unavailable: terminalCode }).catch(() => {});
         return;
       }
 
@@ -422,9 +448,15 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       }
 
       if (!isCurrent()) return;
-      setComments(finalComments);
-      setLoaded(true);
-      writeEhCommentsCache(cacheKey, finalComments).catch(() => {});
+      if (finalComments.length > 0 || !cachedComments) {
+        setComments(finalComments);
+        setLoaded(true);
+        writeEhCommentsCache(cacheKey, finalComments).catch(() => {});
+      } else {
+        // Parsed zero comments over valid cached ones (challenge page, login
+        // variant): keep the cached comments instead of blanking them.
+        setLoaded(true);
+      }
     } catch (e) {
       if (requestSeqRef.current !== requestSeq) return;
       if (controller.signal.aborted && !timedOut) return;
@@ -434,6 +466,11 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         showError('NETWORK_ERROR', '请求超时，请检查 Worker 或网络连接。');
       } else {
         showError(e.ehCode || 'UNKNOWN_WORKER_ERROR', e.ehDetail || e.message);
+      }
+      if (isTerminalGalleryError(e?.ehCode)) {
+        if (!cachedComments) {
+          await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
+        }
       }
       if (cachedComments) setLoaded(true);
     } finally {
@@ -545,8 +582,9 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
     <div ref={sectionRef} data-lrr-eh-comments className="eh-comments glass-panel section-reveal section-reveal-delay-3" style={{ padding: '20px', marginTop: '20px' }}>
       <div className="eh-comments-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px' }}>
         <h3 className="eh-comments-title" style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: 'var(--accent)' }}>💬</span> E-Hentai 评论区
+          <ToolbarGlyph name="comment" size={18} color="var(--accent)" /> E-Hentai 评论区
         </h3>
+        {!isTerminalGalleryError(error?.code) && (
         <div className="eh-comments-actions" style={{ display: 'flex', gap: '8px' }}>
           <a
             href={jumpUrl} target="_blank" rel="noopener noreferrer"
@@ -563,9 +601,10 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
             <span className="eh-comment-action-label">{loading ? '加载中…' : '重新加载'}</span>
           </button>
         </div>
+        )}
       </div>
 
-      {!loaded && !loading && (
+      {!loaded && !loading && !error && (
         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: '13px' }}>
           点击「重新加载」获取 E-Hentai 评论
         </div>
@@ -578,7 +617,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       )}
 
       {error && (
-        <div className="eh-comment-error" role="alert">
+        <div className={`eh-comment-error${error.code === 'GALLERY_NOT_FOUND' || error.code === 'GALLERY_COPYRIGHT_REMOVED' || error.code === 'GALLERY_UNAVAILABLE' ? ' is-gallery-missing' : ''}`} role="alert">
           <div className="eh-comment-error-title">{error.title}</div>
           <div className="eh-comment-error-detail">{error.detail}</div>
         </div>
@@ -609,23 +648,23 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
             {(() => {
               const hasUserCommented = comments.some(c => c.isEditable);
               return filteredAndSorted.map(c => {
-                const scoreClass = c.score > 0 ? 'var(--comment-positive)' : c.score < 0 ? 'var(--comment-negative)' : 'var(--text-sub)';
+                const scoreClass = c.score > 0 ? 'var(--comment-positive)' : c.score < 0 ? 'var(--comment-negative)' : 'var(--comment-meta)';
                 const scoreSign = c.score > 0 ? '+' : '';
                 const canVote = !c.isUploader && ehWorker && cookie && apiData.apikey && apiData.apiuid && apiData.gid && apiData.token;
 
                 return (
                 <div key={c.id} className={`eh-comment-card${c.isUploader ? ' is-uploader' : ''}`} style={{
                   padding: '14px 16px', borderRadius: '10px', marginBottom: '10px',
-                  borderLeftColor: c.isUploader ? '#d77f12' : 'var(--comment-card-border)'
+                  borderLeftColor: c.isUploader ? 'var(--comment-uploader-border)' : 'var(--comment-card-border)'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px', fontSize: '12px', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid var(--comment-card-border)', fontSize: '12px', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
-                      <span style={{ color: c.isEditable ? 'var(--good-text)' : 'var(--accent)', fontWeight: 'bold', fontSize: '13px' }}>
+                      <span style={{ color: c.isEditable ? 'var(--comment-user-self)' : 'var(--comment-user)', fontWeight: 'bold', fontSize: '13px' }}>
                         {c.user}{c.isEditable ? ' (你)' : ''}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                      {c.isUploader && <span style={{ background: '#ff9800', color: '#000', fontSize: '10px', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>UP</span>}
+                      {c.isUploader && <span className="eh-comment-uploader-badge" style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>UP</span>}
                       {!c.isUploader && (
                         <span style={{ color: scoreClass, fontWeight: 'bold', fontSize: '12px' }}>
                           评分 {scoreSign}{c.score}
@@ -645,26 +684,26 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                           ) : (
                             <>
                               <button className="eh-vote-button" onClick={() => doVote(c.id, 1)} style={{
-                                background: 'none', border: 'none', color: c.myVote === 1 ? 'var(--comment-positive)' : 'var(--text-muted)',
+                                background: 'none', border: 'none', color: c.myVote === 1 ? 'var(--comment-positive)' : 'var(--comment-meta)',
                                 cursor: 'pointer', width: '20px', height: '20px', padding: 0,
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 borderRadius: '3px', flexShrink: 0,
                                 lineHeight: 0, verticalAlign: 'middle',
                               }}
                               onMouseEnter={e => { if (c.myVote !== 1) e.currentTarget.style.color = 'var(--comment-positive)'; }}
-                              onMouseLeave={e => { if (c.myVote !== 1) e.currentTarget.style.color = 'var(--text-muted)'; }}
+                              onMouseLeave={e => { if (c.myVote !== 1) e.currentTarget.style.color = 'var(--comment-meta)'; }}
                               title="赞同"
                               aria-label="赞同"
                               ><VoteIcon direction="up" active={c.myVote === 1} /></button>
                               <button className="eh-vote-button" onClick={() => doVote(c.id, -1)} style={{
-                                background: 'none', border: 'none', color: c.myVote === -1 ? 'var(--comment-negative)' : 'var(--text-muted)',
+                                background: 'none', border: 'none', color: c.myVote === -1 ? 'var(--comment-negative)' : 'var(--comment-meta)',
                                 cursor: 'pointer', width: '20px', height: '20px', padding: 0,
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 borderRadius: '3px', flexShrink: 0,
                                 lineHeight: 0, verticalAlign: 'middle',
                               }}
                               onMouseEnter={e => { if (c.myVote !== -1) e.currentTarget.style.color = 'var(--comment-negative)'; }}
-                              onMouseLeave={e => { if (c.myVote !== -1) e.currentTarget.style.color = 'var(--text-muted)'; }}
+                              onMouseLeave={e => { if (c.myVote !== -1) e.currentTarget.style.color = 'var(--comment-meta)'; }}
                               title="反对"
                               aria-label="反对"
                               ><VoteIcon direction="down" active={c.myVote === -1} /></button>
@@ -700,8 +739,8 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div dangerouslySetInnerHTML={{ __html: c.content }} style={{ fontSize: '14px', lineHeight: '1.7', color: 'var(--text-main)', wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: '100%', overflow: 'hidden' }} />
-                      <div style={{ fontSize: '11px', color: 'var(--text-sub)', textAlign: 'right', lineHeight: 1.4 }}>
+                      <div dangerouslySetInnerHTML={{ __html: c.content }} style={{ fontSize: '14px', lineHeight: '1.7', color: 'var(--comment-text)', wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: '100%', overflow: 'hidden' }} />
+                      <div style={{ fontSize: '11px', color: 'var(--comment-meta)', textAlign: 'right', lineHeight: 1.4 }}>
                         {formatTimeCN(c.timestamp)}
                       </div>
                     </div>

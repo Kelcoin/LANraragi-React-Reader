@@ -67,6 +67,29 @@ import {
 
 const readerImageDecodeQueue = createImageDecodeQueue({ maxConcurrent: 3 });
 
+// Pre-generate the scaled preview for an adjacent page while the decode queue
+// is idle. The page blob comes from the shared fetch queue (key-deduped with
+// primePageBlob), and the produced preview lands in previewCache so a later
+// flip only decodes the small image instead of the full original + webp encode.
+async function primePagePreview(pageUrl, { enabled = true, sourceSize, priority = IMAGE_LOAD_PRIORITY.PRELOAD } = {}) {
+  if (!pageUrl || !enabled || typeof createImageBitmap !== 'function') return;
+  const src = await resolvePageImageSource(pageUrl, {
+    cacheOnly: false,
+    allowNetworkFallback: true,
+    priority,
+  });
+  if (!src) return;
+  const { promise } = readerImageDecodeQueue.schedule(`preview:${pageUrl}`, async (signal) => {
+    await getReaderPreviewSource(src, {
+      enabled,
+      fullPrecision: false,
+      sourceSize,
+      signal,
+    });
+  }, IMAGE_LOAD_PRIORITY.PRELOAD);
+  await promise.catch(() => {});
+}
+
 // ===== Authenticated Image Component =====
 const getConfiguredServerUrl = () => {
   try {
@@ -383,7 +406,7 @@ const PageImage = React.forwardRef(({
         overflow: 'hidden',
         minWidth: 0,
         minHeight: 0,
-        background: isImmersive ? '#000' : 'transparent',
+        background: isImmersive ? 'var(--immersive-bg)' : 'transparent',
       }}
     >
       <img
@@ -515,7 +538,7 @@ const ReaderArchiveThumb = ({ archiveId, cacheOnly = false }) => {
   );
 };
 
-function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, onDelete, activeType, onTypeChange, onViewMore, progressBarVisibility, top }) {
+function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, onDelete, activeType, onTypeChange, onViewMore, onRetry, progressBarVisibility, top }) {
   const panelWindow = getReaderArchivePanelWindow(type, items);
   const panelRef = useRef(null);
   const contentRef = useRef(null);
@@ -601,7 +624,10 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
         </div>
       </div>
       {items.length === 0 ? (
-        <div style={{ fontSize: '12px', color: 'var(--text-sub)', padding: '8px 0' }}>{emptyMessage}</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-sub)', padding: '8px 0', display: 'grid', gap: '10px' }}>
+          <span>{emptyMessage}</span>
+          {onRetry && <button type="button" className="reader-panel-view-more" onClick={onRetry}>重试</button>}
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {panelWindow.items.map((item) => {
@@ -653,7 +679,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
                   {displayTags.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '4px' }}>
                       {displayTags.map((tag, index) => (
-                        <span key={index} style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'var(--surface-3)', whiteSpace: 'nowrap' }}>{tag}</span>
+                        <span key={index} style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'color-mix(in srgb, var(--surface-3) 84%, var(--text-sub))', border: '1px solid color-mix(in srgb, var(--glass-border-hover) 58%, transparent)', whiteSpace: 'nowrap' }}>{tag}</span>
                       ))}
                     </div>
                   )}
@@ -744,8 +770,10 @@ async function primePageBlob(pageUrl, priority = IMAGE_LOAD_PRIORITY.PRELOAD) {
   }, { priority });
 }
 
-function getNormalReaderFrameHeight(isMobile) {
-  return isMobile ? 'min(72vh, 680px)' : 'min(82vh, 1080px)';
+function getNormalReaderFrameHeight(isMobile, toolbarHeight = 'var(--reader-toolbar-height, 68px)') {
+  const navRowHeight = isMobile ? 92 : 96;
+  // Only cap unusually tall viewports; common phones stay below a 2:1 frame ratio.
+  return `min(calc(100dvh - ${toolbarHeight} - 24px - ${navRowHeight}px), calc((100vw - 32px) * 2))`;
 }
 
 const normalReaderStageShellStyle = {
@@ -776,8 +804,8 @@ function forceWindowScrollTop() {
   document.body.scrollTop = 0;
 }
 
-function getNormalReaderFrameStyle(isMobile) {
-  const height = getNormalReaderFrameHeight(isMobile);
+function getNormalReaderFrameStyle(isMobile, toolbarHeight = 'var(--reader-toolbar-height, 68px)') {
+  const height = getNormalReaderFrameHeight(isMobile, toolbarHeight);
   return {
     flex: '0 0 auto',
     minHeight: height,
@@ -795,7 +823,7 @@ function getNormalReaderFrameStyle(isMobile) {
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    boxShadow: '0 18px 50px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.035)',
+    boxShadow: '0 18px 50px rgba(0,0,0,0.34), inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent)',
     boxSizing: 'border-box',
   };
 }
@@ -874,6 +902,11 @@ function useReaderToolbarMode(isMobile, layoutKey = null) {
       if (toolbar.style.getPropertyValue('--reader-toolbar-title-width') !== titleWidthValue) {
         toolbar.style.setProperty('--reader-toolbar-title-width', titleWidthValue);
       }
+      const root = toolbar.closest('.reader-root');
+      const toolbarHeightValue = `${toolbar.getBoundingClientRect().height}px`;
+      if (root?.style.getPropertyValue('--reader-toolbar-height') !== toolbarHeightValue) {
+        root.style.setProperty('--reader-toolbar-height', toolbarHeightValue);
+      }
       const titleWidth = titleContent
         ? Math.max(Math.ceil(titleContent.getBoundingClientRect().width), 80)
         : 0;
@@ -905,7 +938,7 @@ function useReaderToolbarMode(isMobile, layoutKey = null) {
     toolbar.querySelectorAll('.reader-toolbar-group, .reader-toolbar-title').forEach((node) => observer.observe(node));
     document.fonts?.ready?.then(update).catch(() => {});
     return () => observer.disconnect();
-  }, [isMobile, layoutKey, mode]);
+  }, [isMobile, layoutKey]);
 
   return { toolbarRef, mode };
 }
@@ -1081,12 +1114,13 @@ function ReaderStageSlot({ status, onRetry }) {
   );
 }
 
-export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
+export default function Reader({ archiveId, onBack, coldRestoreBoot = false, incognito = false }) {
+  const persistReadingProgress = !incognito;
   const workerReady = hasValidWorkerConfig();
   const bootState = getBootState();
   const readerSnapshotRef = useRef(null);
   if (readerSnapshotRef.current === null) {
-    const fallbackReaderSnapshot = loadReaderSnapshot(archiveId);
+    const fallbackReaderSnapshot = persistReadingProgress ? loadReaderSnapshot(archiveId) : null;
     readerSnapshotRef.current = coldRestoreBoot
       ? fallbackReaderSnapshot
       : ((bootState.wasDiscarded || bootState.navigationType === 'reload') ? fallbackReaderSnapshot : null);
@@ -1137,12 +1171,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   const [archivePanelType, setArchivePanelType] = useState('history');
   const [randomEntries, setRandomEntries] = useState([]);
   const [randomEntriesLoading, setRandomEntriesLoading] = useState(false);
+  const [randomEntriesError, setRandomEntriesError] = useState('');
   const [historyDeleteTarget, setHistoryDeleteTarget] = useState(null);
   const [coverSetting, setCoverSetting] = useState(false);
   const [coverSetPage, setCoverSetPage] = useState(0);
   const [coverConfirmPage, setCoverConfirmPage] = useState(0);
   const [progressClearing, setProgressClearing] = useState(false);
   const [progressNotice, setProgressNotice] = useState('');
+  const [progressSyncNotice, setProgressSyncNotice] = useState('');
+  const [thumbnailQueueState, setThumbnailQueueState] = useState('idle');
+  const [thumbnailQueueRetryToken, setThumbnailQueueRetryToken] = useState(0);
   const [drawerPrefetchSet, setDrawerPrefetchSet] = useState(() => new Set());
   const [drawerViewport, setDrawerViewport] = useState({ height: 0, scrollTop: 0, width: 0 });
   const [assetCacheOnly, setAssetCacheOnly] = useState(() => hasSnapshot);
@@ -1300,7 +1338,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   }, [secondaryContentReady]);
 
   const saveReaderStateSnapshot = useCallback(() => {
-    if (!archiveRef.current || pagesRef.current.length === 0) return;
+    if (!persistReadingProgress || !archiveRef.current || pagesRef.current.length === 0) return;
     saveReaderSnapshot({
       archiveId,
       archive: archiveRef.current,
@@ -1314,7 +1352,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       panX: panRef.current.x,
       panY: panRef.current.y,
     });
-  }, [archiveId, showHeader]);
+  }, [archiveId, persistReadingProgress, showHeader]);
   useEffect(() => {
     serverInfoRef.current = { ...(serverInfoRef.current || {}), server_tracks_progress: serverTracksProgress };
   }, [serverTracksProgress]);
@@ -1514,6 +1552,17 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   }, [viewMode]);
 
   useEffect(() => {
+    if (viewMode !== 'immersive') return undefined;
+    const applyStatusBar = (hidden) => {
+      try {
+        window.ReadoshiAndroid?.setStatusBarHidden(hidden);
+      } catch {}
+    };
+    applyStatusBar(true);
+    return () => applyStatusBar(false);
+  }, [viewMode]);
+
+  useEffect(() => {
     if (!showSettingsPanel && !showDrawer) return undefined;
     const containReaderOverlayScroll = (event) => {
       if (event.target?.closest?.(READER_OVERLAY_SCROLL_SELECTOR)) return;
@@ -1537,14 +1586,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       if (document.visibilityState === 'visible') {
         bump();
       } else {
-        markBackground({ kind: 'reader', archiveId });
+        if (persistReadingProgress) markBackground({ kind: 'reader', archiveId });
         saveReaderStateSnapshot();
       }
       // No timers to restart in Reader — just bump the ref
     };
     // Release memory on pagehide to reduce kill likelihood
     const handlePageHide = () => {
-      markBackground({ kind: 'reader', archiveId });
+      if (persistReadingProgress) markBackground({ kind: 'reader', archiveId });
       saveReaderStateSnapshot();
     };
     window.addEventListener('pageshow', handlePageShow);
@@ -1555,7 +1604,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       window.removeEventListener('pagehide', handlePageHide);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [archiveId, saveReaderStateSnapshot]);
+  }, [archiveId, persistReadingProgress, saveReaderStateSnapshot]);
 
   // ===== Swipe engine (100% ref+RAF — zero React re-render during drag) =====
   const isSwipingRef = useRef(false);
@@ -1600,7 +1649,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
 
   const enqueueLrrProgressSync = useCallback((id, page, { keepalive = false } = {}) => {
     const targetPage = Math.max(0, Number.parseInt(page, 10) || 0);
-    if (!id || targetPage <= 0) return Promise.resolve();
+    if (!persistReadingProgress || !id || targetPage <= 0) return Promise.resolve();
 
     const syncedPage = highestLrrSyncedPageRef.current.get(id) || 0;
     const queuedPage = highestLrrQueuedPageRef.current.get(id) || 0;
@@ -1622,8 +1671,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
         await lrrApi.updateProgress(id, targetPage, { keepalive });
         rememberArchiveProgressInCatalog(id, targetPage);
         highestLrrSyncedPageRef.current.set(id, targetPage);
+        setProgressSyncNotice('');
       })
       .catch(() => {
+        setProgressSyncNotice('阅读进度同步失败，将自动重试。');
         if ((highestLrrQueuedPageRef.current.get(id) || 0) === targetPage) {
           const oldTimer = lrrProgressRetryTimersRef.current.get(id);
           if (oldTimer) clearTimeout(oldTimer);
@@ -1642,11 +1693,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       }
     });
     return next;
-  }, []);
+  }, [persistReadingProgress]);
 
   useEffect(() => {
     const flushProgress = ({ keepalive = false } = {}) => {
-      if (!serverTracksProgress || !archiveId) return;
+      if (!persistReadingProgress || !serverTracksProgress || !archiveId) return;
       const page = clampProgressPage(highestObservedPageRef.current.get(archiveId) || 0, pages.length);
       enqueueLrrProgressSync(archiveId, page, { keepalive });
     };
@@ -1661,7 +1712,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       document.removeEventListener('visibilitychange', handleVisibility);
       flushProgress();
     };
-  }, [archiveId, enqueueLrrProgressSync, pages.length, serverTracksProgress]);
+  }, [archiveId, enqueueLrrProgressSync, pages.length, persistReadingProgress, serverTracksProgress]);
 
   // ===== Zoom refs =====
   const zoomScaleRef = useRef(zoomScale);
@@ -1781,6 +1832,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   const indicatorRef = useRef(null);
   const resizeObserverRef = useRef(null);
   const drawerGridRef = useRef(null);
+  const drawerPanelRef = useRef(null);
+  const drawerReturnFocusRef = useRef(null);
   const drawerTransitionTimerRef = useRef(null);
   const drawerOpenFrameRef = useRef(null);
 
@@ -1807,6 +1860,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
 
   const openThumbnailDrawer = useCallback((side = 'right') => {
     clearDrawerTransition();
+    if (document.activeElement instanceof HTMLElement) drawerReturnFocusRef.current = document.activeElement;
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (reduceMotion) {
       setDrawerSide(side);
@@ -1826,6 +1880,45 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   }, [clearDrawerTransition, drawerSide, openDrawerAfterSideChange, showDrawer]);
 
   useEffect(() => () => clearDrawerTransition(), [clearDrawerTransition]);
+
+  useEffect(() => {
+    if (!showDrawer) return undefined;
+    const panel = drawerPanelRef.current;
+    const previouslyFocused = drawerReturnFocusRef.current || document.activeElement;
+    const getFocusable = () => Array.from(panel?.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) || []);
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeThumbnailDrawer();
+        return;
+      }
+      if (event.key !== 'Tab' || !panel) return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const focusFrame = requestAnimationFrame(() => getFocusable()[0]?.focus() || panel?.focus());
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', onKeyDown);
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) previouslyFocused.focus();
+    };
+  }, [closeThumbnailDrawer, showDrawer]);
 
   const releaseReaderImageElements = useCallback(() => {
     [imgLeftRef.current, imgLeftSecondRef.current, imgCurrRef.current, imgCurrSecondRef.current, imgRightRef.current, imgRightSecondRef.current].forEach((image) => {
@@ -2224,7 +2317,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       if (coldRestoreRef.current && readerSnapshot) {
         const progressWasCleared = hasArchiveProgressMarker(archiveId);
         let restoredArchive = readerSnapshot.archive || null;
-        if (archiveHasNewMarker(restoredArchive) && !progressWasCleared) {
+        if (persistReadingProgress && archiveHasNewMarker(restoredArchive) && !progressWasCleared) {
           try {
             await lrrApi.updateProgress(archiveId, 1);
             rememberArchiveProgressInCatalog(archiveId, 1);
@@ -2293,7 +2386,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           archiveRef.current = meta;
           setArchive(meta);
           dispatchRender({ type: 'ready', resource: 'metadata' });
-          if (archiveHasNewMarker(meta) && !hasArchiveProgressMarker(archiveId)) {
+          if (persistReadingProgress && archiveHasNewMarker(meta) && !hasArchiveProgressMarker(archiveId)) {
             void lrrApi.updateProgress(archiveId, 1).then(() => {
               if (!isActive()) return;
               rememberArchiveProgressInCatalog(archiveId, 1);
@@ -2367,11 +2460,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
     };
     void init();
     return () => controller.abort();
-  }, [archiveId, bootstrapRetryToken, readerSnapshot]);
+  }, [archiveId, bootstrapRetryToken, persistReadingProgress, readerSnapshot]);
 
   // ===== 2. Save progress =====
   useEffect(() => {
-    if (archive && pages.length > 0) {
+    if (archive && pages.length > 0 && persistReadingProgress) {
       if (settings.splitWidePagesEnabled && !webtoonActive
         && currentSpread.some((unit) => !pageSizes[unit.pageIndex])) return undefined;
       const page = getSpreadProgressPage(currentSpread);
@@ -2403,7 +2496,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       }
     }
     return undefined;
-  }, [archive, currentSpread, enqueueLrrProgressSync, pageSizes, pages, serverTracksProgress, settings.allowProgressRegression, settings.splitWidePagesEnabled, webtoonActive]);
+  }, [archive, currentSpread, enqueueLrrProgressSync, pageSizes, pages, persistReadingProgress, serverTracksProgress, settings.allowProgressRegression, settings.splitWidePagesEnabled, webtoonActive]);
 
   // ===== Pointer down =====
   const handlePointerDown = useCallback((e) => {
@@ -3034,7 +3127,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           highestObservedPageRef.current.get(archiveId) || 0,
           getSpreadProgressPage(currentSpread),
         ), pages.length);
-        if (shouldPersistArchiveReadingProgress(hasArchiveProgressMarker(archiveId), highestPage)) {
+        if (persistReadingProgress && shouldPersistArchiveReadingProgress(hasArchiveProgressMarker(archiveId), highestPage)) {
           saveHistory(archive, highestPage).then(() => flushHistorySync()).catch(() => {});
           if (serverTracksProgress) enqueueLrrProgressSync(archiveId, highestPage);
           setHistoryEntries(getHistory());
@@ -3042,7 +3135,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       }
       onBack();
     }
-  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, onBack, pages.length, serverTracksProgress, viewMode]);
+  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, onBack, pages.length, persistReadingProgress, serverTracksProgress, viewMode]);
 
   // ===== Preload indices =====
   const getPreloadIndices = () => {
@@ -3084,28 +3177,36 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
     randomItems: randomEntries,
     historyEmptyMessage: hideRead && historyEntries.length > 0 ? '所有档案均已读完' : '暂无阅读历史',
     watchlistEmptyMessage: '暂无待看档案',
-    randomEmptyMessage: randomEntriesLoading ? '正在获取随机档案…' : '暂无随机漫游结果',
+    randomEmptyMessage: randomEntriesLoading ? '正在获取随机档案…' : (randomEntriesError || '暂无随机漫游结果'),
     removeHistory: setHistoryDeleteTarget,
     removeWatchlist: handleRemoveWatchlist,
   });
 
-  useEffect(() => {
-    if (!showArchivePanel || archivePanelType !== 'random') return undefined;
+  const loadRandomEntries = useCallback(() => {
     let active = true;
     setRandomEntriesLoading(true);
+    setRandomEntriesError('');
     lrrApi.getRandom(16)
       .then((response) => {
         const data = Array.isArray(response?.data) ? response.data : [];
         if (active) setRandomEntries(filterRandomArchives(data, historyEntries, randomHideRead));
       })
-      .catch(() => {
-        if (active) setRandomEntries([]);
+      .catch((error) => {
+        if (active) {
+          setRandomEntries([]);
+          setRandomEntriesError(`随机档案加载失败：${error?.message || '请重试'}`);
+        }
       })
       .finally(() => {
         if (active) setRandomEntriesLoading(false);
       });
     return () => { active = false; };
-  }, [archivePanelType, historyEntries, randomHideRead, showArchivePanel]);
+  }, [historyEntries, randomHideRead]);
+
+  useEffect(() => {
+    if (!showArchivePanel || archivePanelType !== 'random') return undefined;
+    return loadRandomEntries();
+  }, [archivePanelType, loadRandomEntries, showArchivePanel]);
 
   useEffect(() => {
     if (viewMode !== 'immersive') return;
@@ -3149,17 +3250,25 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
   }, [currentIndex, drawerSliceEnd, drawerSliceStart, pages.length, showDrawer]);
 
   useEffect(() => {
-    if (!showDrawer || !archiveId || pages.length === 0 || assetCacheOnly) return undefined;
+    if (!showDrawer || !archiveId || pages.length === 0 || assetCacheOnly) {
+      if (!showDrawer) setThumbnailQueueState('idle');
+      return undefined;
+    }
     let cancelled = false;
     const timer = setTimeout(() => {
       if (cancelled) return;
-      lrrApi.queueArchivePageThumbnails(archiveId).catch(() => {});
+      setThumbnailQueueState('loading');
+      lrrApi.queueArchivePageThumbnails(archiveId)
+        .then(() => { if (!cancelled) setThumbnailQueueState('ready'); })
+        .catch((error) => {
+          if (!cancelled) setThumbnailQueueState(error?.message || 'error');
+        });
     }, 120);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [archiveId, assetCacheOnly, pages.length, showDrawer]);
+  }, [archiveId, assetCacheOnly, pages.length, showDrawer, thumbnailQueueRetryToken]);
 
   useEffect(() => {
     if (!showDrawer) {
@@ -3265,7 +3374,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       const pageUrl = pages[idx];
       if (pageUrl) primePageBlob(pageUrl, IMAGE_LOAD_PRIORITY.ADJACENT - order).catch(() => {});
     });
-  }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.preloadCount]);
+    // Pre-generate previews for the two adjacent pages (front/back) at the
+    // lowest decode priority: skipped while flipping, so the next flip only
+    // decodes the small preview instead of the full original + webp encode.
+    indices.slice(0, 2).forEach((idx) => {
+      const pageUrl = pages[idx];
+      if (pageUrl) {
+        primePagePreview(pageUrl, {
+          enabled: settings.optimizedImageDecodeEnabled,
+          sourceSize: pageSizesRef.current[idx],
+        }).catch(() => {});
+      }
+    });
+  }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.optimizedImageDecodeEnabled, settings.preloadCount]);
 
   // ===== Outside-click to close panels =====
   useEffect(() => {
@@ -3377,10 +3498,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
       data-ios={isIosWebKit ? 'true' : 'false'}
       style={{
         minHeight: '100vh',
-        background: viewMode === 'normal' ? 'transparent' : '#000',
-        color: viewMode === 'immersive' ? '#fff' : 'var(--text-main)',
+        background: viewMode === 'normal' ? 'transparent' : 'var(--immersive-bg)',
+        color: viewMode === 'immersive' ? 'var(--immersive-text)' : 'var(--text-main)',
       }}
     >
+      {progressSyncNotice && (
+        <div className="reader-sync-status" role="status" aria-live="polite">{progressSyncNotice}</div>
+      )}
       <div
         data-reader-normal-flow
         style={viewMode === 'normal'
@@ -3617,6 +3741,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
             onViewMore={archivePanelType === 'history'
               ? navigateHistory
               : (archivePanelType === 'watchlist' ? navigateWatchlist : null)}
+            onRetry={archivePanelType === 'random' && randomEntriesError ? loadRandomEntries : null}
             progressBarVisibility={settings.progressBarVisibility}
             top={settingsPanelTop + 8}
           />
@@ -3724,8 +3849,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                     justifyContent: 'center',
                     padding: '24px',
                     textAlign: 'center',
-                    background: '#000',
-                    color: '#f2f3f6',
+                    background: 'var(--immersive-bg)',
+                    color: 'var(--immersive-text)',
                     fontSize: 'clamp(18px, 3vw, 30px)',
                     fontWeight: 750,
                     pointerEvents: 'none',
@@ -3792,7 +3917,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               width: '100%',
               height: '100%',
               overflow: webtoonActive ? 'hidden' : (zoomScale === 1.0 ? 'hidden' : 'visible'),
-              background: '#000',
+              background: 'var(--immersive-bg)',
               userSelect: 'none',
               WebkitUserSelect: 'none',
               WebkitTouchCallout: 'none',
@@ -3873,7 +3998,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                   overscrollBehavior: 'contain',
                   WebkitOverflowScrolling: 'touch',
                   touchAction: 'pan-y',
-                  background: '#000',
+                  background: 'var(--immersive-bg)',
                 }}
               >
                 {pages.map((pageUrl, index) => (
@@ -3898,7 +4023,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
             {!webtoonActive && settings.autoTurnActive && (
               <div
                 ref={progressBarRef}
-                style={{ position: 'absolute', top: 0, left: 0, height: '2px', background: '#4caf50', width: '0%', zIndex: 120 }}
+                style={{ position: 'absolute', top: 0, left: 0, height: '2px', background: 'var(--good)', width: '0%', zIndex: 120 }}
               />
             )}
 
@@ -3907,7 +4032,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               style={{
                 position: 'absolute', inset: 0,
                 display: webtoonActive ? 'none' : 'flex', justifyContent: 'center', alignItems: 'center',
-                background: '#000', zIndex: 1,
+                background: 'var(--immersive-bg)', zIndex: 1,
                 transform: 'translateX(-100%)',
               }}
             >
@@ -3926,16 +4051,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               style={{
                 position: 'absolute', inset: 0,
                 display: webtoonActive ? 'none' : 'flex', justifyContent: 'center', alignItems: 'center',
-                background: '#000', zIndex: 1,
+                background: 'var(--immersive-bg)', zIndex: 1,
                 transform: 'translateX(100%)',
               }}
             >
               {immersiveRightSpread.length === 0 ? (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
-                  color: 'rgba(255,255,255,0.6)', userSelect: 'none', pointerEvents: 'none',
+                  color: 'color-mix(in srgb, var(--immersive-text) 60%, transparent)', userSelect: 'none', pointerEvents: 'none',
                 }}>
-                  <HomeSectionGlyph name="continue" size={48} color="rgba(255,255,255,0.6)" style={{ opacity: 0.7 }} />
+                  <HomeSectionGlyph name="continue" size={48} color="color-mix(in srgb, var(--immersive-text) 60%, transparent)" style={{ opacity: 0.7 }} />
                   <span style={{ fontSize: '16px', letterSpacing: '2px' }}>继续滑动退出沉浸模式</span>
                 </div>
               ) : (
@@ -3976,14 +4101,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                     gap: '16px',
                     padding: '24px',
                     textAlign: 'center',
-                    background: '#000',
+                    background: 'var(--immersive-bg)',
                   }}
                 >
-                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: '#f2f3f6', letterSpacing: '0.5px', textWrap: 'balance' }}>
+                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: 'var(--immersive-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
                     {pageSwitchLabel}
-                  </div>
-                  <div style={{ fontSize: 'clamp(16px, 2.6vw, 26px)', fontWeight: 600, color: 'rgba(223,225,232,0.62)' }}>
-                    正在解码图像
                   </div>
                 </div>
               )}
@@ -4029,8 +4151,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                   right: isMobile ? 'auto' : '20px',
                   padding: '4px 10px',
                   borderRadius: '16px',
-                  background: 'rgba(0,0,0,0.65)',
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'color-mix(in srgb, var(--immersive-bg) 65%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--immersive-text) 12%, transparent)',
                   fontSize: '11px',
                   letterSpacing: '1px',
                   pointerEvents: 'none',
@@ -4081,7 +4203,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           position: 'fixed', inset: 0, zIndex: 200,
           display: 'flex', justifyContent: drawerSide === 'left' ? 'flex-start' : 'flex-end',
           pointerEvents: showDrawer ? 'auto' : 'none',
-          background: showDrawer ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0)',
+          background: showDrawer ? 'var(--overlay-bg)' : 'transparent',
           backdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
           WebkitBackdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
           transition: 'background 0.25s ease, backdrop-filter 0.25s ease, -webkit-backdrop-filter 0.25s ease',
@@ -4095,8 +4217,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           onWheel={(event) => { event.preventDefault(); event.stopPropagation(); }}
         />
         <div
+          ref={drawerPanelRef}
           className="reader-panel-surface reader-thumbnail-drawer-panel"
           data-side={drawerSide}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reader-thumbnail-drawer-title"
+          tabIndex={-1}
           style={{
             width: '100%', maxWidth: '420px', height: '100%', background: 'var(--reader-panel-bg)',
             display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1,
@@ -4109,7 +4236,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--reader-control-border)', paddingBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-              <h3 style={{ margin: 0, fontSize: '18px' }}>档案信息</h3>
+              <h3 id="reader-thumbnail-drawer-title" style={{ margin: 0, fontSize: '18px' }}>档案信息</h3>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               {hasArchiveReadingProgress(archive, historyEntries.find((item) => item.id === archiveId)?.page) && (
@@ -4121,7 +4248,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                 <ToolbarGlyph name="metadata" size={18} />
               </button>
               <button className="reader-drawer-icon-button" onClick={closeThumbnailDrawer} aria-label="关闭缩略面板" title="关闭缩略面板" style={{ fontSize: '20px' }}>
-                ✕
+                <ToolbarGlyph name="close" size={17} />
               </button>
             </div>
           </div>
@@ -4141,7 +4268,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
               return grouped.map((group) => (
                 <div key={group.ns} style={{ marginBottom: '8px' }}>
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: group.color, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: `color-mix(in srgb, ${group.color} 76%, var(--text-main))`, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap', background: `color-mix(in srgb, ${group.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${group.color} 36%, transparent)`, borderRadius: '5px', padding: '2px 6px' }}>
                       <NamespaceGlyph ns={group.ns} size={14} color={group.color} />
                       {stripDecoratedLabel(group.label)}
                     </span>
@@ -4170,8 +4297,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                           alignItems: 'center',
                           padding: '2px 6px',
                           borderRadius: '5px',
-                          background: `${group.color}18`,
-                          border: `1px solid ${group.color}40`,
+                          background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
+                          border: `1px solid color-mix(in srgb, ${group.color} 32%, transparent)`,
                           color: 'var(--text-main)',
                           fontSize: '10px',
                           whiteSpace: 'nowrap',
@@ -4180,12 +4307,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                           transition: 'background-color 0.15s ease, border-color 0.15s ease',
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = `${group.color}30`;
-                          e.currentTarget.style.borderColor = group.color;
+                          e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 18%, transparent)`;
+                          e.currentTarget.style.borderColor = `color-mix(in srgb, ${group.color} 70%, transparent)`;
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = `${group.color}18`;
-                          e.currentTarget.style.borderColor = `${group.color}40`;
+                          e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 10%, transparent)`;
+                          e.currentTarget.style.borderColor = `color-mix(in srgb, ${group.color} 32%, transparent)`;
                         }}
                       >
                         {translateTag(group.ns, value)}
@@ -4201,6 +4328,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
           <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: 'var(--text-sub)' }}>
             页面总览 · 共{pages.length}页{archiveSizeLabel ? ` · ${archiveSizeLabel}` : ''}
           </h4>
+          {thumbnailQueueState === 'loading' && <div role="status" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--text-sub)', fontSize: '12px' }}>正在准备页面缩略图…</div>}
+          {thumbnailQueueState !== 'idle' && thumbnailQueueState !== 'loading' && thumbnailQueueState !== 'ready' && (
+            <div role="alert" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--danger-text)', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <span>页面缩略图准备失败：{thumbnailQueueState}</span>
+              <button type="button" className="btn" onClick={() => setThumbnailQueueRetryToken((token) => token + 1)} style={{ padding: '4px 8px', fontSize: '11px' }}>重试</button>
+            </div>
+          )}
           <div style={{ flex: 1, minHeight: 0 }}>
             <div
               ref={drawerGridRef}
@@ -4229,15 +4363,23 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                 {drawerVisiblePages.map((url, offset) => {
                   const idx = drawerSliceStart + offset;
                   return (
-                    <div
+                    <button
                       key={url}
+                      type="button"
+                      data-reader-drawer-page
+                      aria-label={`跳转到第 ${idx + 1} 页`}
                       onClick={() => { commitPageTarget(idx, { showIndicator: viewMode === 'immersive' }); closeThumbnailDrawer(); }}
                       style={{
                         position: 'relative',
+                        width: '100%',
+                        padding: 0,
+                        font: 'inherit',
+                        color: 'inherit',
+                        textAlign: 'left',
+                        border: currentIndex === idx ? '2px solid var(--accent)' : '1px solid var(--reader-control-border)',
                         borderRadius: '6px',
                         overflow: 'hidden',
                         cursor: 'pointer',
-                        border: currentIndex === idx ? '2px solid var(--accent)' : '1px solid var(--reader-control-border)',
                         background: 'var(--cover-bg)',
                         paddingBottom: '130%',
                         height: 0,
@@ -4246,10 +4388,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false }) {
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <ArchivePageThumbnail archiveId={archiveId} pageIndex={idx} active={showDrawer} cacheOnly={assetCacheOnly} eager={drawerPrefetchSet.has(idx)} />
                       </div>
-                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '11px', textAlign: 'center', padding: '2px 0' }}>
+                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--overlay-bg)', color: 'var(--reader-overlay-text)', fontSize: '11px', textAlign: 'center', padding: '2px 0' }}>
                         P. {idx + 1}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>

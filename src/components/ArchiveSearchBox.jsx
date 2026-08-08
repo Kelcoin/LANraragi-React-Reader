@@ -62,7 +62,7 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
               style={{ position: 'absolute', right: '36px', top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}
               aria-label="清空搜索"
             >
-              ✕
+              <ToolbarGlyph name="close" size={14} />
             </button>
           )}
           <button

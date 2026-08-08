@@ -12,7 +12,12 @@ export function metadataFingerprint(value = {}) { return JSON.stringify([value.t
 export function readMetadataPluginResult(result) {
   if (!result || typeof result !== 'object') throw new Error('插件返回了无效结果');
   if (Number(result.success) === 0) throw new Error(result.error || '插件执行失败');
-  return { tags: result?.data?.new_tags || result?.new_tags || '' };
+  const data = result?.data && typeof result.data === 'object' ? result.data : {};
+  return {
+    title: data.title ?? data.new_title ?? result.title ?? result.new_title ?? '',
+    summary: data.summary ?? data.new_summary ?? result.summary ?? result.new_summary ?? '',
+    tags: data.tags ?? data.new_tags ?? result.tags ?? result.new_tags ?? '',
+  };
 }
 
 export function normalizeMetadataPlugins(list) {

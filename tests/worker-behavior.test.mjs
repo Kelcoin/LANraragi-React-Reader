@@ -36,8 +36,8 @@ function createWorker(entries = [], globals = {}) {
     ...globals,
   };
   vm.runInNewContext(workerSource, context);
-  return async function dispatch(path, { method = 'GET', scope, body } = {}) {
-    const headers = { 'x-sync-token': 'test-token' };
+  return async function dispatch(path, { method = 'GET', scope, body, token = 'test-token' } = {}) {
+    const headers = { 'x-sync-token': token };
     if (scope) headers['x-lrr-server-scope'] = scope;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const request = new Request(`https://worker.example${path}`, {
@@ -53,6 +53,36 @@ function createWorker(entries = [], globals = {}) {
 
 const SCOPE_A = 'a'.repeat(32);
 const SCOPE_B = 'b'.repeat(32);
+
+test('Worker retried delete preserves a re-written history entry', async () => {
+  const dispatch = createWorker();
+  const t0 = Date.now();
+  await dispatch('/history', { method: 'PUT', scope: SCOPE_A, body: { history: { id: 'one', page: 1, time: t0 } } });
+  await dispatch('/history', { method: 'DELETE', scope: SCOPE_A, body: { ids: ['one'] } });
+  // User re-opens the archive: newer progress revives the entry (tombstone kept).
+  await dispatch('/history', { method: 'PUT', scope: SCOPE_A, body: { history: { id: 'one', page: 5, time: t0 + 1000 } } });
+  // Stale retried DELETE (original response was lost) must not wipe the revive.
+  await dispatch('/history', { method: 'DELETE', scope: SCOPE_A, body: { ids: ['one'] } });
+  const state = await (await dispatch('/history', { scope: SCOPE_A })).json();
+  assert.deepEqual(state.histories.map((item) => item.id), ['one']);
+  assert.equal(state.histories[0].page, 5);
+});
+
+test('Worker status reload requires authentication', async () => {
+  const dispatch = createWorker();
+  const unauthorized = await dispatch('/?reload=1', { token: '' });
+  assert.equal(unauthorized.status, 401);
+  const authorized = await dispatch('/?reload=1', { scope: SCOPE_A });
+  assert.equal(authorized.status, 302);
+});
+
+test('Worker status page input fields have explicit hover and focus states', async () => {
+  const html = await (await createWorker()('/')).text();
+  assert.match(html, /input:hover, textarea:hover \{ border-color:rgba\(255,255,255,\.24\); background:#141b26; \}/);
+  assert.match(html, /input:focus, textarea:focus \{ border-color:#3b82f6/);
+  assert.match(html, /transition:border-color \.15s ease, background-color \.15s ease, box-shadow \.15s ease/);
+  assert.match(html, /outline:none;/);
+});
 
 test('Worker history is isolated by server scope and serializes concurrent writes', async () => {
   const dispatch = createWorker();

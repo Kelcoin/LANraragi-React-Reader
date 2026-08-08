@@ -201,7 +201,7 @@ test('Worker features require a valid HTTP URL and a non-empty token', () => {
 
 test('Favorites category keeps its server name and uses the fixed UI label', () => {
   assert.equal(categories.FAVORITES_CATEGORY_NAME, '🔖 Favorites');
-  assert.equal(categories.getCategoryDisplayName({ name: '🔖 Favorites' }), '⭐收藏夹');
+  assert.equal(categories.getCategoryDisplayName({ name: '🔖 Favorites' }), '收藏夹');
   assert.equal(categories.getCategoryDisplayName({ name: 'Reading' }), 'Reading');
 
   const source = [

@@ -23,3 +23,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local agent tooling (may contain secrets)
+.reasonix/
+reasonix.toml

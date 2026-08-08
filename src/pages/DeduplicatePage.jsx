@@ -7,6 +7,7 @@ import ArchiveThumbnailDialog from '../components/ArchiveThumbnailDialog';
 import DatePicker from '../components/DatePicker';
 import ExecutionProgressPanel from '../components/ExecutionProgressPanel';
 import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
+import { ToolbarGlyph } from '../components/AppGlyphs';
 import { lrrApi, waitForMinionJob } from '../lib/api';
 import { rememberArchiveMetadata } from '../lib/archiveMetadataCache';
 import {
@@ -334,7 +335,7 @@ function DedupeArchiveItem({
         onSelectToggle={onToggle}
         disabled={selectionDisabled}
         overlay={selected ? (
-          <div className="dedupe-card-selected-mark">✓</div>
+          <div className="dedupe-card-selected-mark"><ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" /></div>
         ) : null}
       />
       <div className="dedupe-card-size-row">

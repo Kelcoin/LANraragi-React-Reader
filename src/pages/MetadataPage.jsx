@@ -222,8 +222,9 @@ export default function MetadataPage({ archiveId }) {
       if (metadataFingerprint(latest) !== baseline) throw new Error('服务器上的元数据已发生变化，请刷新后再编辑。');
       const updatedArchive = { ...latest, ...form, id: archiveId, arcid: archiveId, tags: form.tags.join(',') };
       await lrrApi.updateArchiveMetadata(archiveId, updatedArchive, { signal: controller.signal });
-      rememberArchiveInCatalog(updatedArchive);
+      rememberArchiveInCatalog(updatedArchive, { immediate: true });
       await lrrApi.clearSearchCache().catch(() => {});
+      setArchive(updatedArchive);
       setBaseline(metadataFingerprint(updatedArchive)); showStatus('已保存', 'success', { autoHide: true });
     } catch (error) {
       if (error?.name !== 'AbortError') showStatus(error.status === 423 ? '档案正被其他任务占用，请稍后重试。' : error.message, 'error');
@@ -240,9 +241,17 @@ export default function MetadataPage({ archiveId }) {
     showStatus('插件执行中…');
     try {
       const result = await lrrApi.useMetadataPlugin(archiveId, plugin, pluginArg.trim() || form.title || archive.title || '', { signal: controller.signal });
-      const { tags } = readMetadataPluginResult(result);
-      if (tags) addTags(tags);
-      showStatus(tags ? '插件标签已合并，保存后生效。' : '插件执行完成，未返回新标签。', tags ? 'success' : 'info', { autoHide: true });
+      const { title, summary, tags } = readMetadataPluginResult(result);
+      const changed = [];
+      const nextForm = { ...form };
+      if (title) { nextForm.title = title; changed.push('标题'); }
+      if (summary) { nextForm.summary = summary; changed.push('摘要'); }
+      if (tags) {
+        nextForm.tags = mergeTags(form.tags, tags);
+        if (nextForm.tags.length !== form.tags.length) changed.push('标签');
+      }
+      if (changed.length) setForm(nextForm);
+      showStatus(changed.length ? `插件已更新${changed.join('、')}，保存后生效。` : '插件执行完成，未返回新元数据。', changed.length ? 'success' : 'info', { autoHide: true });
     } catch (error) {
       if (error?.name !== 'AbortError') showStatus(error.message, 'error');
     } finally {

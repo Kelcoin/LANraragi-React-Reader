@@ -14,6 +14,7 @@ const REMOTE_HIDE_READ_CACHE_KEY = 'lrr_hide_read_remote_cache';
 const HISTORY_PENDING_DELETES_KEY = 'lrr_history_pending_deletes';
 const CROP_COVER_KEY = 'lrr_crop_cover';
 const ARCHIVE_BROWSE_MODE_KEY = 'lrr_archive_browse_mode';
+const ARCHIVE_DISPLAY_MODE_KEY = 'lrr_archive_display_mode';
 const REMOTE_LOAD_TTL_MS = 30 * 1000;
 const HISTORY_SYNC_INTERVAL_MS = 8 * 1000;
 const HISTORY_SYNC_RETRY_MS = 2 * 60 * 1000;
@@ -103,9 +104,18 @@ export async function flushHistoryDeleteQueue() {
   const ids = getPendingHistoryDeletes();
   if (ids.length === 0) return true;
   if (!hasRemoteHistory()) return false;
+  // If an archive was read again after the failed delete, it is active in the
+  // local history again — drop the stale delete intent instead of wiping the
+  // new progress on the worker.
+  const activeIds = new Set(getStoredHistory().map((item) => item.id));
+  const remaining = ids.filter((id) => !activeIds.has(id));
+  if (remaining.length === 0) {
+    setPendingHistoryDeletes([]);
+    return true;
+  }
   try {
-    await workerJson('/history', { method: 'DELETE', body: { ids } });
-    const sent = new Set(ids);
+    await workerJson('/history', { method: 'DELETE', body: { ids: remaining } });
+    const sent = new Set(remaining);
     setPendingHistoryDeletes(getPendingHistoryDeletes().filter((id) => !sent.has(id)));
     return true;
   } catch {
@@ -145,7 +155,15 @@ async function workerJson(endpoint, { method = 'GET', body = null, keepalive = f
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(cfg.base + endpoint, init);
+  const perform = () => fetch(cfg.base + endpoint, init);
+  // Serialize cross-tab writes with Web Locks so two tabs cannot interleave
+  // read-modify-write on the worker KV (mutationLocks is per-isolate there).
+  // keepalive teardown and reads skip the lock. Cross-device concurrency
+  // still needs Durable Objects to be fully atomic.
+  const request = method !== 'GET' && !keepalive && typeof navigator?.locks?.request === 'function'
+    ? navigator.locks.request('lrr-worker-write-v1', { mode: 'exclusive' }, perform)
+    : perform();
+  const res = await request;
   if (!res.ok) throw new Error(`Worker Error: ${res.status}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
@@ -158,6 +176,10 @@ function scheduleHistoryFlush(delay = HISTORY_SYNC_INTERVAL_MS) {
     flushHistorySync().catch(() => {});
   }, delay);
 }
+
+// Rapid page flips collapse into one remote write after the reader pauses for
+// this window instead of one PUT per page (server not tracking progress).
+const URGENT_FLUSH_DELAY_MS = 1500;
 
 function queueHistorySync(item, pageCap = 0, immediateRemote = false) {
   const cfg = remoteConfig();
@@ -180,7 +202,7 @@ function queueHistorySync(item, pageCap = 0, immediateRemote = false) {
     clearTimeout(historyFlushTimer);
     historyFlushTimer = null;
   }
-  if (!historyFlushPromise) scheduleHistoryFlush(immediateRemote ? 0 : HISTORY_SYNC_INTERVAL_MS);
+  if (!historyFlushPromise) scheduleHistoryFlush(immediateRemote ? URGENT_FLUSH_DELAY_MS : HISTORY_SYNC_INTERVAL_MS);
 }
 
 export async function flushHistorySync({ keepalive = false } = {}) {
@@ -276,6 +298,18 @@ async function loadHistoryStateNow({ force = false } = {}) {
     retentionDays = data?.retentionDays || 0;
     localStorage.setItem(historyStorageKey, JSON.stringify(histories));
     localStorage.setItem(hideReadStorageKey, hideRead ? '1' : '0');
+    // Backfill anything newer locally than on the worker (e.g. a pagehide
+    // keepalive flush that failed, or a flush dropped by a config switch).
+    // Previously this only happened when the server tracks progress itself.
+    const remoteById = new Map(remoteHistories.map((item) => [item.id, item]));
+    const backfill = getStoredHistory().filter((item) => {
+      if (pendingDeletes.has(item.id)) return false;
+      const remoteItem = remoteById.get(item.id);
+      return !remoteItem || (item.time || 0) > (remoteItem.time || 0);
+    });
+    if (backfill.length > 0) {
+      await workerJson('/history', { method: 'PUT', body: { histories: backfill } }).catch(() => {});
+    }
     remoteLoadedAt = Date.now();
     remoteLoadedScope = scope;
   } else {
@@ -436,6 +470,21 @@ export const getArchiveBrowseMode = () => localStorage.getItem(ARCHIVE_BROWSE_MO
 
 export const setArchiveBrowseMode = (mode) => {
   localStorage.setItem(ARCHIVE_BROWSE_MODE_KEY, mode === 'paged' ? 'paged' : 'scroll');
+};
+
+export const ARCHIVE_DISPLAY_MODES = { card: 'card', compact: 'compact' };
+
+export const getArchiveDisplayMode = () => (
+  localStorage.getItem(ARCHIVE_DISPLAY_MODE_KEY) === ARCHIVE_DISPLAY_MODES.compact
+    ? ARCHIVE_DISPLAY_MODES.compact
+    : ARCHIVE_DISPLAY_MODES.card
+);
+
+export const setArchiveDisplayMode = (mode) => {
+  localStorage.setItem(
+    ARCHIVE_DISPLAY_MODE_KEY,
+    mode === ARCHIVE_DISPLAY_MODES.compact ? ARCHIVE_DISPLAY_MODES.compact : ARCHIVE_DISPLAY_MODES.card,
+  );
 };
 
 if (typeof window !== 'undefined') {

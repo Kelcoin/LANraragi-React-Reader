@@ -104,8 +104,8 @@ export async function loadArchiveCatalog({ force = false, signal } = {}) {
   return entry.request;
 }
 
-export function rememberArchiveInCatalog(archive) {
-  const metadata = rememberArchiveMetadata(archive);
+export function rememberArchiveInCatalog(archive, options = {}) {
+  const metadata = rememberArchiveMetadata(archive, options);
   if (!metadata) return null;
   const entry = getCatalogEntry();
   if (!Array.isArray(entry.items)) return metadata;

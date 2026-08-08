@@ -66,7 +66,7 @@ function isFresh(record, now) {
   return !!record && now - Number(record.ts || 0) <= EH_COMMENTS_CACHE_TTL;
 }
 
-export async function readEhCommentsCache(key, { now = Date.now() } = {}) {
+export async function readEhCommentsCacheState(key, { now = Date.now() } = {}) {
   let record = memoryCache.get(key) || null;
   if (!record) {
     try { record = await withStore('readonly', (store) => store.get(key)); } catch { record = null; }
@@ -78,11 +78,20 @@ export async function readEhCommentsCache(key, { now = Date.now() } = {}) {
   const accessed = { ...record, lastAccess: now };
   memoryCache.set(key, accessed);
   try { await withStore('readwrite', (store) => store.put(accessed)); } catch {}
-  return Array.isArray(accessed.comments) ? accessed.comments : [];
+  return {
+    comments: Array.isArray(accessed.comments) ? accessed.comments : [],
+    unavailable: typeof accessed.unavailable === 'string' ? accessed.unavailable : null,
+    ts: Number(accessed.ts || 0),
+  };
 }
 
-export async function writeEhCommentsCache(key, comments, { now = Date.now() } = {}) {
-  const record = { key, comments: Array.isArray(comments) ? comments : [], ts: now, lastAccess: now };
+export async function readEhCommentsCache(key, options = {}) {
+  const state = await readEhCommentsCacheState(key, options);
+  return state ? state.comments : null;
+}
+
+export async function writeEhCommentsCache(key, comments, { now = Date.now(), unavailable = null } = {}) {
+  const record = { key, comments: Array.isArray(comments) ? comments : [], unavailable: unavailable || null, ts: now, lastAccess: now };
   memoryCache.set(key, record);
   try { await withStore('readwrite', (store) => store.put(record)); } catch {}
   await pruneEhCommentsCache({ now });

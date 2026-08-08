@@ -67,9 +67,17 @@ export async function flushWatchlistDeleteQueue() {
   const ids = getPendingDeletes();
   if (ids.length === 0) return true;
   if (!hasRemoteWatchlist()) return false;
+  // Same guard as history deletes: a re-added watchlist entry supersedes the
+  // stale delete intent, so do not re-send it.
+  const activeIds = new Set(getStoredWatchlist().map((item) => item.id));
+  const remaining = ids.filter((id) => !activeIds.has(id));
+  if (remaining.length === 0) {
+    setPendingDeletes([]);
+    return true;
+  }
   try {
-    await workerJson('/watchlist', { method: 'DELETE', body: { ids } });
-    const sent = new Set(ids);
+    await workerJson('/watchlist', { method: 'DELETE', body: { ids: remaining } });
+    const sent = new Set(remaining);
     setPendingDeletes(getPendingDeletes().filter((id) => !sent.has(id)));
     return true;
   } catch {
@@ -121,7 +129,12 @@ async function workerJson(endpoint, { method = 'GET', body = null } = {}) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(cfg.base + endpoint, init);
+  const perform = () => fetch(cfg.base + endpoint, init);
+  // Same cross-tab write serialization as history.js (see workerJson there).
+  const request = method !== 'GET' && typeof navigator?.locks?.request === 'function'
+    ? navigator.locks.request('lrr-worker-write-v1', { mode: 'exclusive' }, perform)
+    : perform();
+  const res = await request;
   if (!res.ok) throw new Error(`Worker Error: ${res.status}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
@@ -132,6 +145,20 @@ function getStoredWatchlist() {
 }
 
 export const getWatchlist = () => getStoredWatchlist().map(decorateArchiveRecord).filter(Boolean);
+
+// Push the whole local watchlist to the worker (merge semantics server-side).
+// Used before switching config so unsynced adds survive the scope change.
+export async function flushWatchlistSync() {
+  if (!hasRemoteWatchlist()) return true;
+  const items = getStoredWatchlist();
+  if (items.length === 0) return true;
+  try {
+    await workerJson('/watchlist', { method: 'PUT', body: { items } });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function loadWatchlistStateNow({ force = false } = {}) {
   const remote = hasRemoteWatchlist();
@@ -147,9 +174,28 @@ async function loadWatchlistStateNow({ force = false } = {}) {
     const currentScope = currentCfg ? `${getConfigScopeId()}|${currentCfg.base}|${currentCfg.token}` : '';
     if (currentScope !== scope) return loadWatchlistStateNow({ force: true });
     const pendingDeletes = new Set(getPendingDeletes());
-    items = sortWatchlist(data?.items || []).filter((item) => !pendingDeletes.has(item.id));
+    const remoteItems = sortWatchlist(data?.items || []).filter((item) => !pendingDeletes.has(item.id));
+    const localItems = getStoredWatchlist();
+    // Monotonic merge with the local cache: entries added locally but not yet
+    // flushed (add failed, page hidden) must not be dropped by the remote view.
+    const mergedById = new Map();
+    for (const item of [...remoteItems, ...localItems]) {
+      const prev = mergedById.get(item.id);
+      if (!prev || (item.addedAt || 0) >= (prev.addedAt || 0)) mergedById.set(item.id, item);
+    }
+    items = sortWatchlist(Array.from(mergedById.values())).filter((item) => !pendingDeletes.has(item.id));
     lastSync = data?.lastSync || 0;
     localStorage.setItem(watchlistStorageKey, JSON.stringify(items));
+    // Backfill locally-newer entries (same failure modes as history).
+    const remoteById = new Map(remoteItems.map((item) => [item.id, item]));
+    const backfill = localItems.filter((item) => {
+      if (pendingDeletes.has(item.id)) return false;
+      const remoteItem = remoteById.get(item.id);
+      return !remoteItem || (item.addedAt || 0) > (remoteItem.addedAt || 0);
+    });
+    if (backfill.length > 0) {
+      await workerJson('/watchlist', { method: 'PUT', body: { items: backfill } }).catch(() => {});
+    }
     remoteLoadedAt = Date.now();
     remoteLoadedScope = scope;
   } else {

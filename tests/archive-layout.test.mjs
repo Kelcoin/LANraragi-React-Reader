@@ -216,10 +216,12 @@ test('archive grid animates only cards near the viewport', () => {
   assert.match(grid, /if \(!isNearViewport\)/);
 });
 
-test('archive grid skips offscreen card contents without virtualizing cards', () => {
+test('archive grid keeps card wrappers measurable for dense packing', () => {
   const css = read('src/index.css');
+  const cardWrapRule = css.match(/\.archive-grid\s*>\s*\.archive-card-wrap\s*\{([\s\S]*?)\}/)?.[1] || '';
   assert.match(
-    css,
-    /\.archive-grid\s*>\s*\.archive-card-wrap\s*\{[^}]*content-visibility:\s*auto;[^}]*contain-intrinsic-block-size:\s*auto 330px;/s,
+    cardWrapRule,
+    /contain:\s*layout paint style;/,
   );
+  assert.doesNotMatch(cardWrapRule, /content-visibility|contain-intrinsic-block-size/);
 });

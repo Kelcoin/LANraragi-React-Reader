@@ -41,9 +41,13 @@ export async function decodeImageSource(sourceUrl, {
       await waitWithAbort(image.decode());
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
+      // decode() rejects on load failure — by now the error event has already
+      // fired, so waiting for 'load'/'error' below would hang forever.
+      throw new Error('Image decode failed');
     }
   }
-  if (!image.complete || !image.naturalWidth) {
+  if (image.complete && !image.naturalWidth) throw new Error('Image decode failed');
+  if (!image.complete) {
     await waitWithAbort(new Promise((resolve, reject) => {
       image.addEventListener('load', resolve, { once: true });
       image.addEventListener('error', reject, { once: true });
@@ -213,6 +217,11 @@ async function canvasToBlob(canvas) {
 
 function rememberPreview(key, blob) {
   const objectUrl = URL.createObjectURL(blob);
+  const previous = previewCache.get(key);
+  if (previous) {
+    previewCacheBytes = Math.max(0, previewCacheBytes - (previous.size || 0));
+    URL.revokeObjectURL(previous.objectUrl);
+  }
   previewCache.set(key, { objectUrl, size: blob.size, lastAccessedAt: Date.now() });
   previewCacheBytes += blob.size;
   while (previewCache.size > PREVIEW_CACHE_LIMIT || previewCacheBytes > PREVIEW_CACHE_BYTES) {

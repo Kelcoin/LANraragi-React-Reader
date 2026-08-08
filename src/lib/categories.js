@@ -3,8 +3,9 @@ import { getConfigScopeId, migrateLegacyStorageKey } from './configScope.js';
 
 const CACHE_KEY = 'lrr_categories_cache_v1';
 const UPDATE_INTERVAL = 30 * 60 * 1000;
-export const FAVORITES_CATEGORY_NAME = '🔖 Favorites';
-export const FAVORITES_CATEGORY_LABEL = '⭐收藏夹';
+// Keep the upstream LANraragi category name byte-for-byte compatible without rendering its emoji in the UI.
+export const FAVORITES_CATEGORY_NAME = `${String.fromCodePoint(0x1f516)} Favorites`;
+export const FAVORITES_CATEGORY_LABEL = '收藏夹';
 
 let categoriesCache = null;
 let categoriesPromise = null;

@@ -13,7 +13,7 @@ const DEDUPE_KEY_PREFIX = 'dedupe:';
 const SYNC_SCHEMA_VERSION = 3;
 const PROJECT_NAME = 'Readoshi';
 const PROJECT_URL = 'https://github.com/Kelcoin/Readoshi';
-const WORKER_VERSION = '1.0.0';
+const WORKER_VERSION = '1.1.0';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -283,6 +283,12 @@ function detectNonGallery(html) {
       lower.includes('your ip address has been temporarily banned')) {
     return 'login-or-banned';
   }
+  if (lower.includes('gallery not found')) {
+    return 'gallery-not-found';
+  }
+  if (lower.includes('copyright claim')) {
+    return 'copyright-removed';
+  }
   if (html.length < 500 && !html.includes('gallery')) {
     return 'empty-or-redirect';
   }
@@ -325,6 +331,12 @@ async function ehProxy(request) {
       if (blockType === 'cloudflare-block') {
         return json({ error: 'EH_CLOUDFLARE_BLOCK', status: res.status, detail: 'EH/EX 返回了 Cloudflare 验证页面' }, res.status);
       }
+      if (blockType === 'gallery-not-found') {
+        return json({ error: 'GALLERY_NOT_FOUND', status: res.status, detail: 'EH 返回了画廊不存在页面' }, 404);
+      }
+      if (blockType === 'copyright-removed') {
+        return json({ error: 'GALLERY_COPYRIGHT_REMOVED', status: res.status, detail: 'EH 返回了版权移除页面' }, 410);
+      }
       return text('Upstream returned ' + res.status, res.status);
     }
 
@@ -334,6 +346,12 @@ async function ehProxy(request) {
     }
     if (blockType === 'cloudflare-block') {
       return json({ error: 'EH_CLOUDFLARE_BLOCK', status: 200, detail: 'Worker 节点被 EH/EX 的 Cloudflare 防护拦截' }, 403);
+    }
+    if (blockType === 'gallery-not-found') {
+      return json({ error: 'GALLERY_NOT_FOUND', status: 200, detail: 'EH 返回了画廊不存在页面' }, 404);
+    }
+    if (blockType === 'copyright-removed') {
+      return json({ error: 'GALLERY_COPYRIGHT_REMOVED', status: 200, detail: 'EH 返回了版权移除页面' }, 410);
     }
     if (blockType === 'empty-or-redirect') {
       return json({ error: 'EH_EMPTY_RESPONSE', status: 200, detail: 'EH 返回了空白或极短页面' }, 403);
@@ -736,12 +754,9 @@ async function putHistory(request) {
     }
   }
 
-  for (const [id, deletedAt] of Array.from(deletedMap.entries())) {
-    const existingHistory = merged.get(id);
-    if (existingHistory && (existingHistory.time || 0) > deletedAt) {
-      deletedMap.delete(id);
-    }
-  }
+  // Keep tombstones even when a newer write revives the entry: deleteHistory
+  // relies on the recorded deletedAt to recognize a stale retried DELETE and
+  // must not wipe the revived progress. Older writes stay tombstoned above.
 
       const retentionDays = await getHistoryRetentionDays();
       const result = {
@@ -773,7 +788,6 @@ async function deleteHistory(request) {
 
   const ids = Array.isArray(payload?.ids) ? payload.ids.map(id => String(id).trim()).filter(Boolean) : [];
   if (ids.length === 0) return json({ error: 'Missing ids array' }, 400);
-  const removeSet = new Set(ids);
   const historyKey = getSyncKey('history', request);
   if (!historyKey) return json({ error: 'Missing or invalid x-lrr-server-scope' }, 400);
   try {
@@ -785,7 +799,22 @@ async function deleteHistory(request) {
         if (!item || !item.id) continue;
         deletedMap.set(item.id, item.deletedAt || 0);
       }
-      ids.forEach((id) => deletedMap.set(id, now));
+      // Retried DELETE must not wipe an entry that was re-written after the
+      // original delete: if a newer history entry exists (time > recorded
+      // deletedAt), the delete intent is stale — skip it.
+      const staleDeleteIds = new Set();
+      ids.forEach((id) => {
+        const prevDeletedAt = deletedMap.get(id) || 0;
+        const existingItem = Array.isArray(existing.histories)
+          ? existing.histories.find((item) => item?.id === id)
+          : null;
+        if (prevDeletedAt > 0 && existingItem && (existingItem.time || 0) > prevDeletedAt) {
+          staleDeleteIds.add(id);
+          return;
+        }
+        deletedMap.set(id, now);
+      });
+      const removeSet = new Set(ids.filter((id) => !staleDeleteIds.has(id)));
 
       const retentionDays = await getHistoryRetentionDays();
       const result = {
@@ -800,7 +829,7 @@ async function deleteHistory(request) {
         lastSync: now,
       };
       await HISTORY_KV.put(historyKey, JSON.stringify(result));
-      return json({ ok: true, removed: ids.length, count: result.histories.length });
+      return json({ ok: true, removed: removeSet.size, count: result.histories.length });
     });
   } catch (err) {
     return json({ error: 'KV mutation failed' }, 500);
@@ -1147,6 +1176,10 @@ async function getStatusSummary({ force = false } = {}) {
 async function statusPage(request) {
   const reloadParam = new URL(request.url).searchParams.get('reload');
   if (reloadParam === '1') {
+    // Forcing a full KV rescan must be authenticated; the public status page
+    // must not be able to trigger unbounded KV reads from the outside.
+    const authErr = await requireAuth(request);
+    if (authErr) return authErr;
     await reloadTokens();
     statusSummaryCache = null;
     const nextUrl = new URL(request.url);
@@ -1209,7 +1242,13 @@ async function statusPage(request) {
   .tool-actions { display:flex; justify-content:center; gap:10px; align-items:center; flex-wrap:wrap; }
   .checks { display:flex; gap:14px; flex-wrap:wrap; color:#cbd5e1; font-size:13px; }
   input, textarea { width:100%; background:#111827; border:1px solid rgba(255,255,255,.09); color:#e5e7eb;
-                    border-radius:8px; padding:9px 10px; font:inherit; }
+                    border-radius:8px; padding:9px 10px; font:inherit;
+                    outline:none;
+                    transition:border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+  input:hover, textarea:hover { border-color:rgba(255,255,255,.24); background:#141b26; }
+  input:focus, textarea:focus { border-color:#3b82f6; background:#141b26; box-shadow:0 0 0 3px rgba(59,130,246,.16); }
+  input::placeholder, textarea::placeholder { color:#6b7280; }
+  input:disabled, textarea:disabled { opacity:.55; cursor:not-allowed; }
   textarea { min-height:110px; resize:vertical; }
   button { background:#2563eb; border:0; border-radius:8px; color:white; padding:9px 12px; cursor:pointer; font-weight:650; }
   button.secondary { background:#374151; }

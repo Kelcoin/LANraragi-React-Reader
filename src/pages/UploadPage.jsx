@@ -156,7 +156,7 @@ export default function UploadPage() {
             <ToolbarGlyph name="upload" size={20} />
             <div><h2>从本地添加</h2><p>支持一次选择多个档案文件</p></div>
           </div>
-          <input ref={fileInputRef} type="file" multiple accept={ACCEPTED_FILES} hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
+          <input ref={fileInputRef} type="file" multiple accept={ACCEPTED_FILES} aria-label="选择档案文件" hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
           <div
             className={`upload-dropzone${dragActive ? ' is-dragging' : ''}`}
             role="button"

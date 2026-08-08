@@ -3,12 +3,15 @@ import { loadTagDB } from './lib/tags';
 import { checkServerStatus } from './lib/api';
 import { canNavigate, navigateHome, navigateToArchive, parseRouteFromLocation } from './lib/navigation';
 import { startHistoryExistenceCheckTimer, stopHistoryExistenceCheckTimer } from './lib/historyMaintenance';
-import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, exportConfig, importConfig } from './lib/worker-config';
-import { applyThemeMode, getNextThemeMode, readStoredThemeMode, watchSystemTheme, writeStoredThemeMode } from './lib/theme';
+import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, importConfig } from './lib/worker-config';
+import { applyThemeMode, getNextThemeMode, readStoredThemeMode, readStoredThemePalettes, watchSystemTheme, writeStoredThemeMode, writeStoredThemePalettes } from './lib/theme';
 import PwaStatus from './components/PwaStatus';
+import SecretInput from './components/SecretInput';
 import AppVersion from './components/AppVersion';
 import ConfigTransferDialog from './components/ConfigTransferDialog';
 import { cacheServerInfo } from './lib/serverInfoCache';
+import { flushHistorySync } from './lib/history';
+import { flushWatchlistSync } from './lib/watchlist';
 import { resolveInitialRoute } from './lib/sessionState';
 import './index.css';
 
@@ -24,11 +27,176 @@ function AppRouteFallback() {
   return <div className="metadata-loading-state" role="status">正在加载页面…</div>;
 }
 
+function RouteSkeletonCards({ count = 8, compact = false }) {
+  return Array.from({ length: count }, (_, index) => (
+    <div className={`archive-list-loading-card${compact ? ' is-compact' : ''}`} key={`route-skeleton-${index}`}>
+      <div className="archive-list-loading-cover shimmer-strip" />
+      <div className="archive-list-loading-line shimmer-strip" />
+      <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+    </div>
+  ));
+}
+
+function HomeRouteFallback() {
+  return (
+    <main className="home-route-fallback" role="status" aria-label="正在加载首页">
+      <div className="home-route-fallback-topbar">
+        <div className="home-route-fallback-brand shimmer-strip" />
+        <div className="home-route-fallback-actions">
+          <span className="home-route-fallback-action shimmer-strip" />
+          <span className="home-route-fallback-action shimmer-strip" />
+        </div>
+      </div>
+
+      <section className="home-route-fallback-section">
+        <div className="home-route-fallback-heading shimmer-strip" />
+        <div className="home-route-fallback-carousel">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div className="home-route-fallback-card" key={`home-fallback-carousel-${index}`}>
+              <div className="home-route-fallback-cover shimmer-strip" />
+              <div className="home-route-fallback-line shimmer-strip" />
+              <div className="home-route-fallback-line home-route-fallback-line-short shimmer-strip" />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="home-route-fallback-section home-route-fallback-archive-section">
+        <div className="home-route-fallback-heading shimmer-strip" />
+        <div className="home-route-fallback-grid">
+          {Array.from({ length: 12 }, (_, index) => (
+            <div className="home-route-fallback-card" key={`home-fallback-archive-${index}`}>
+              <div className="home-route-fallback-cover shimmer-strip" />
+              <div className="home-route-fallback-line shimmer-strip" />
+              <div className="home-route-fallback-line home-route-fallback-line-short shimmer-strip" />
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ReaderRouteFallback() {
+  return (
+    <main className="route-fallback-shell reader-route-fallback" role="status" aria-label="正在加载阅读器">
+      <div className="reader-route-fallback-toolbar">
+        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-left">
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+        </div>
+        <span className="reader-route-fallback-title shimmer-strip" />
+        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-right">
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
+          <span className="reader-route-fallback-button reader-route-fallback-button-icon shimmer-strip" />
+        </div>
+      </div>
+      <div className="reader-route-fallback-stage-layout">
+        <div className="reader-route-fallback-stage-frame reader-stage-frame">
+          <div className="reader-route-fallback-slot reader-stage-slot" aria-hidden="true">
+            <span className="shimmer-strip" />
+          </div>
+        </div>
+        <div className="reader-route-fallback-nav-row">
+          <span className="reader-route-fallback-nav-button shimmer-strip" />
+          <span className="reader-route-fallback-page-count shimmer-strip" />
+          <span className="reader-route-fallback-nav-button shimmer-strip" />
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function MetadataRouteFallback() {
+  return (
+    <main className="route-fallback-shell metadata-route-fallback" role="status" aria-label="正在加载元数据">
+      <section className="route-fallback-panel metadata-route-fallback-panel">
+        <div className="route-fallback-heading shimmer-strip" />
+        <div className="metadata-route-fallback-field shimmer-strip" />
+        <div className="metadata-route-fallback-area shimmer-strip" />
+        <div className="metadata-route-fallback-tags">
+          {Array.from({ length: 10 }, (_, index) => <span className="metadata-route-fallback-tag shimmer-strip" key={`metadata-route-tag-${index}`} />)}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ArchiveListRouteFallback({ title }) {
+  return (
+    <main className="route-fallback-shell archive-list-route-fallback" role="status" aria-label={`正在加载${title}`}>
+      <header className="archive-list-route-fallback-header">
+        <span className="route-fallback-heading shimmer-strip" />
+        <span className="archive-list-route-fallback-pill shimmer-strip" />
+      </header>
+      <section className="route-fallback-panel">
+        <div className="archive-list-loading-grid">
+          <RouteSkeletonCards count={8} />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function DedupeRouteFallback() {
+  return (
+    <main className="route-fallback-shell dedupe-route-fallback" role="status" aria-label="正在加载重复检测">
+      <section className="route-fallback-panel dedupe-route-fallback-panel">
+        <div className="route-fallback-heading shimmer-strip" />
+        <div className="dedupe-route-fallback-controls">
+          <span className="dedupe-route-fallback-control shimmer-strip" />
+          <span className="dedupe-route-fallback-control shimmer-strip" />
+          <span className="dedupe-route-fallback-control shimmer-strip" />
+        </div>
+        <div className="archive-list-loading-grid">
+          <RouteSkeletonCards count={6} />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function UploadRouteFallback() {
+  return (
+    <main className="route-fallback-shell upload-route-fallback" role="status" aria-label="正在加载上传页">
+      <section className="route-fallback-panel upload-route-fallback-panel">
+        <div className="route-fallback-heading shimmer-strip" />
+        <div className="upload-route-fallback-dropzone shimmer-strip" />
+        <div className="upload-route-fallback-field shimmer-strip" />
+      </section>
+    </main>
+  );
+}
+
+function getRouteFallback(route) {
+  switch (route?.kind) {
+    case 'home':
+      return <HomeRouteFallback />;
+    case 'reader':
+      return <ReaderRouteFallback />;
+    case 'metadata':
+      return <MetadataRouteFallback />;
+    case 'history':
+      return <ArchiveListRouteFallback title="阅读历史" />;
+    case 'watchlist':
+      return <ArchiveListRouteFallback title="待看档案" />;
+    case 'dedupe':
+      return <DedupeRouteFallback />;
+    case 'upload':
+      return <UploadRouteFallback />;
+    default:
+      return <AppRouteFallback />;
+  }
+}
+
 export default function App() {
   const [route, setRoute] = useState(() => resolveInitialRoute(parseRouteFromLocation()));
+  const [themePalettes, setThemePalettes] = useState(readStoredThemePalettes);
   const [themeMode, setThemeMode] = useState(() => {
     const mode = readStoredThemeMode();
-    applyThemeMode(mode);
+    applyThemeMode(mode, { palettes: readStoredThemePalettes() });
     return mode;
   });
   
@@ -66,15 +234,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    applyThemeMode(themeMode);
+    applyThemeMode(themeMode, { palettes: themePalettes });
     writeStoredThemeMode(themeMode);
     return watchSystemTheme(() => {
-      if (themeMode === 'auto') applyThemeMode(themeMode);
+      if (themeMode === 'auto') applyThemeMode(themeMode, { palettes: themePalettes });
     });
-  }, [themeMode]);
+  }, [themeMode, themePalettes]);
 
   const handleThemeModeChange = () => {
     setThemeMode((mode) => getNextThemeMode(mode));
+  };
+
+  const handleThemePalettesChange = (palettes) => {
+    const normalized = writeStoredThemePalettes(palettes);
+    setThemePalettes(normalized);
+    applyThemeMode(themeMode, { palettes: normalized });
   };
 
   useEffect(() => {
@@ -113,6 +287,9 @@ export default function App() {
     setLoginNotice(null);
     setLoginLoading(true);
     try {
+      // Flush the old config's pending sync data before switching scope,
+      // otherwise queued progress/watchlist writes are dropped on the floor.
+      await Promise.allSettled([flushHistorySync(), flushWatchlistSync()]);
       const serverInfo = await checkServerStatus(tempConfig.url, tempConfig.key);
       localStorage.setItem('lrr_server_url', tempConfig.url);
       localStorage.setItem('lrr_api_key', tempConfig.key);
@@ -127,16 +304,6 @@ export default function App() {
     }
   };
 
-  const handleExportConfig = () => {
-    const encoded = exportConfig({
-      lrr_server_url: tempConfig.url,
-      lrr_api_key: tempConfig.key,
-      lrr_worker_url: tempConfig.workerUrl,
-      lrr_sync_token: tempConfig.syncToken,
-    });
-    setConfigTransfer({ mode: 'export', value: encoded });
-  };
-
   const handleImportConfig = async () => {
     let encoded = '';
     try { encoded = await navigator.clipboard.readText(); } catch {}
@@ -144,6 +311,8 @@ export default function App() {
   };
 
   const handleConfirmImportConfig = async (encoded) => {
+    // Same guard as handleConnect: never drop unsynced data on a scope switch.
+    await Promise.allSettled([flushHistorySync(), flushWatchlistSync()]);
     const count = importConfig(encoded);
     const next = {
       url: localStorage.getItem('lrr_server_url') || '',
@@ -153,8 +322,10 @@ export default function App() {
     };
     setTempConfig(next);
     const nextThemeMode = readStoredThemeMode();
-    applyThemeMode(nextThemeMode);
+    const nextThemePalettes = readStoredThemePalettes();
+    applyThemeMode(nextThemeMode, { palettes: nextThemePalettes });
     setThemeMode(nextThemeMode);
+    setThemePalettes(nextThemePalettes);
     setConfigTransfer(null);
     setLoginNotice({ type: 'success', text: `已导入 ${count} 项配置` });
   };
@@ -164,7 +335,15 @@ export default function App() {
       <>
         <div className="login-shell">
           <div className="login-stack">
+
           <form onSubmit={handleConnect} className={`glass-panel login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
+            <button type="button" className="login-import-button" onClick={handleImportConfig} aria-label="导入配置" title="导入配置">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12" />
+                <path d="m8 11 4 4 4-4" />
+                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              </svg>
+            </button>
             <div className="login-brand-lockup">
               <span className="login-brand-logo" aria-hidden="true" />
               <h2 className="login-title">Readoshi</h2>
@@ -177,7 +356,15 @@ export default function App() {
             
             <div>
               <label className="field-label" htmlFor="api-key">LANraragi API Key *</label>
-              <input id="api-key" name="api-key" type="password" autoComplete="off" spellCheck={false} className="input-glass" value={tempConfig.key} onChange={e => setTempConfig({...tempConfig, key: e.target.value})} required />
+                                <SecretInput
+                    id="api-key"
+                    name="api-key"
+                    ariaLabel="LANraragi API Key"
+                    value={tempConfig.key}
+                    onChange={e => setTempConfig({...tempConfig, key: e.target.value})}
+                    required
+                    style={{ padding: '11px 15px', fontSize: '16px' }}
+                  />
             </div>
 
             <div className="login-worker-section-content">
@@ -203,23 +390,18 @@ export default function App() {
                 </div>
                 <div>
                   <label className="field-label" htmlFor="sync-token">访问 Token</label>
-                  <span className="secret-input-shell" data-secret={tempConfig.syncToken}>
-                    <input id="sync-token" name="sync-token" type="text" autoComplete="off" spellCheck={false} className="input-glass secret-input" value={tempConfig.syncToken} onChange={e => setTempConfig({...tempConfig, syncToken: e.target.value})} />
-                  </span>
+                  <SecretInput
+                    id="sync-token"
+                    name="sync-token"
+                    ariaLabel="访问 Token"
+                    value={tempConfig.syncToken}
+                    onChange={e => setTempConfig({...tempConfig, syncToken: e.target.value})}
+                  />
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="button" className="btn" onClick={handleExportConfig} style={{ flex: 1, padding: '9px', fontSize: '12px' }}>
-                导出配置
-              </button>
-              <button type="button" className="btn" onClick={handleImportConfig} style={{ flex: 1, padding: '9px', fontSize: '12px' }}>
-                导入配置
-              </button>
-            </div>
-
-            <button type="submit" className="btn" style={{ marginTop: '8px', padding: '12px', background: 'var(--accent)', borderColor: 'rgba(141,216,255,0.58)', color: '#fff' }} disabled={loginLoading}>
+            <button type="submit" className="btn" style={{ marginTop: '8px', padding: '12px', background: 'var(--accent)', borderColor: 'var(--accent-strong)', color: 'var(--accent-contrast)' }} disabled={loginLoading}>
               {loginLoading ? '正在验证连接…' : '开始阅读'}
             </button>
 
@@ -248,20 +430,20 @@ export default function App() {
 
   let routeContent;
   if (route.kind === 'reader') {
-    routeContent = <Reader key={route.archiveId} archiveId={route.archiveId} onBack={() => navigateHome()} />;
+    routeContent = <Reader key={`${route.archiveId}:${route.incognito ? 'incognito' : 'normal'}`} archiveId={route.archiveId} incognito={route.incognito === true} onBack={() => navigateHome()} />;
   } else if (route.kind === 'metadata') {
     routeContent = <MetadataPage archiveId={route.archiveId} />;
   } else if (route.kind === 'history') {
-    routeContent = <HistoryPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />;
+    routeContent = <HistoryPage onSelectArchive={(id, options) => navigateToArchive(id, options)} onBack={() => navigateHome()} />;
   } else if (route.kind === 'watchlist') {
-    routeContent = <WatchlistPage onSelectArchive={(id) => navigateToArchive(id)} onBack={() => navigateHome()} />;
+    routeContent = <WatchlistPage onSelectArchive={(id, options) => navigateToArchive(id, options)} onBack={() => navigateHome()} />;
   } else if (route.kind === 'dedupe') {
     routeContent = <DeduplicatePage onBack={() => navigateHome()} />;
   } else if (route.kind === 'upload') {
     routeContent = <UploadPage />;
   } else {
-    routeContent = <Home onSelectArchive={(id) => {
-        navigateToArchive(id);
+    routeContent = <Home onSelectArchive={(id, options) => {
+        navigateToArchive(id, options);
       }} onLogout={() => {
         setSavedConfig({ url: '', key: '' });
         setTempConfig({
@@ -271,12 +453,12 @@ export default function App() {
           syncToken: getSyncToken(),
         });
         navigateHome({ replace: true });
-      }} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />;
+        }} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} themePalettes={themePalettes} onThemePalettesChange={handleThemePalettesChange} />;
   }
 
   return (
     <>
-      <Suspense fallback={<AppRouteFallback />}>
+      <Suspense fallback={getRouteFallback(route)}>
         {routeContent}
       </Suspense>
       <PwaStatus />
