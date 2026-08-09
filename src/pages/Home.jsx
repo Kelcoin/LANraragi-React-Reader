@@ -2835,7 +2835,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                       </button>
                     </div>
                     {ehCookieCheck && (
-                      <div className={`eh-cookie-check-result${ehCookieCheck.error ? ' is-error' : ''}`} role="status">
+                      <div className={`eh-cookie-check-result${ehCookieCheck.error ? ' is-error' : (ehCookieCheck.exHentai && !ehCookieCheck.exHentai.ok ? ' is-warning' : '')}`} role="status">
                         {ehCookieCheck.error || `E-Hentai：${ehCookieCheck.eHentai?.ok ? '正常' : '失败'}；ExHentai：${ehCookieCheck.exHentai?.ok ? '正常' : '失败'}${ehCookieCheck.refreshed ? '；已更新 igneous' : ''}`}
                       </div>
                     )}
