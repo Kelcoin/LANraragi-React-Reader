@@ -4804,11 +4804,11 @@ textarea:focus-visible,
 .upload-results-heading p { margin: 4px 0 0; color: var(--text-sub); font-size: 12px; }
 .upload-title-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
 
-.upload-mode-tabs { max-width: 360px; }
+.upload-mode-tabs { max-width: none; }
 .upload-mode-hint { margin: 0; color: var(--text-sub); font-size: 12px; }
 .upload-results-actions { display: flex; gap: 8px; align-items: center; }
 .upload-results-actions .upload-primary-action { width: auto; }
-.upload-panel { padding: 22px; display: flex; flex-direction: column; gap: 15px; }
+.upload-panel { padding: 22px; display: flex; flex-direction: column; gap: 15px; min-height: 460px; }
 .upload-section-heading { padding-bottom: 13px; border-bottom: 1px solid var(--glass-border); color: var(--accent); }
 .upload-section-heading h2 { color: var(--text-main); font-size: 17px; }
 
@@ -4826,6 +4826,7 @@ textarea:focus-visible,
 .upload-file-row small { color: var(--text-sub); }
 .upload-file-row button { border: 0; background: transparent; color: var(--text-sub); cursor: pointer; font-size: 17px; }
 .upload-field-label { font-size: 12px; font-weight: 650; color: var(--text-sub); }
+.upload-url-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .upload-url-input { min-height: 190px; flex: 1 1 190px; resize: vertical; box-sizing: border-box; line-height: 1.6; }
 .upload-url-summary { display: flex; justify-content: space-between; gap: 10px; min-height: 16px; color: var(--text-sub); font-size: 11px; }
 .upload-url-summary .is-error { color: var(--danger-text); }
@@ -5000,6 +5001,7 @@ textarea:focus-visible,
   .upload-title-icon { width: 40px; height: 40px; border-radius: 12px; }
   .upload-panel,
   .upload-results { padding: 17px; }
+  .upload-panel { min-height: 400px; }
   .upload-dropzone,
   .upload-url-input { min-height: 155px; }
 }

@@ -332,13 +332,15 @@ export default function UploadPage() {
               {pluginStatus && <div>{pluginStatus}</div>}
               {pluginState.warnings.map(warning => <div key={warning}>{warning}</div>)}
             </div>}
-            <label className="upload-field-label" htmlFor="upload-urls">要下载的 URL（一行一个）</label>
-            <textarea id="upload-urls" className="input-glass upload-url-input" value={urlText} onChange={event => setUrlText(event.target.value)} placeholder={'https://example.com/gallery/123\nhttps://example.com/gallery/456'} disabled={running} />
-            <div className="upload-url-summary">
-              <span>{parsedUrls.valid.length} 个有效 URL</span>
-              {parsedUrls.invalid.length > 0 && <span className="is-error">{parsedUrls.invalid.length} 个无效 URL</span>}
-              {unmatchedUrlCount > 0 && <span className="is-error">{unmatchedUrlCount} 个未匹配插件</span>}
+            <div className="upload-url-label-row">
+              <label className="upload-field-label" htmlFor="upload-urls">要下载的 URL（一行一个）</label>
+              <div className="upload-url-summary">
+                <span>{parsedUrls.valid.length} 个有效 URL</span>
+                {parsedUrls.invalid.length > 0 && <span className="is-error">{parsedUrls.invalid.length} 个无效 URL</span>}
+                {unmatchedUrlCount > 0 && <span className="is-error">{unmatchedUrlCount} 个未匹配插件</span>}
+              </div>
             </div>
+            <textarea id="upload-urls" className="input-glass upload-url-input" value={urlText} onChange={event => setUrlText(event.target.value)} placeholder={'https://example.com/gallery/123\nhttps://example.com/gallery/456'} disabled={running} />
             <button type="button" className="btn upload-primary-action" onClick={addUrls} disabled={running || (!parsedUrls.valid.length && !parsedUrls.invalid.length)}>
               添加到队列
             </button>
