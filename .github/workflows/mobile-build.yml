@@ -352,7 +352,7 @@ jobs:
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "artifacts/${APK_PREFIX}-release.apk"
 
       - name: Upload APKs
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.metadata.outputs.apk_prefix }}-android
           path: artifacts/*.apk
@@ -595,7 +595,7 @@ jobs:
           rm artifacts/ipa-contents.txt
 
       - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.metadata.outputs.ipa_prefix }}-ios
           path: artifacts/*-unsigned.ipa
