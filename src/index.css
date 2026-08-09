@@ -1539,12 +1539,19 @@ textarea:focus-visible,
 
 .home-route-fallback-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  /* 列固定 150px 匹配真实 ArchiveGrid 卡片宽度，避免 1fr 拉伸 */
+  grid-template-columns: repeat(auto-fill, 150px);
+  justify-content: center;
   gap: 16px;
 }
 
 .home-route-fallback-card {
   min-width: 0;
+  /* 固定 150px 匹配真实 ArchiveCard，避免 grid 中拉伸 */
+  flex: 0 0 150px;
+  width: 150px;
+  /* 高度对齐真实卡片（cover 210 + 标题区 51.7 + meta），避免完成态跳变 */
+  min-height: 307px;
   overflow: hidden;
   padding: 12px;
   border: 1px solid var(--glass-border);
@@ -1558,7 +1565,8 @@ textarea:focus-visible,
 
 .home-route-fallback-cover {
   width: 100%;
-  aspect-ratio: 150 / 210;
+  /* 固定高度 210 匹配真实 ArchiveCard cover */
+  height: 210px;
   border-radius: 8px;
 }
 
@@ -1619,12 +1627,19 @@ textarea:focus-visible,
 
 .archive-list-loading-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  /* 列固定 150px 匹配真实 ArchiveGrid 卡片宽度，避免 1fr 拉伸 */
+  grid-template-columns: repeat(auto-fill, 150px);
+  justify-content: center;
   gap: 16px;
 }
 
 .archive-list-loading-card {
   min-width: 0;
+  /* 固定 150px 匹配真实 ArchiveCard（border-box），避免在 flex/grid 中拉伸 */
+  flex: 0 0 150px;
+  width: 150px;
+  /* 高度对齐真实卡片（cover 210 + 标题区 51.7 + meta），避免完成态跳变 */
+  min-height: 307px;
   overflow: hidden;
   padding: 12px;
   border: 1px solid var(--glass-border);
@@ -1636,16 +1651,20 @@ textarea:focus-visible,
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
   gap: 10px;
+  /* 紧凑模式高度由内容决定，不继承标准卡片的 307px min-height */
+  min-height: 0;
 }
 
 .archive-list-loading-cover {
   width: 100%;
-  aspect-ratio: 150 / 210;
+  /* 固定高度 210 匹配真实 ArchiveCard cover */
+  height: 210px;
   border-radius: 8px;
 }
 
 .archive-list-loading-card.is-compact .archive-list-loading-cover {
   aspect-ratio: 1;
+  height: auto;
   grid-row: span 2;
 }
 
@@ -1663,6 +1682,7 @@ textarea:focus-visible,
 
 .recommendation-loading-card {
   box-sizing: border-box;
+  /* 真实 ArchiveCard shell 是 border-box 宽 150，骨架保持一致，避免拉伸 */
   flex: 0 0 150px;
   width: 150px;
   min-width: 150px;
@@ -1676,7 +1696,8 @@ textarea:focus-visible,
 
 .recommendation-loading-cover {
   width: 100%;
-  aspect-ratio: 150 / 210;
+  /* 固定高度 210 匹配真实 ArchiveCard cover，避免 aspect-ratio 在内容宽下变矮 */
+  height: 210px;
   border-radius: 8px;
 }
 
@@ -4015,6 +4036,19 @@ textarea:focus-visible,
   animation: archive-wide-reveal 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* 推荐栏 carousel 的宽幅卡片：骨架（标准宽）换成宽幅卡片时播放展开动画 */
+.component-content-fade > .archive-card-wrap.is-wide {
+  width: min(var(--archive-wide-card-width, 316px), 100%);
+  max-width: 100%;
+}
+.component-content-fade > .archive-card-wrap.is-wide > .archive-card-shell {
+  width: 100% !important;
+  min-width: 0 !important;
+  margin-inline: auto;
+  transform-origin: center center;
+  animation: archive-wide-reveal 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .dedupe-groups-grid {
   display: flex;
   flex-wrap: wrap;
@@ -4770,7 +4804,10 @@ textarea:focus-visible,
 .upload-results-heading p { margin: 4px 0 0; color: var(--text-sub); font-size: 12px; }
 .upload-title-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
 
-.upload-method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: stretch; }
+.upload-mode-tabs { max-width: 360px; }
+.upload-mode-hint { margin: 0; color: var(--text-sub); font-size: 12px; }
+.upload-results-actions { display: flex; gap: 8px; align-items: center; }
+.upload-results-actions .upload-primary-action { width: auto; }
 .upload-panel { padding: 22px; display: flex; flex-direction: column; gap: 15px; }
 .upload-section-heading { padding-bottom: 13px; border-bottom: 1px solid var(--glass-border); color: var(--accent); }
 .upload-section-heading h2 { color: var(--text-main); font-size: 17px; }

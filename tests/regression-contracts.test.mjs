@@ -958,7 +958,7 @@ test('archive mutations synchronize catalog and short search caches after succes
 
   assert.match(deletion, /archiveOperation:\s*async \(\) =>\s*assertArchiveDeletionResult\(await lrrApi\.deleteArchive\(archiveId\)\)[\s\S]{0,500}removeArchivesFromCatalog\(archiveId\);[\s\S]{0,200}clearArchiveSearchResponseCache\(\);/);
   assert.match(metadataPage, /await lrrApi\.updateArchiveMetadata[\s\S]{0,500}rememberArchiveInCatalog\([\s\S]{0,200}markArchiveCatalogDirty\(\)/);
-  assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,300}uploadResults\.some[\s\S]{0,200}markArchiveCatalogDirty\(\)/);
+  assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,600}uploadResults\.some[\s\S]{0,200}markArchiveCatalogDirty\(\)/);
   assert.match(progressActions, /rememberArchiveProgressInCatalog\(id, result\.page/);
   assert.match(reader, /await lrrApi\.updateProgress\(id, targetPage[\s\S]{0,300}rememberArchiveProgressInCatalog\(id, targetPage/);
   assert.doesNotMatch(progressActions, /clearArchiveSearchResponseCache|clearSearchCache/);

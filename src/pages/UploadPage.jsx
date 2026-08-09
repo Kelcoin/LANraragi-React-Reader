@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { lrrApi } from '../lib/api';
 import { navigateHome, navigateToArchive, navigateToMetadata } from '../lib/navigation';
 import {
-  dedupeUploadFiles,
   partitionUploadFiles,
   matchDownloadPlugin,
   normalizeDownloadPlugins,
@@ -43,7 +42,7 @@ function statusTitle(status) {
 
 export default function UploadPage() {
   const fileInputRef = useRef(null);
-  const [files, setFiles] = useState([]);
+  const [mode, setMode] = useState('local');
   const [urlText, setUrlText] = useState('');
   const [pluginValue, setPluginValue] = useState('auto');
   const [pluginState, setPluginState] = useState({ plugins: [], options: [{ label: '自动匹配', value: 'auto' }], warnings: [] });
@@ -89,7 +88,23 @@ export default function UploadPage() {
 
   const addFiles = useCallback((incoming) => {
     const { accepted, rejected } = partitionUploadFiles(incoming);
-    setFiles(current => dedupeUploadFiles([...current, ...accepted]));
+    if (accepted.length) {
+      setResults(current => {
+        const existing = new Set(current.filter((item) => item.type === 'file').map((item) => item.label));
+        const next = accepted
+          .filter((file) => !existing.has(file.name))
+          .map((file, index) => ({
+            id: taskKey('file', file.name, current.length + index),
+            type: 'file',
+            label: file.name,
+            file,
+            status: 'queued',
+            progress: 0,
+            message: '',
+          }));
+        return [...current, ...next];
+      });
+    }
     setNotice(rejected.length ? `已忽略不支持的文件：${rejected.map((file) => file.name).join('、')}` : '');
   }, []);
 
@@ -102,8 +117,9 @@ export default function UploadPage() {
   }, []);
 
   const updateTask = useCallback((update) => {
-    setResults(current => current.map((item, index) => {
-      if (index !== update.index) return item;
+    const updateId = update.item?.id;
+    setResults(current => current.map((item) => {
+      if (updateId == null || item.id !== updateId) return item;
       const archive = update.status === 'success'
         ? archiveFromUploadResponse(update.value, item.label)
         : null;
@@ -199,32 +215,35 @@ export default function UploadPage() {
     }
   }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, clearSearchCache]);
 
-  const runFiles = async () => {
-    if (running || files.length === 0) return;
-    const tasks = files.map((file, index) => ({ id: taskKey('file', file.name, index), label: file.name, file }));
-    setResults(tasks.map(task => ({ ...task, type: 'file', status: 'queued', progress: 0, message: '' })));
-    setRunning(true);
-    try {
-      const uploadResults = await runUploadTasks(tasks, (task, index, updateProgress) => (
-        lrrApi.uploadArchive(task.file, { onProgress: updateProgress })
-      ), updateTask);
-      if (uploadResults.some((result) => result.status === 'success')) markArchiveCatalogDirty();
-      await clearSearchCache();
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  const runUrls = async () => {
-    if (running || (parsedUrls.valid.length === 0 && parsedUrls.invalid.length === 0)) return;
+  const addUrls = useCallback(() => {
     const invalidResults = parsedUrls.invalid.map((url, index) => ({
-      id: taskKey('invalid', url, index), type: 'url', label: url, status: 'failed', message: '只支持有效的 HTTP 或 HTTPS URL',
+      id: taskKey('invalid', url, index), type: 'url', label: url, status: 'failed', message: '只支持有效的 HTTP 或 HTTPS URL', progress: 100,
     }));
-    const tasks = parsedUrls.valid.map((url, index) => ({ id: taskKey('url', url, index), label: url, url }));
-    setResults([...tasks.map(task => ({ ...task, type: 'url', status: 'queued', progress: 0, message: '' })), ...invalidResults.map(item => ({ ...item, progress: 100 }))]);
+    const validTasks = parsedUrls.valid.map((url, index) => ({
+      id: taskKey('url', url, index), type: 'url', label: url, url, status: 'queued', progress: 0, message: '',
+    }));
+    if (validTasks.length === 0 && invalidResults.length === 0) return;
+    setResults(current => {
+      const existing = new Set(current.map((item) => item.label));
+      return [
+        ...current,
+        ...validTasks.filter((task) => !existing.has(task.label)),
+        ...invalidResults.filter((task) => !existing.has(task.label)),
+      ];
+    });
+    setUrlText('');
+  }, [parsedUrls.invalid, parsedUrls.valid]);
+
+  const runPending = useCallback(async () => {
+    if (running) return;
+    const tasks = results.filter((item) => item.status === 'queued');
+    if (tasks.length === 0) return;
     setRunning(true);
     try {
-      const uploadResults = await runUploadTasks(tasks, async (task) => {
+      const uploadResults = await runUploadTasks(tasks, async (task, index, updateProgress) => {
+        if (task.type === 'file') {
+          return lrrApi.uploadArchive(task.file, { onProgress: updateProgress });
+        }
         const plugin = pluginValue === 'auto'
           ? matchDownloadPlugin(task.url, pluginState.plugins)
           : pluginState.plugins.find(item => item.value === pluginValue);
@@ -236,7 +255,7 @@ export default function UploadPage() {
     } finally {
       setRunning(false);
     }
-  };
+  }, [running, results, pluginValue, pluginState.plugins, updateTask, clearSearchCache]);
 
   const goBack = () => {
     if (window.history.length > 1) window.history.back();
@@ -253,74 +272,91 @@ export default function UploadPage() {
         <button type="button" className="btn" onClick={goBack} disabled={running}>返回</button>
       </header>
 
-      <div className="upload-method-grid">
-        <section className="glass-panel upload-panel">
-          <div className="upload-section-heading">
-            <ToolbarGlyph name="upload" size={20} />
-            <div><h2>从本地添加</h2><p>支持一次选择多个档案文件</p></div>
-          </div>
-          <input ref={fileInputRef} type="file" multiple accept={ACCEPTED_FILES} aria-label="选择档案文件" hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
-          <div
-            className={`upload-dropzone${dragActive ? ' is-dragging' : ''}`}
-            role="button"
-            tabIndex={0}
-            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInputRef.current?.click(); } }}
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={event => { event.preventDefault(); setDragActive(true); }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={event => { event.preventDefault(); setDragActive(false); addFiles(event.dataTransfer.files); }}
-          >
-            <ToolbarGlyph name="upload" size={34} />
-            <strong>选择文件或拖放到这里</strong>
-            <span>ZIP、CBZ、RAR、CBR、7Z、PDF</span>
-          </div>
-          {files.length > 0 && <div className="upload-file-list">
-            {files.map((file, index) => <div key={taskKey('selected', file.name, index)} className="upload-file-row">
-              <span title={file.name}>{file.name}</span>
-              <small>{file.size >= 1048576 ? `${(file.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`}</small>
-              <button type="button" aria-label={`移除 ${file.name}`} onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))} disabled={running}>×</button>
-            </div>)}
-          </div>}
-          <button type="button" className="btn upload-primary-action" onClick={runFiles} disabled={running || files.length === 0}>
-            {running ? '任务执行中…' : `上传所选文件${files.length ? `（${files.length}）` : ''}`}
-          </button>
-        </section>
-
-        <section className="glass-panel upload-panel">
-          <div className="upload-section-heading">
-            <ToolbarGlyph name="cloudDownload" size={20} />
-            <div><h2>从互联网添加</h2><p>自动根据插件正则匹配每个 URL</p></div>
-          </div>
-          <label className="upload-field-label">下载插件</label>
-          <CustomSelect
-            value={pluginValue}
-            options={pluginState.options}
-            onChange={setPluginValue}
-            style={running ? { pointerEvents: 'none', opacity: 0.55 } : undefined}
-          />
-          {(pluginStatus || pluginState.warnings.length > 0) && <div className="upload-notice">
-            {pluginStatus && <div>{pluginStatus}</div>}
-            {pluginState.warnings.map(warning => <div key={warning}>{warning}</div>)}
-          </div>}
-          <label className="upload-field-label" htmlFor="upload-urls">要下载的 URL（一行一个）</label>
-          <textarea id="upload-urls" className="input-glass upload-url-input" value={urlText} onChange={event => setUrlText(event.target.value)} placeholder={'https://example.com/gallery/123\nhttps://example.com/gallery/456'} disabled={running} />
-          <div className="upload-url-summary">
-            <span>{parsedUrls.valid.length} 个有效 URL</span>
-            {parsedUrls.invalid.length > 0 && <span className="is-error">{parsedUrls.invalid.length} 个无效 URL</span>}
-            {unmatchedUrlCount > 0 && <span className="is-error">{unmatchedUrlCount} 个未匹配插件</span>}
-          </div>
-          <button type="button" className="btn upload-primary-action" onClick={runUrls} disabled={running || (!parsedUrls.valid.length && !parsedUrls.invalid.length)}>
-            {running ? '任务执行中…' : '从 URL 添加'}
-          </button>
-        </section>
+      <div className="settings-category-tabs upload-mode-tabs" role="tablist" aria-label="添加入口">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'local'}
+          className={`settings-category-tab upload-mode-tab${mode === 'local' ? ' is-active' : ''}`}
+          onClick={() => setMode('local')}
+          disabled={running}
+        >本地添加</button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'url'}
+          className={`settings-category-tab upload-mode-tab${mode === 'url' ? ' is-active' : ''}`}
+          onClick={() => setMode('url')}
+          disabled={running}
+        >从互联网添加</button>
       </div>
+
+      <section className="glass-panel upload-panel">
+        {mode === 'local' ? (
+          <>
+            <div className="upload-section-heading">
+              <ToolbarGlyph name="upload" size={20} />
+              <div><h2>从本地添加</h2><p>支持一次选择多个档案文件</p></div>
+            </div>
+            <input ref={fileInputRef} type="file" multiple accept={ACCEPTED_FILES} aria-label="选择档案文件" hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
+            <div
+              className={`upload-dropzone${dragActive ? ' is-dragging' : ''}`}
+              role="button"
+              tabIndex={0}
+              onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInputRef.current?.click(); } }}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={event => { event.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={event => { event.preventDefault(); setDragActive(false); addFiles(event.dataTransfer.files); }}
+            >
+              <ToolbarGlyph name="upload" size={34} />
+              <strong>选择文件或拖放到这里</strong>
+              <span>ZIP、CBZ、RAR、CBR、7Z、PDF</span>
+            </div>
+            <p className="upload-mode-hint">选择的文件会加入下方任务列表，点击「开始处理」统一上传。</p>
+          </>
+        ) : (
+          <>
+            <div className="upload-section-heading">
+              <ToolbarGlyph name="cloudDownload" size={20} />
+              <div><h2>从互联网添加</h2><p>自动根据插件正则匹配每个 URL</p></div>
+            </div>
+            <label className="upload-field-label">下载插件</label>
+            <CustomSelect
+              value={pluginValue}
+              options={pluginState.options}
+              onChange={setPluginValue}
+              style={running ? { pointerEvents: 'none', opacity: 0.55 } : undefined}
+            />
+            {(pluginStatus || pluginState.warnings.length > 0) && <div className="upload-notice">
+              {pluginStatus && <div>{pluginStatus}</div>}
+              {pluginState.warnings.map(warning => <div key={warning}>{warning}</div>)}
+            </div>}
+            <label className="upload-field-label" htmlFor="upload-urls">要下载的 URL（一行一个）</label>
+            <textarea id="upload-urls" className="input-glass upload-url-input" value={urlText} onChange={event => setUrlText(event.target.value)} placeholder={'https://example.com/gallery/123\nhttps://example.com/gallery/456'} disabled={running} />
+            <div className="upload-url-summary">
+              <span>{parsedUrls.valid.length} 个有效 URL</span>
+              {parsedUrls.invalid.length > 0 && <span className="is-error">{parsedUrls.invalid.length} 个无效 URL</span>}
+              {unmatchedUrlCount > 0 && <span className="is-error">{unmatchedUrlCount} 个未匹配插件</span>}
+            </div>
+            <button type="button" className="btn upload-primary-action" onClick={addUrls} disabled={running || (!parsedUrls.valid.length && !parsedUrls.invalid.length)}>
+              添加到队列
+            </button>
+          </>
+        )}
+      </section>
 
       {notice && <div className="upload-notice" role="status">{notice}</div>}
 
       {results.length > 0 && <section className="glass-panel upload-results" aria-live="polite">
         <div className="upload-results-heading">
           <div><h2>任务状态</h2><p>{completedCount} / {results.length} 已完成</p></div>
-          {!running && <button type="button" className="btn" onClick={() => setResults([])}>清空结果</button>}
+          <div className="upload-results-actions">
+            {results.some((item) => item.status === 'queued') && !running && (
+              <button type="button" className="btn upload-primary-action" onClick={runPending}>开始处理（{results.filter((item) => item.status === 'queued').length}）</button>
+            )}
+            {!running && <button type="button" className="btn" onClick={() => setResults([])}>清空结果</button>}
+          </div>
         </div>
         <div className="upload-progress"><span style={{ width: `${totalProgress}%` }} /></div>
         <div className="upload-task-list">
