@@ -39,6 +39,11 @@ import { reduceArchiveRefreshPhase } from '../lib/archiveRefreshMotion';
 import { ARCHIVE_PROGRESS_VISIBILITY, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
 import { consumeArchiveCatalogDirty } from '../lib/archiveMetadataCache';
+import { ARCHIVE_CARD_COVER_HEIGHT, ARCHIVE_CARD_META_GAP, ARCHIVE_CARD_META_ROW_HEIGHT, ARCHIVE_CARD_TITLE_GAP, ARCHIVE_CARD_TITLE_SLOT_HEIGHT, ARCHIVE_CARD_WIDTH } from '../lib/archiveGridLayout';
+
+const TOAST_DURATION_MS = 3600;
+const TOAST_ERROR_DURATION_MS = 7000;
+const TOAST_CLOSE_MS = 280;
 
 const HOME_COLLAPSE_STORAGE_KEYS = {
   history: 'lrr_home_collapsed_history',
@@ -79,12 +84,23 @@ const FILTER_ACTIONS_MIN_WIDTH = 320;
 const FILTER_LAYOUT_GAP = 12;
 const FILTER_STACK_BREAKPOINT = FILTER_INPUT_MIN_WIDTH + FILTER_ACTIONS_MIN_WIDTH + FILTER_LAYOUT_GAP;
 const HOME_NARROW_MAX_WIDTH = 720;
+const HOME_MAX_WIDTH = 1680;
 const HOME_CAROUSEL_EXPANDED_HEIGHT = '420px';
 const UNTAGGED_CATEGORY_ID = '__untagged__';
 const UNTAGGED_CATEGORY = Object.freeze({ id: UNTAGGED_CATEGORY_ID, name: '无标签' });
 
 function getHomeCarouselPadding(isNarrow) {
   return `12px ${isNarrow ? 14 : 20}px 20px`;
+}
+
+function getRandomSkeletonCount(viewportWidth, isNarrow) {
+  const safeViewportWidth = Number.isFinite(viewportWidth) ? Math.max(0, viewportWidth) : 0;
+  const shellWidth = Math.min(safeViewportWidth, HOME_MAX_WIDTH);
+  const shellPadding = isNarrow ? 20 : 40;
+  const carouselPadding = isNarrow ? 28 : 40;
+  const gap = isNarrow ? 10 : 16;
+  const availableWidth = Math.max(ARCHIVE_CARD_WIDTH, shellWidth - shellPadding - carouselPadding);
+  return Math.max(5, Math.ceil((availableWidth + gap) / (ARCHIVE_CARD_WIDTH + gap)));
 }
 
 function readFilter() {
@@ -232,11 +248,12 @@ function shouldRevalidateHydratedRandoms(snapshot, boot) {
 const DEFAULT_FILTER = { query: '', sortBy: 'date_added', order: 'desc', active: false };
 const bootState = getBootState();
 
-function SkeletonCard({ showProgress = false, fillWidth = false }) {
+function SkeletonCard({ showProgress = false }) {
   return (
     <div style={{
-      flex: fillWidth ? '1 1 0' : '0 0 150px',
-      minWidth: '150px', width: fillWidth ? 'auto' : '150px',
+      flex: `0 0 ${ARCHIVE_CARD_WIDTH}px`,
+      minWidth: `${ARCHIVE_CARD_WIDTH}px`, width: `${ARCHIVE_CARD_WIDTH}px`,
+      boxSizing: 'border-box',
       background: 'var(--surface-1)',
       borderRadius: 'var(--radius-card)',
       border: '1px solid var(--glass-border)',
@@ -244,7 +261,7 @@ function SkeletonCard({ showProgress = false, fillWidth = false }) {
       overflow: 'hidden',
     }}>
       <div style={{
-        width: '100%', height: '210px',
+        width: '100%', height: `${ARCHIVE_CARD_COVER_HEIGHT}px`,
         borderRadius: '8px',
         background: 'var(--reader-skeleton-base)',
         position: 'relative',
@@ -255,18 +272,21 @@ function SkeletonCard({ showProgress = false, fillWidth = false }) {
       {showProgress && (
         <div style={{ width: '100%', height: '3px', marginTop: '2px', borderRadius: 'var(--radius-chip)', background: 'var(--accent-soft)' }} />
       )}
+      <div style={{ marginTop: `${ARCHIVE_CARD_TITLE_GAP}px`, height: `${ARCHIVE_CARD_TITLE_SLOT_HEIGHT}px`, overflow: 'hidden' }}>
+        <div style={{
+          height: '12px', borderRadius: '4px',
+          background: 'var(--reader-skeleton-base)',
+          width: '84%',
+        }} />
+        <div style={{
+          height: '12px', borderRadius: '4px',
+          background: 'var(--reader-skeleton-base)',
+          width: '66%', marginTop: '8px',
+        }} />
+      </div>
       <div style={{
-        height: '12px', borderRadius: '4px',
-        background: 'var(--reader-skeleton-base)',
-        width: '84%', marginTop: '12px',
-      }} />
-      <div style={{
-        height: '12px', borderRadius: '4px',
-        background: 'var(--reader-skeleton-base)',
-        width: '66%', marginTop: '8px',
-      }} />
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', marginTop: '10px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        height: `${ARCHIVE_CARD_META_ROW_HEIGHT}px`, marginTop: `${ARCHIVE_CARD_META_GAP}px`,
       }}>
         <div style={{
           height: '8px', borderRadius: '4px',
@@ -421,7 +441,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [historySyncing, setHistorySyncing] = useState(false);
   const [watchlistChecking, setWatchlistChecking] = useState(false);
   const [ehCookieChecking, setEhCookieChecking] = useState(false);
-  const [ehCookieCheck, setEhCookieCheck] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const statusTimersRef = useRef(new Map());
+  const statusIdRef = useRef(0);
 
   const [cfgWorkerUrl, setCfgWorkerUrl] = useState(getWorkerUrl());
   const [cfgSyncToken, setCfgSyncToken] = useState(getSyncToken());
@@ -673,18 +695,52 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, []);
 
+  useEffect(() => {
+    return () => {
+      statusTimersRef.current.forEach(clearTimeout);
+      statusTimersRef.current.clear();
+    };
+  }, []);
+
+  const clearStatusTimer = useCallback((id) => {
+    const timer = statusTimersRef.current.get(id);
+    if (timer) clearTimeout(timer);
+    statusTimersRef.current.delete(id);
+  }, []);
+
+  const closeStatus = useCallback((id) => {
+    clearStatusTimer(id);
+    setToasts(current => current.map((toast) => (
+      toast.id === id ? { ...toast, closing: true } : toast
+    )));
+    const timer = setTimeout(() => {
+      statusTimersRef.current.delete(id);
+      setToasts(current => current.filter((toast) => toast.id !== id));
+    }, TOAST_CLOSE_MS);
+    statusTimersRef.current.set(id, timer);
+  }, [clearStatusTimer]);
+
+  const showStatus = useCallback((text, type = 'info', { autoHide = true, duration = type === 'error' ? TOAST_ERROR_DURATION_MS : TOAST_DURATION_MS } = {}) => {
+    statusIdRef.current += 1;
+    const id = statusIdRef.current;
+    setToasts(current => [...current, { id, text, type, closing: false, autoHide, duration }]);
+    if (autoHide) {
+      const timer = setTimeout(() => closeStatus(id), duration);
+      statusTimersRef.current.set(id, timer);
+    }
+  }, [closeStatus]);
+
   const handleCheckEhCookie = useCallback(async () => {
     const cookie = String(readerSettings.ehCookie || '').trim();
     if (!hasValidEhCookie(cookie)) {
-      setEhCookieCheck({ error: '请先填写包含 ipb_member_id 和 ipb_pass_hash 的 Cookie。' });
+      showStatus('请先填写包含 ipb_member_id 和 ipb_pass_hash 的 Cookie。', 'error');
       return;
     }
     if (!hasValidWorkerConfig(cfgWorkerUrl, cfgSyncToken)) {
-      setEhCookieCheck({ error: '请先填写有效的 Worker 端点和访问 Token。' });
+      showStatus('请先填写有效的 Worker 端点和访问 Token。', 'error');
       return;
     }
     setEhCookieChecking(true);
-    setEhCookieCheck(null);
     try {
       const response = await fetch(`${cfgWorkerUrl.replace(/\/$/, '')}/eh/check`, {
         method: 'POST',
@@ -694,13 +750,17 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || data?.error || `检测失败（HTTP ${response.status}）`);
       if (data.cookie && data.cookie !== cookie) updateReaderSettings((settings) => ({ ...settings, ehCookie: data.cookie }));
-      setEhCookieCheck(data);
+      const eOk = !!data.eHentai?.ok;
+      const xOk = !!data.exHentai?.ok;
+      const updated = data.refreshed || (data.cookie && data.cookie !== cookie);
+      const text = `E-Hentai：${eOk ? '正常' : '失败'}；ExHentai：${xOk ? '正常' : '失败'}${updated ? '；已更新 igneous' : ''}`;
+      showStatus(text, eOk && xOk ? 'success' : 'info');
     } catch (error) {
-      setEhCookieCheck({ error: error?.message || '检测失败。' });
+      showStatus(error?.message || '检测失败。', 'error');
     } finally {
       setEhCookieChecking(false);
     }
-  }, [cfgSyncToken, cfgWorkerUrl, readerSettings.ehCookie, updateReaderSettings]);
+  }, [cfgSyncToken, cfgWorkerUrl, readerSettings.ehCookie, updateReaderSettings, showStatus]);
 
   const watchlistWithProgress = useMemo(() => mergeWatchlistProgress(watchlist, history), [history, watchlist]);
   const watchlistAutoRemoveIds = useMemo(() => getWatchlistAutoRemoveIds(watchlistWithProgress), [watchlistWithProgress]);
@@ -2069,6 +2129,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const handleRemoveHistory = useCallback(() => {
     removeHistoryArchive(historyDeleteTarget);
   }, [historyDeleteTarget, removeHistoryArchive]);
+  const randomSkeletonCount = getRandomSkeletonCount(window.innerWidth, isNarrow);
 
   return (
     <>
@@ -2109,7 +2170,22 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         border-radius: 4px;
       }
     `}</style>
-    <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: '1680px', margin: '0 auto' }}>
+    <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: `${HOME_MAX_WIDTH}px`, margin: '0 auto' }}>
+      <div className="metadata-toast-stack" aria-live="polite">
+        {toasts.map(status => (
+          <div
+            key={status.id}
+            className={`metadata-status-card is-${status.type}${status.closing ? ' is-closing' : ''}`}
+            role={status.type === 'error' ? 'alert' : 'status'}
+            style={{ '--toast-duration': `${status.duration}ms` }}
+          >
+            <span className="metadata-status-icon" aria-hidden="true">{status.type === 'success' ? '✓' : status.type === 'error' ? '!' : 'i'}</span>
+            <span className="metadata-status-text">{status.text}</span>
+            <button type="button" className="metadata-status-close" aria-label="关闭提示" onClick={() => closeStatus(status.id)}>×</button>
+            {status.autoHide && <span className="metadata-status-progress" aria-hidden="true" />}
+          </div>
+        ))}
+      </div>
       <div className="home-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '18px', marginBottom: '32px', flexWrap: 'wrap' }}>
         <div className="home-brand">
           <h1 className="home-brand-title" translate="no" aria-label="Readoshi" style={{ fontWeight: 600, margin: '0 0 8px 0', fontSize: '28px', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2349,8 +2425,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsRefreshing ? 0.72 : 1 }}>刷新</button>
           </div>
           <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'contain', padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px', position: 'relative', zIndex: 1 }} className="no-scrollbar">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <SkeletonCard key={`rsk-${i}`} fillWidth showProgress={showGlobalArchiveProgress} />
+            {Array.from({ length: randomSkeletonCount }).map((_, i) => (
+              <SkeletonCard key={`rsk-${i}`} showProgress={showGlobalArchiveProgress} />
             ))}
           </div>
         </section>
@@ -2369,8 +2445,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           </div>
           <div style={{ overflow: 'hidden', transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)', maxHeight: randomCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
             <div ref={randomScroller.ref} onWheelCapture={randomScroller.onWheelCapture} onScroll={randomScroller.onScroll} onMouseDown={randomScroller.onMouseDown} onClickCapture={randomScroller.onClickCapture} onDragStart={randomScroller.onDragStart} style={{ display: 'flex', gap: isNarrow ? '10px' : '16px', overflowX: 'auto', overflowY: 'hidden', padding: getHomeCarouselPadding(isNarrow), position: 'relative', zIndex: 1, ...randomScroller.getTouchScrollStyle(), ...randomScroller.getMouseScrollStyle() }} className="no-scrollbar">
-              {randomsRefreshing ? Array.from({ length: Math.max(5, Math.min(8, randoms.length || 5)) }).map((_, i) => (
-                <SkeletonCard key={`rrsk-${i}`} fillWidth showProgress={showGlobalArchiveProgress} />
+              {randomsRefreshing ? Array.from({ length: randomSkeletonCount }).map((_, i) => (
+                <SkeletonCard key={`rrsk-${i}`} showProgress={showGlobalArchiveProgress} />
               )) : randoms.map(arc => (
                 <ArchiveCard key={`rnd-${arc.arcid}`} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
@@ -2834,11 +2910,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                         {ehCookieChecking ? '检测中' : '检测'}
                       </button>
                     </div>
-                    {ehCookieCheck && (
-                      <div className={`eh-cookie-check-result${ehCookieCheck.error ? ' is-error' : ''}`} role="status">
-                        {ehCookieCheck.error || `E-Hentai：${ehCookieCheck.eHentai?.ok ? '正常' : '失败'}；ExHentai：${ehCookieCheck.exHentai?.ok ? '正常' : '失败'}${ehCookieCheck.refreshed ? '；已更新 igneous' : ''}`}
-                      </div>
-                    )}
                   </div>
                   <label className="settings-row">
                     <SettingHint text={'作用：隐藏低于此分数的评论。\n填 0：显示全部评论，不按分数过滤。'}>最低展示分数</SettingHint>

@@ -172,6 +172,24 @@ test('drag and drop keeps only supported archive files', () => {
   assert.deepEqual(result.rejected.map((file) => file.name), ['notes.txt']);
 });
 
+test('upload URL tasks deduplicate new valid URLs against the queue', () => {
+  assert.equal(typeof upload.createUploadUrlTasks, 'function', 'createUploadUrlTasks must exist');
+  const tasks = upload.createUploadUrlTasks([
+    'https://example.test/one',
+    'https://example.test/one',
+    'https://example.test/two',
+  ], new Set(['https://example.test/two']));
+
+  assert.deepEqual(tasks, [{
+    type: 'url',
+    label: 'https://example.test/one',
+    url: 'https://example.test/one',
+    status: 'queued',
+    progress: 0,
+    message: '',
+  }]);
+});
+
 test('upload tasks report per-item progress from the worker callback', async () => {
   const updates = [];
   const tasks = [{ id: 'one' }, { id: 'two' }];
@@ -212,6 +230,16 @@ test('config import ignores non-string field values', () => {
   } finally {
     globalThis.localStorage = previousStorage;
   }
+});
+
+test('isBase64ConfigEncoded only accepts a Readoshi base64 config', () => {
+  const enc = (value) => btoa(new TextEncoder().encode(value).reduce((s, b) => s + String.fromCharCode(b), ''));
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc(JSON.stringify({ lrr_api_key: 'k' }))), true);
+  assert.equal(workerConfig.isBase64ConfigEncoded('随便的文本不是配置'), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(''), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc('not json')), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc('[]')), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc('{}')), false);
 });
 
 test('config transfer includes the random hide-read setting', () => {

@@ -83,7 +83,7 @@ function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
   return (
     <ArchiveGrid className="archive-list-loading-grid" displayMode={displayMode} aria-busy="true">
       {Array.from({ length: count }, (_, index) => (
-        <div className="archive-list-loading-card" key={`history-loading-${index}`}>
+        <div className={`archive-list-loading-card${displayMode === 'compact' ? ' is-compact' : ''}`} key={`history-loading-${index}`}>
           <div className="archive-list-loading-cover shimmer-strip" />
           <div className="archive-list-loading-line shimmer-strip" />
           <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />

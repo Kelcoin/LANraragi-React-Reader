@@ -87,6 +87,18 @@ export function exportConfig(overrides = {}, selectedKeys = CONFIG_KEYS) {
   return encodeUtf8Base64(JSON.stringify(cfg));
 }
 
+export function isBase64ConfigEncoded(encoded) {
+  if (!encoded || typeof encoded !== 'string') return false;
+  const trimmed = encoded.trim();
+  if (!trimmed) return false;
+  try {
+    const cfg = JSON.parse(decodeUtf8Base64(trimmed));
+    return !!cfg && typeof cfg === 'object' && !Array.isArray(cfg) && Object.keys(cfg).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function importConfig(encoded) {
   let cfg;
   try {

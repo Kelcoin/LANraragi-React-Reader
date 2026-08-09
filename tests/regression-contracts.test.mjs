@@ -61,13 +61,29 @@ test('reader incognito mode skips reading progress, history, and cold-restore sn
   assert.match(reader, /if \(persistReadingProgress && shouldPersistArchiveReadingProgress\(hasArchiveProgressMarker\(archiveId\), highestPage\)\)/);
 });
 
-test('random roam skeletons fill the carousel row when space allows', () => {
+test('random roam skeletons fill the carousel and match archive card geometry', () => {
   const home = read('src/pages/Home.jsx');
-  assert.match(home, /function SkeletonCard\(\{ showProgress = false, fillWidth = false \}\)/);
-  assert.match(home, /flex: fillWidth \? '1 1 0' : '0 0 150px'/);
-  assert.match(home, /rsk-\$\{i\}/);
-  assert.match(home, /rrsk-\$\{i\}/);
-  assert.match(home, /<SkeletonCard[^>]+fillWidth[^>]+showProgress=/);
+  const card = read('src/components/ArchiveCard.jsx');
+  assert.match(home, /import \{[^}]*ARCHIVE_CARD_WIDTH[^}]*\} from '..\/lib\/archiveGridLayout';/);
+  assert.match(home, /function getRandomSkeletonCount\(viewportWidth, isNarrow\) \{/);
+  assert.match(home, /Math\.ceil\(\(availableWidth \+ gap\) \/ \(ARCHIVE_CARD_WIDTH \+ gap\)\)/);
+  assert.match(home, /const randomSkeletonCount = getRandomSkeletonCount\(window\.innerWidth, isNarrow\);/);
+  assert.match(home, /function SkeletonCard\(\{ showProgress = false \}\)/);
+  assert.match(home, /flex: `0 0 \$\{ARCHIVE_CARD_WIDTH\}px`/);
+  assert.match(home, /width: `\$\{ARCHIVE_CARD_WIDTH\}px`/);
+  assert.match(home, /minWidth: `\$\{ARCHIVE_CARD_WIDTH\}px`/);
+  assert.match(home, /boxSizing: 'border-box'/);
+  assert.match(home, /height: `\$\{ARCHIVE_CARD_COVER_HEIGHT\}px`/);
+  assert.match(home, /marginTop: `\$\{ARCHIVE_CARD_TITLE_GAP\}px`, height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.match(home, /height: `\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`, marginTop: `\$\{ARCHIVE_CARD_META_GAP\}px`/);
+  assert.equal((home.match(/Array\.from\(\{ length: randomSkeletonCount \}\)/g) || []).length, 2);
+  assert.doesNotMatch(home, /fillWidth/);
+  assert.doesNotMatch(home, /Array\.from\(\{ length: 5 \}\)/);
+  assert.doesNotMatch(home, /Math\.max\(5, Math\.min\(8, randoms\.length \|\| 5\)\)/);
+  assert.match(card, /height: `\$\{ARCHIVE_CARD_COVER_HEIGHT\}px`/);
+  assert.match(card, /height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.match(card, /minWidth: isWide \? `\$\{wideCardWidth\}px` : `\$\{ARCHIVE_CARD_WIDTH\}px`/);
+  assert.match(card, /width: isWide \? `\$\{wideCardWidth\}px` : `\$\{ARCHIVE_CARD_WIDTH\}px`/);
 });
 
 test('archive pagination stops by total or empty pages, not a fixed server batch size', () => {
@@ -231,6 +247,7 @@ test('skeleton shimmer keeps a stable base fill and recommendation placeholders 
   assert.match(recommendations, /className="recommendation-loading-card"/);
   assert.match(recommendations, /className="recommendation-loading-cover shimmer-strip"/);
   assert.match(css, /\.recommendation-loading-card\s*\{[^}]*flex:\s*0 0 150px;[^}]*contain:\s*layout paint style;/s);
+  assert.match(css, /\.recommendation-loading-body\s*\{[^}]*min-height:\s*73px;/s);
   assert.doesNotMatch(recommendations, /linear-gradient\(90deg, var\(--reader-skeleton-base\)/);
 });
 
@@ -322,6 +339,53 @@ test('upload result rows keep a stable one-line status layout', () => {
   assert.match(css, /\.upload-status-dot\.is-failed\s*\{[^}]*background:\s*var\(--danger\)/s);
   assert.match(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--glass-border\)/s);
   assert.doesNotMatch(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--danger-border\)/s);
+});
+
+test('upload modes share settings tabs, animate as equal-height layers, and auto-queue URLs', () => {
+  const page = read('src/pages/UploadPage.jsx');
+  const css = read('src/index.css');
+
+  assert.match(page, />从本地添加<\/button>/);
+  assert.match(page, /className="upload-mode-panel-stack"/);
+  assert.match(page, /className=\{`btn settings-category-tab upload-mode-tab\$\{mode === 'local' \? ' is-active' : ''\}`\}/);
+  assert.match(page, /className=\{`upload-mode-panel\$\{mode === 'local' \? ' is-active' : ''\}`\}/);
+  assert.match(page, /createUploadUrlTasks\(\s*parsedUrls\.valid/);
+  assert.match(page, /parsedUrls\.valid\.length === 0/);
+  assert.doesNotMatch(page, /添加到队列/);
+  assert.match(page, /\{running \? '处理中…' : '开始处理'\}/);
+  assert.match(page, /disabled=\{running \|\| clearingResults \|\| queuedTaskCount === 0\}/);
+  assert.match(css, /\.upload-mode-panel-stack\s*\{[^}]*display:\s*grid;/s);
+  assert.match(css, /\.upload-mode-panel\s*\{[^}]*grid-area:\s*1 \/ 1;/s);
+  assert.match(css, /\.upload-mode-panel\.is-active\s*\{[^}]*opacity:\s*1;/s);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.upload-mode-panel[\s\S]*transition:\s*none/s);
+});
+
+test('upload task controls use global buttons and concise list labels', () => {
+  const page = read('src/pages/UploadPage.jsx');
+
+  assert.match(page, /<h2>任务列表<\/h2>/);
+  assert.doesNotMatch(page, /任务状态|completedCount|upload-primary-action/);
+  assert.doesNotMatch(page, /选择的文件会加入下方任务列表，点击「开始处理」统一上传。/);
+  assert.match(page, /className="btn" onClick=\{runPending\} disabled=\{running \|\| clearingResults \|\| queuedTaskCount === 0\}>\s*\{running \? '处理中…' : '开始处理'\}/);
+  assert.match(page, /className="btn" onClick=\{clearResults\} disabled=\{running \|\| clearingResults \|\| results\.length === 0\}>清空列表<\/button>/);
+});
+
+test('upload task rows animate on insert and before list clearing', () => {
+  const page = read('src/pages/UploadPage.jsx');
+  const css = read('src/index.css');
+
+  assert.match(page, /const \[clearingResults, setClearingResults\] = useState\(false\)/);
+  assert.match(page, /setClearingResults\(true\)/);
+  assert.match(page, /setResults\(\[\]\)/);
+  assert.match(page, /if \(mode !== 'url' \|\| running \|\| clearingResults \|\| parsedUrls\.valid\.length === 0\) return;/);
+  assert.match(page, /if \(clearingResults\) return;/);
+  assert.match(page, /window\.clearTimeout\(timer\)/);
+  assert.match(page, /className=\{`upload-task-list\$\{clearingResults \? ' is-clearing' : ''\}`\}/);
+  assert.match(css, /@keyframes uploadTaskReveal/);
+  assert.match(css, /@keyframes uploadTaskDismiss/);
+  assert.match(css, /\.upload-task-row\s*\{[^}]*animation:\s*uploadTaskReveal 220ms ease both;/s);
+  assert.match(css, /\.upload-task-list\.is-clearing \.upload-task-row\s*\{[^}]*animation:\s*uploadTaskDismiss 180ms ease both;/s);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.upload-task-row[\s\S]*animation:\s*none/s);
 });
 
 test('tag suggestion panel hides scrollbars without reserving a hidden gutter', () => {
@@ -766,13 +830,14 @@ test('home archive toolbar count is styled and empty cold restore fetches archiv
 
 test('archive title uses one cross-platform two-line geometry contract', () => {
   const card = read('src/components/ArchiveCard.jsx');
+  const layout = read('src/lib/archiveGridLayout.js');
   const workflow = read('.github/workflows/mobile-build.yml');
-  assert.match(card, /const ARCHIVE_TITLE_GAP = 8;/);
+  assert.match(layout, /export const ARCHIVE_CARD_TITLE_GAP = 8;/);
+  assert.match(layout, /export const ARCHIVE_CARD_TITLE_SLOT_HEIGHT = 43\.7;/);
   assert.match(card, /const ARCHIVE_TITLE_FONT_SIZE = 13;/);
   assert.match(card, /const ARCHIVE_TITLE_LINE_HEIGHT = 1\.5;/);
   assert.match(card, /const ARCHIVE_TITLE_GLYPH_SAFETY_PX = 3;/);
-  assert.match(card, /const ARCHIVE_TITLE_VERTICAL_BUDGET = 51\.7;/);
-  assert.match(card, /height:\s*`\$\{ARCHIVE_TITLE_VERTICAL_BUDGET - ARCHIVE_TITLE_GAP\}px`/);
+  assert.match(card, /height:\s*`\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
   assert.match(card, /WebkitLineClamp:\s*2/);
   assert.match(card, /height:\s*'3em'/);
   assert.match(card, /paddingBottom:\s*`\$\{ARCHIVE_TITLE_GLYPH_SAFETY_PX\}px`/);
@@ -957,7 +1022,7 @@ test('archive mutations synchronize catalog and short search caches after succes
 
   assert.match(deletion, /archiveOperation:\s*async \(\) =>\s*assertArchiveDeletionResult\(await lrrApi\.deleteArchive\(archiveId\)\)[\s\S]{0,500}removeArchivesFromCatalog\(archiveId\);[\s\S]{0,200}clearArchiveSearchResponseCache\(\);/);
   assert.match(metadataPage, /await lrrApi\.updateArchiveMetadata[\s\S]{0,500}rememberArchiveInCatalog\([\s\S]{0,200}markArchiveCatalogDirty\(\)/);
-  assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,300}uploadResults\.some[\s\S]{0,200}markArchiveCatalogDirty\(\)/);
+  assert.match(uploadPage, /const uploadResults = await runUploadTasks[\s\S]{0,600}uploadResults\.some[\s\S]{0,200}markArchiveCatalogDirty\(\)/);
   assert.match(progressActions, /rememberArchiveProgressInCatalog\(id, result\.page/);
   assert.match(reader, /await lrrApi\.updateProgress\(id, targetPage[\s\S]{0,300}rememberArchiveProgressInCatalog\(id, targetPage/);
   assert.doesNotMatch(progressActions, /clearArchiveSearchResponseCache|clearSearchCache/);
@@ -1158,8 +1223,10 @@ test('EH cookie settings provide a Worker-backed check action', () => {
   assert.match(home, /\/eh\/check/);
   assert.match(home, /eh-cookie-check-btn/);
   assert.match(home, /data\.cookie && data\.cookie !== cookie/);
+  assert.match(home, /metadata-toast-stack/);
+  assert.match(home, /showStatus\(/);
   assert.match(worker, /url\.pathname === '\/eh\/check'/);
-  assert.match(worker, /readSetCookieValue\(exHentai\.response, 'igneous'\)/);
+  assert.match(worker, /removeCookieValue\(cookie, 'igneous'\)/);
   assert.match(worker, /writeCookieValue\(cookie, 'igneous', igneous\)/);
   assert.match(css, /\.eh-cookie-input-row\s*\{/);
 });
@@ -1751,12 +1818,12 @@ test('custom palette picker escapes settings clipping, stays above the modal, an
   assert.match(css, /\.theme-color-picker-trigger:hover,[\s\S]*background:\s*var\(--surface-inset\)/s);
 });
 
-test('release version is 1.5.1 across package manifests', () => {
+test('release version is 1.5.2 across package manifests', () => {
   const packageJson = read('package.json');
   const packageLock = read('package-lock.json');
-  assert.match(packageJson, /"version":\s*"1\.5\.1"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.1"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.1"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.1"/);
+  assert.match(packageJson, /"version":\s*"1\.5\.2"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.2"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.2"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.2"/);
 });
 
 test('sync data survives scope switches and failed flushes', () => {

@@ -6,6 +6,7 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Content-Encoding, x-sync-token, x-lrr-server-scope',
+  'Access-Control-Expose-Headers': 'Refresh-Igneous',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -13,7 +14,7 @@ const DEDUPE_KEY_PREFIX = 'dedupe:';
 const SYNC_SCHEMA_VERSION = 3;
 const PROJECT_NAME = 'Readoshi';
 const PROJECT_URL = 'https://github.com/Kelcoin/Readoshi';
-const WORKER_VERSION = '1.1.2';
+const WORKER_VERSION = '1.1.3';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -313,10 +314,23 @@ function writeCookieValue(cookie, name, value) {
   return parts.join('; ');
 }
 
+function removeCookieValue(cookie, name) {
+  return String(cookie || '').split(';').map((part) => part.trim())
+    .filter((part) => part && !part.toLowerCase().startsWith(`${name.toLowerCase()}=`))
+    .join('; ');
+}
+
 function readSetCookieValue(response, name) {
-  const header = response.headers.get('set-cookie') || '';
-  const match = header.match(new RegExp(`(?:^|,\\s*)${name}=([^;,\\s]+)`, 'i'));
-  return match?.[1] || '';
+  // Cloudflare Workers: multiple Set-Cookie headers are only reachable via
+  // getAll; get() returns the first value only and may miss a later cookie.
+  const all = typeof response?.headers?.getAll === 'function'
+    ? response.headers.getAll('set-cookie')
+    : [response.headers?.get('set-cookie') || ''];
+  for (const value of all) {
+    const match = String(value || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;,\\s]+)`, 'i'));
+    if (match) return match[1];
+  }
+  return '';
 }
 
 async function probeEhSite(hostname, cookie) {
@@ -355,21 +369,21 @@ async function ehCheckProxy(request) {
 
   let cookie = writeCookieValue(originalCookie, 'nw', '1');
   const eHentai = await probeEhSite('e-hentai.org', cookie);
-  let exHentai = await probeEhSite('exhentai.org', cookie);
+  // 旧 igneous 会让 exhentai 判定会话无效并只回 igneous=mystery，导致永远刷不出
+  // 新值。剥离后再探测，exhentai 会凭 id/hash 下发有效 igneous。
+  let exHentai = await probeEhSite('exhentai.org', removeCookieValue(cookie, 'igneous'));
   let refreshed = false;
-
-  if (!exHentai.ok) {
-    const igneous = readSetCookieValue(exHentai.response, 'igneous');
+  const absorbIgneous = (response) => {
+    const igneous = readSetCookieValue(response, 'igneous');
     if (igneous && igneous !== 'mystery') {
       cookie = writeCookieValue(cookie, 'igneous', igneous);
-      refreshed = igneous !== readCookieValue(originalCookie, 'igneous');
+      refreshed = refreshed || igneous !== readCookieValue(originalCookie, 'igneous');
     }
+  };
+  absorbIgneous(exHentai.response);
+  if (!exHentai.ok) {
     exHentai = await probeEhSite('exhentai.org', cookie);
-    const retryIgneous = readSetCookieValue(exHentai.response, 'igneous');
-    if (retryIgneous && retryIgneous !== 'mystery') {
-      cookie = writeCookieValue(cookie, 'igneous', retryIgneous);
-      refreshed = retryIgneous !== readCookieValue(originalCookie, 'igneous') || refreshed;
-    }
+    absorbIgneous(exHentai.response);
   }
 
   const clean = ({ response, ...result }) => result;
@@ -397,12 +411,43 @@ async function ehProxy(request) {
   }
 
   try {
-    const res = await safeEhFetch(targetUrl, {
-      headers: buildEHHeaders(u.hostname, cookie),
-      cf: { cacheEverything: false },
-    }, { galleryOnly: true });
+    const fetchOnce = async (useCookie) => {
+      const res = await safeEhFetch(targetUrl, {
+        headers: buildEHHeaders(u.hostname, useCookie),
+        cf: { cacheEverything: false },
+      }, { galleryOnly: true });
+      return { res, html: await res.text() };
+    };
 
-    const htmlText = await res.text();
+    let { res, html: htmlText } = await fetchOnce(cookie);
+
+    const isSessionBlock = (html) => {
+      const b = detectNonGallery(html);
+      return b === 'login-or-banned' || b === 'content-warning' || b === 'empty-or-redirect';
+    };
+
+    // Cookie 已配置但评论/画廊因旧 igneous 失效而失败时，剥离 igneous 自动刷新重试一次。
+    if (isSessionBlock(htmlText) && /(?:^|;\s*)igneous\s*=/i.test(String(cookie || ''))) {
+      const retry = await fetchOnce(removeCookieValue(cookie, 'igneous'));
+      const retryBlock = detectNonGallery(retry.html);
+      const retryOk = retry.res.ok && !retryBlock && retry.html.length >= 500 && (
+        /id=["']cdiv["']/i.test(retry.html) ||
+        /class=["'][^"']*\bc1\b/i.test(retry.html) ||
+        /var\s+gid\s*=\s*\d+/i.test(retry.html) ||
+        /var\s+token\s*=\s*["'][^"']+["']/i.test(retry.html)
+      );
+      if (retryOk) {
+        let refreshedIgneous = '';
+        try {
+          const newIg = readSetCookieValue(retry.res, 'igneous');
+          if (newIg && newIg !== 'mystery' && newIg !== readCookieValue(cookie, 'igneous')) refreshedIgneous = newIg;
+        } catch {}
+        return text(retry.html, 200, {
+          'Cache-Control': 'no-store',
+          ...(refreshedIgneous ? { 'Refresh-Igneous': refreshedIgneous } : {}),
+        });
+      }
+    }
 
     if (!res.ok) {
       const blockType = detectNonGallery(htmlText);

@@ -10,15 +10,13 @@ import { encodeApiKey } from '../lib/api';
 import { scopedCacheKey } from '../lib/configScope';
 import { isOutsideHorizontalViewport } from '../lib/horizontalScroller';
 import { getContentLanguage } from '../lib/readerUiState';
-import { ARCHIVE_CARD_WIDTH, getWideArchiveCardWidth } from '../lib/archiveGridLayout';
+import { ARCHIVE_CARD_COVER_HEIGHT, ARCHIVE_CARD_META_GAP, ARCHIVE_CARD_META_ROW_HEIGHT, ARCHIVE_CARD_TITLE_GAP, ARCHIVE_CARD_TITLE_SLOT_HEIGHT, ARCHIVE_CARD_WIDTH, getWideArchiveCardWidth } from '../lib/archiveGridLayout';
 
 const NAMESPACE_COLORS = NAMESPACE_COLORS_MAP;
 const archiveAspectRatioCache = new Map();
-const ARCHIVE_TITLE_GAP = 8;
 const ARCHIVE_TITLE_FONT_SIZE = 13;
 const ARCHIVE_TITLE_LINE_HEIGHT = 1.5;
 const ARCHIVE_TITLE_GLYPH_SAFETY_PX = 3;
-const ARCHIVE_TITLE_VERTICAL_BUDGET = 51.7;
 const nearViewportCallbacks = new Map();
 let nearViewportObserver = null;
 
@@ -927,8 +925,8 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
         className={`glass-panel archive-card-shell${selected ? ' is-selected' : ''}`}
         title={undefined}
         style={{
-          minWidth: isWide ? `${wideCardWidth}px` : '150px',
-          width: isWide ? `${wideCardWidth}px` : '150px',
+          minWidth: isWide ? `${wideCardWidth}px` : `${ARCHIVE_CARD_WIDTH}px`,
+          width: isWide ? `${wideCardWidth}px` : `${ARCHIVE_CARD_WIDTH}px`,
           padding: '12px',
           cursor: disabled ? 'not-allowed' : 'pointer',
           transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease, box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1)',
@@ -996,7 +994,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
           }}
           style={{
             width: '100%',
-            height: '210px',
+            height: `${ARCHIVE_CARD_COVER_HEIGHT}px`,
             borderRadius: '8px',
             overflow: 'hidden',
             backgroundColor: 'var(--cover-bg)',
@@ -1109,9 +1107,9 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
             handleTitleClick(e);
           }}
           style={{
-            marginTop: `${ARCHIVE_TITLE_GAP + (reserveEmptyProgressSpace && !(pageInfo || dateAddedStr) ? 5 : 0)}px`,
+            marginTop: `${ARCHIVE_CARD_TITLE_GAP + (reserveEmptyProgressSpace && !(pageInfo || dateAddedStr) ? 5 : 0)}px`,
             overflow: 'hidden',
-            height: `${ARCHIVE_TITLE_VERTICAL_BUDGET - ARCHIVE_TITLE_GAP}px`,
+            height: `${ARCHIVE_CARD_TITLE_SLOT_HEIGHT}px`,
             ...(isMobile ? { cursor: 'pointer' } : {}),
           }}
           className="archive-title-slot"
@@ -1140,7 +1138,8 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
             style={{
               fontSize: `${baseMetaFontSize}px`,
               color: 'var(--text-sub)',
-              marginTop: `${(isMobile ? 4 : 6) + (reserveEmptyProgressSpace ? 5 : 0)}px`,
+              marginTop: `${(isMobile ? 4 : ARCHIVE_CARD_META_GAP) + (reserveEmptyProgressSpace ? 5 : 0)}px`,
+              height: `${ARCHIVE_CARD_META_ROW_HEIGHT}px`,
               display: 'flex',
               justifyContent: 'space-between',
               gap: '6px',
