@@ -800,8 +800,10 @@ test('mobile wrapper sends system back through web history before exiting', () =
 test('iOS wrapper sends the left-edge gesture through web history', () => {
   const workflow = read('.github/workflows/mobile-build.yml');
 
-  assert.match(workflow, /ios\/App\/App\/ViewController\.swift/);
+  assert.match(workflow, /ios\/App\/App\/AppDelegate\.swift/);
   assert.match(workflow, /class ViewController: CAPBridgeViewController/);
+  assert.match(workflow, /appDelegatePath/);
+  assert.doesNotMatch(workflow, /const viewControllerPath = 'ios\/App\/App\/ViewController\.swift'/);
   assert.match(workflow, /UIScreenEdgePanGestureRecognizer/);
   assert.match(workflow, /backGesture\.edges = \.left/);
   assert.match(workflow, /guard let webView = bridge\?\.webView else \{ return \}/);

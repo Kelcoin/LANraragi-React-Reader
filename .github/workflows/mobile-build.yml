@@ -435,14 +435,17 @@ jobs:
           const storyboardPath = 'ios/App/App/Base.lproj/Main.storyboard';
           if (!fs.existsSync(storyboardPath)) throw new Error('Capacitor iOS Main.storyboard missing');
           let storyboard = fs.readFileSync(storyboardPath, 'utf8');
-          if (!storyboard.includes('customClass="CAPBridgeViewController"')) {
+          const bridgeClassAnchor = 'customClass="CAPBridgeViewController" customModule="Capacitor"';
+          if (!storyboard.includes(bridgeClassAnchor)) {
             throw new Error('storyboard CAPBridgeViewController anchor missing');
           }
-          storyboard = storyboard.replace('customClass="CAPBridgeViewController"', 'customClass="ViewController"');
+          storyboard = storyboard.replace(
+            bridgeClassAnchor,
+            'customClass="ViewController" customModule="$(PRODUCT_MODULE_NAME)" customModuleProvider="target"',
+          );
           fs.writeFileSync(storyboardPath, storyboard);
-          const viewControllerPath = 'ios/App/App/ViewController.swift';
-          fs.writeFileSync(viewControllerPath, `import UIKit
-          import Capacitor
+          const appDelegatePath = 'ios/App/App/AppDelegate.swift';
+          fs.appendFileSync(appDelegatePath, `
 
           class ViewController: CAPBridgeViewController {
               private lazy var backGesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleBackGesture(_:)))
@@ -533,13 +536,15 @@ jobs:
           find 'ios/App/App/Assets.xcassets/AppIcon.appiconset' -name '*.png' -print -quit | grep -q .
           test "$(/usr/libexec/PlistBuddy -c 'Print :UILaunchScreen:UIColorName' "$PLIST")" = 'LaunchBackground'
           test ! -e 'ios/App/App/Assets.xcassets/LaunchBackground.imageset'
-          IOS_VIEW_CONTROLLER='ios/App/App/ViewController.swift'
-          grep -q 'UIScreenEdgePanGestureRecognizer' "$IOS_VIEW_CONTROLLER"
-          grep -q 'backGesture.edges = .left' "$IOS_VIEW_CONTROLLER"
-          grep -q 'canGoBack' "$IOS_VIEW_CONTROLLER"
-          grep -q 'goBack()' "$IOS_VIEW_CONTROLLER"
-          grep -q 'window.history.length > 1' "$IOS_VIEW_CONTROLLER"
+          IOS_APP_DELEGATE='ios/App/App/AppDelegate.swift'
+          grep -q 'class ViewController: CAPBridgeViewController' "$IOS_APP_DELEGATE"
+          grep -q 'UIScreenEdgePanGestureRecognizer' "$IOS_APP_DELEGATE"
+          grep -q 'backGesture.edges = .left' "$IOS_APP_DELEGATE"
+          grep -q 'canGoBack' "$IOS_APP_DELEGATE"
+          grep -q 'goBack()' "$IOS_APP_DELEGATE"
+          grep -q 'window.history.length > 1' "$IOS_APP_DELEGATE"
           grep -q 'customClass="ViewController"' 'ios/App/App/Base.lproj/Main.storyboard'
+          grep -q 'customModule="$(PRODUCT_MODULE_NAME)" customModuleProvider="target"' 'ios/App/App/Base.lproj/Main.storyboard'
 
       - name: Build unsigned iOS app
         env:
