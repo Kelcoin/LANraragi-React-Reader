@@ -871,26 +871,6 @@ textarea:focus-visible,
 .eh-cookie-input-row { display: flex; align-items: stretch; gap: 8px; }
 .eh-cookie-input-row .secret-input-shell { min-width: 0; flex: 1 1 auto; }
 .eh-cookie-check-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 12px; }
-.eh-cookie-check-result {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: var(--radius-control);
-  background: var(--good-surface);
-  border: 1px solid var(--good-border);
-  color: var(--good-text);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.eh-cookie-check-result.is-error {
-  background: var(--danger-surface);
-  border-color: var(--danger-border);
-  color: var(--danger-text);
-}
-.eh-cookie-check-result.is-warning {
-  background: var(--warning-surface);
-  border-color: var(--warning-border);
-  color: var(--warning-text);
-}
 
 .login-shell {
   display: flex;
@@ -5264,5 +5244,16 @@ textarea:focus-visible,
   .theme-color-picker-popover {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* iOS: 聚焦时 WebKit 会把 font-size<16px 的输入控件自动放大且失焦不还原。
+   强制 iOS 输入控件字号 ≥16px 可避免（Apple 推荐做法，不违反 user-scalable 契约）。 */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
   }
 }

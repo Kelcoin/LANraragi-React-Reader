@@ -1158,8 +1158,10 @@ test('EH cookie settings provide a Worker-backed check action', () => {
   assert.match(home, /\/eh\/check/);
   assert.match(home, /eh-cookie-check-btn/);
   assert.match(home, /data\.cookie && data\.cookie !== cookie/);
+  assert.match(home, /metadata-toast-stack/);
+  assert.match(home, /showStatus\(/);
   assert.match(worker, /url\.pathname === '\/eh\/check'/);
-  assert.match(worker, /readSetCookieValue\(exHentai\.response, 'igneous'\)/);
+  assert.match(worker, /removeCookieValue\(cookie, 'igneous'\)/);
   assert.match(worker, /writeCookieValue\(cookie, 'igneous', igneous\)/);
   assert.match(css, /\.eh-cookie-input-row\s*\{/);
 });

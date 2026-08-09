@@ -40,6 +40,10 @@ import { ARCHIVE_PROGRESS_VISIBILITY, shouldShowArchiveProgress } from '../lib/a
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
 import { consumeArchiveCatalogDirty } from '../lib/archiveMetadataCache';
 
+const TOAST_DURATION_MS = 3600;
+const TOAST_ERROR_DURATION_MS = 7000;
+const TOAST_CLOSE_MS = 280;
+
 const HOME_COLLAPSE_STORAGE_KEYS = {
   history: 'lrr_home_collapsed_history',
   watchlist: 'lrr_home_collapsed_watchlist',
@@ -421,7 +425,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [historySyncing, setHistorySyncing] = useState(false);
   const [watchlistChecking, setWatchlistChecking] = useState(false);
   const [ehCookieChecking, setEhCookieChecking] = useState(false);
-  const [ehCookieCheck, setEhCookieCheck] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const statusTimersRef = useRef(new Map());
+  const statusIdRef = useRef(0);
 
   const [cfgWorkerUrl, setCfgWorkerUrl] = useState(getWorkerUrl());
   const [cfgSyncToken, setCfgSyncToken] = useState(getSyncToken());
@@ -673,18 +679,52 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, []);
 
+  useEffect(() => {
+    return () => {
+      statusTimersRef.current.forEach(clearTimeout);
+      statusTimersRef.current.clear();
+    };
+  }, []);
+
+  const clearStatusTimer = useCallback((id) => {
+    const timer = statusTimersRef.current.get(id);
+    if (timer) clearTimeout(timer);
+    statusTimersRef.current.delete(id);
+  }, []);
+
+  const closeStatus = useCallback((id) => {
+    clearStatusTimer(id);
+    setToasts(current => current.map((toast) => (
+      toast.id === id ? { ...toast, closing: true } : toast
+    )));
+    const timer = setTimeout(() => {
+      statusTimersRef.current.delete(id);
+      setToasts(current => current.filter((toast) => toast.id !== id));
+    }, TOAST_CLOSE_MS);
+    statusTimersRef.current.set(id, timer);
+  }, [clearStatusTimer]);
+
+  const showStatus = useCallback((text, type = 'info', { autoHide = true, duration = type === 'error' ? TOAST_ERROR_DURATION_MS : TOAST_DURATION_MS } = {}) => {
+    statusIdRef.current += 1;
+    const id = statusIdRef.current;
+    setToasts(current => [...current, { id, text, type, closing: false, autoHide, duration }]);
+    if (autoHide) {
+      const timer = setTimeout(() => closeStatus(id), duration);
+      statusTimersRef.current.set(id, timer);
+    }
+  }, [closeStatus]);
+
   const handleCheckEhCookie = useCallback(async () => {
     const cookie = String(readerSettings.ehCookie || '').trim();
     if (!hasValidEhCookie(cookie)) {
-      setEhCookieCheck({ error: '请先填写包含 ipb_member_id 和 ipb_pass_hash 的 Cookie。' });
+      showStatus('请先填写包含 ipb_member_id 和 ipb_pass_hash 的 Cookie。', 'error');
       return;
     }
     if (!hasValidWorkerConfig(cfgWorkerUrl, cfgSyncToken)) {
-      setEhCookieCheck({ error: '请先填写有效的 Worker 端点和访问 Token。' });
+      showStatus('请先填写有效的 Worker 端点和访问 Token。', 'error');
       return;
     }
     setEhCookieChecking(true);
-    setEhCookieCheck(null);
     try {
       const response = await fetch(`${cfgWorkerUrl.replace(/\/$/, '')}/eh/check`, {
         method: 'POST',
@@ -694,13 +734,17 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || data?.error || `检测失败（HTTP ${response.status}）`);
       if (data.cookie && data.cookie !== cookie) updateReaderSettings((settings) => ({ ...settings, ehCookie: data.cookie }));
-      setEhCookieCheck(data);
+      const eOk = !!data.eHentai?.ok;
+      const xOk = !!data.exHentai?.ok;
+      const updated = data.refreshed || (data.cookie && data.cookie !== cookie);
+      const text = `E-Hentai：${eOk ? '正常' : '失败'}；ExHentai：${xOk ? '正常' : '失败'}${updated ? '；已更新 igneous' : ''}`;
+      showStatus(text, eOk && xOk ? 'success' : 'info');
     } catch (error) {
-      setEhCookieCheck({ error: error?.message || '检测失败。' });
+      showStatus(error?.message || '检测失败。', 'error');
     } finally {
       setEhCookieChecking(false);
     }
-  }, [cfgSyncToken, cfgWorkerUrl, readerSettings.ehCookie, updateReaderSettings]);
+  }, [cfgSyncToken, cfgWorkerUrl, readerSettings.ehCookie, updateReaderSettings, showStatus]);
 
   const watchlistWithProgress = useMemo(() => mergeWatchlistProgress(watchlist, history), [history, watchlist]);
   const watchlistAutoRemoveIds = useMemo(() => getWatchlistAutoRemoveIds(watchlistWithProgress), [watchlistWithProgress]);
@@ -2110,6 +2154,21 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       }
     `}</style>
     <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: '1680px', margin: '0 auto' }}>
+      <div className="metadata-toast-stack" aria-live="polite">
+        {toasts.map(status => (
+          <div
+            key={status.id}
+            className={`metadata-status-card is-${status.type}${status.closing ? ' is-closing' : ''}`}
+            role={status.type === 'error' ? 'alert' : 'status'}
+            style={{ '--toast-duration': `${status.duration}ms` }}
+          >
+            <span className="metadata-status-icon" aria-hidden="true">{status.type === 'success' ? '✓' : status.type === 'error' ? '!' : 'i'}</span>
+            <span className="metadata-status-text">{status.text}</span>
+            <button type="button" className="metadata-status-close" aria-label="关闭提示" onClick={() => closeStatus(status.id)}>×</button>
+            {status.autoHide && <span className="metadata-status-progress" aria-hidden="true" />}
+          </div>
+        ))}
+      </div>
       <div className="home-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '18px', marginBottom: '32px', flexWrap: 'wrap' }}>
         <div className="home-brand">
           <h1 className="home-brand-title" translate="no" aria-label="Readoshi" style={{ fontWeight: 600, margin: '0 0 8px 0', fontSize: '28px', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2834,11 +2893,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                         {ehCookieChecking ? '检测中' : '检测'}
                       </button>
                     </div>
-                    {ehCookieCheck && (
-                      <div className={`eh-cookie-check-result${ehCookieCheck.error ? ' is-error' : (ehCookieCheck.exHentai && !ehCookieCheck.exHentai.ok ? ' is-warning' : '')}`} role="status">
-                        {ehCookieCheck.error || `E-Hentai：${ehCookieCheck.eHentai?.ok ? '正常' : '失败'}；ExHentai：${ehCookieCheck.exHentai?.ok ? '正常' : '失败'}${ehCookieCheck.refreshed ? '；已更新 igneous' : ''}`}
-                      </div>
-                    )}
                   </div>
                   <label className="settings-row">
                     <SettingHint text={'作用：隐藏低于此分数的评论。\n填 0：显示全部评论，不按分数过滤。'}>最低展示分数</SettingHint>

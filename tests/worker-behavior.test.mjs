@@ -115,20 +115,21 @@ test('Worker returns structured data for unknown upstream errors', async () => {
   });
 });
 
-test('Worker checks both EH sites and refreshes igneous after an invalid ExHentai page', async () => {
+test('Worker checks both EH sites and refreshes igneous after stripping a stale one', async () => {
   const calls = [];
   const validPage = '<html><body>' + 'gallery '.repeat(120) + '</body></html>';
   const dispatch = createWorker([], {
     fetch: async (url, options) => {
       calls.push({ url: String(url), cookie: options.headers.Cookie });
-      if (String(url).includes('e-hentai.org')) return new Response(validPage, { status: 200 });
-      if (calls.length === 2) return new Response('Sad Panda', { status: 200 });
-      return new Response(validPage, { status: 200, headers: { 'set-cookie': 'igneous=refreshed; Path=/' } });
+      if (String(url).includes('exhentai.org')) {
+        return new Response(validPage, { status: 200, headers: { 'set-cookie': 'igneous=refreshed; Path=/' } });
+      }
+      return new Response(validPage, { status: 200 });
     },
   });
   const response = await dispatch('/eh/check', {
     method: 'POST',
-    body: { cookie: 'ipb_member_id=123; ipb_pass_hash=hash' },
+    body: { cookie: 'igneous=stale; ipb_member_id=123; ipb_pass_hash=hash' },
   });
 
   assert.equal(response.status, 200);
@@ -137,8 +138,10 @@ test('Worker checks both EH sites and refreshes igneous after an invalid ExHenta
   assert.equal(result.exHentai.ok, true);
   assert.equal(result.refreshed, true);
   assert.match(result.cookie, /igneous=refreshed/);
-  assert.equal(calls.length, 3);
-  assert.match(calls[2].cookie, /nw=1/);
+  assert.equal(calls.length, 2);
+  // 首次 exhentai 探测必须剥离旧 igneous，否则上游只回 mystery
+  assert.doesNotMatch(calls[1].cookie, /igneous=stale/);
+  assert.match(calls[1].cookie, /nw=1/);
 });
 
 test('Worker reads igneous from a later Set-Cookie header (Cloudflare multi-value behavior)', async () => {

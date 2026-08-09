@@ -313,6 +313,12 @@ function writeCookieValue(cookie, name, value) {
   return parts.join('; ');
 }
 
+function removeCookieValue(cookie, name) {
+  return String(cookie || '').split(';').map((part) => part.trim())
+    .filter((part) => part && !part.toLowerCase().startsWith(`${name.toLowerCase()}=`))
+    .join('; ');
+}
+
 function readSetCookieValue(response, name) {
   // Cloudflare Workers: multiple Set-Cookie headers are only reachable via
   // getAll; get() returns the first value only and may miss a later cookie.
@@ -362,21 +368,21 @@ async function ehCheckProxy(request) {
 
   let cookie = writeCookieValue(originalCookie, 'nw', '1');
   const eHentai = await probeEhSite('e-hentai.org', cookie);
-  let exHentai = await probeEhSite('exhentai.org', cookie);
+  // 旧 igneous 会让 exhentai 判定会话无效并只回 igneous=mystery，导致永远刷不出
+  // 新值。剥离后再探测，exhentai 会凭 id/hash 下发有效 igneous。
+  let exHentai = await probeEhSite('exhentai.org', removeCookieValue(cookie, 'igneous'));
   let refreshed = false;
-
-  if (!exHentai.ok) {
-    const igneous = readSetCookieValue(exHentai.response, 'igneous');
+  const absorbIgneous = (response) => {
+    const igneous = readSetCookieValue(response, 'igneous');
     if (igneous && igneous !== 'mystery') {
       cookie = writeCookieValue(cookie, 'igneous', igneous);
-      refreshed = igneous !== readCookieValue(originalCookie, 'igneous');
+      refreshed = refreshed || igneous !== readCookieValue(originalCookie, 'igneous');
     }
+  };
+  absorbIgneous(exHentai.response);
+  if (!exHentai.ok) {
     exHentai = await probeEhSite('exhentai.org', cookie);
-    const retryIgneous = readSetCookieValue(exHentai.response, 'igneous');
-    if (retryIgneous && retryIgneous !== 'mystery') {
-      cookie = writeCookieValue(cookie, 'igneous', retryIgneous);
-      refreshed = retryIgneous !== readCookieValue(originalCookie, 'igneous') || refreshed;
-    }
+    absorbIgneous(exHentai.response);
   }
 
   const clean = ({ response, ...result }) => result;

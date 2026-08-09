@@ -214,6 +214,16 @@ test('config import ignores non-string field values', () => {
   }
 });
 
+test('isBase64ConfigEncoded only accepts a Readoshi base64 config', () => {
+  const enc = (value) => btoa(new TextEncoder().encode(value).reduce((s, b) => s + String.fromCharCode(b), ''));
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc(JSON.stringify({ lrr_api_key: 'k' }))), true);
+  assert.equal(workerConfig.isBase64ConfigEncoded('随便的文本不是配置'), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(''), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc('not json')), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc('[]')), false);
+  assert.equal(workerConfig.isBase64ConfigEncoded(enc('{}')), false);
+});
+
 test('config transfer includes the random hide-read setting', () => {
   assert.ok(workerConfig.CONFIG_KEYS.includes('lrr_random_hide_read'));
 });

@@ -3,7 +3,7 @@ import { loadTagDB } from './lib/tags';
 import { checkServerStatus } from './lib/api';
 import { canNavigate, navigateHome, navigateToArchive, parseRouteFromLocation } from './lib/navigation';
 import { startHistoryExistenceCheckTimer, stopHistoryExistenceCheckTimer } from './lib/historyMaintenance';
-import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, importConfig } from './lib/worker-config';
+import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, importConfig, isBase64ConfigEncoded } from './lib/worker-config';
 import { applyThemeMode, getNextThemeMode, readStoredThemeMode, readStoredThemePalettes, watchSystemTheme, writeStoredThemeMode, writeStoredThemePalettes } from './lib/theme';
 import PwaStatus from './components/PwaStatus';
 import SecretInput from './components/SecretInput';
@@ -307,7 +307,10 @@ export default function App() {
   const handleImportConfig = async () => {
     let encoded = '';
     try { encoded = await navigator.clipboard.readText(); } catch {}
-    setConfigTransfer({ mode: 'import', value: encoded });
+    // 剪贴板可能不是 Readoshi 的 base64 配置；仅当是合法 base64 配置时才自动填入，
+    // 避免误把其他复制内容当作配置导入。
+    const value = isBase64ConfigEncoded(encoded) ? encoded : '';
+    setConfigTransfer({ mode: 'import', value });
   };
 
   const handleConfirmImportConfig = async (encoded) => {
