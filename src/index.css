@@ -868,6 +868,11 @@ textarea:focus-visible,
   border-color: transparent;
   box-shadow: none;
 }
+.eh-cookie-input-row { display: flex; align-items: stretch; gap: 8px; }
+.eh-cookie-input-row .secret-input-shell { min-width: 0; flex: 1 1 auto; }
+.eh-cookie-check-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 12px; }
+.eh-cookie-check-result { margin-top: 6px; color: var(--good-text); font-size: 11px; line-height: 1.5; }
+.eh-cookie-check-result.is-error { color: var(--danger-text); }
 
 .login-shell {
   display: flex;

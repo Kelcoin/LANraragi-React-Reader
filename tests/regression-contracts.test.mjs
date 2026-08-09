@@ -786,21 +786,30 @@ test('mobile wrapper sends system back through web history before exiting', () =
   const workflow = read('.github/workflows/mobile-build.yml');
 
   assert.match(workflow, /import androidx\.activity\.OnBackPressedCallback;/);
+  assert.match(workflow, /import android\.os\.Build;/);
+  assert.match(workflow, /import android\.window\.OnBackInvokedDispatcher;/);
+  assert.match(workflow, /getOnBackInvokedDispatcher\(\)\.registerOnBackInvokedCallback/);
   assert.match(workflow, /getOnBackPressedDispatcher\(\)\.addCallback\(this, new OnBackPressedCallback\(true\)/);
-  assert.match(workflow, /getBridge\(\)\.getWebView\(\)\.canGoBack\(\)/);
-  assert.match(workflow, /getBridge\(\)\.getWebView\(\)\.goBack\(\)/);
+  assert.match(workflow, /webView\.canGoBack\(\)/);
+  assert.match(workflow, /window\.history\.length > 1/);
+  assert.match(workflow, /webView\.goBack\(\)/);
+  assert.match(workflow, /android:enableOnBackInvokedCallback="true"/);
   assert.match(workflow, /finish\(\);/);
 });
 
 test('iOS wrapper sends the left-edge gesture through web history', () => {
   const workflow = read('.github/workflows/mobile-build.yml');
 
-  assert.match(workflow, /ios\/App\/App\/ViewController\.swift/);
+  assert.match(workflow, /ios\/App\/App\/AppDelegate\.swift/);
   assert.match(workflow, /class ViewController: CAPBridgeViewController/);
+  assert.match(workflow, /appDelegatePath/);
+  assert.doesNotMatch(workflow, /const viewControllerPath = 'ios\/App\/App\/ViewController\.swift'/);
   assert.match(workflow, /UIScreenEdgePanGestureRecognizer/);
   assert.match(workflow, /backGesture\.edges = \.left/);
-  assert.match(workflow, /guard let webView = bridge\?\.webView, webView\.canGoBack\(\) else \{ return \}/);
+  assert.match(workflow, /guard let webView = bridge\?\.webView else \{ return \}/);
+  assert.match(workflow, /if webView\.canGoBack/);
   assert.match(workflow, /webView\.goBack\(\)/);
+  assert.match(workflow, /window\.history\.length > 1/);
   assert.match(workflow, /Main\.storyboard/);
   assert.match(workflow, /customClass="ViewController"/);
 });
@@ -1139,6 +1148,20 @@ test('Worker-dependent controls are hidden without a valid Worker configuration'
   assert.match(reader, /ehWorker=\{workerReady \? getWorkerUrl\(\) : ''\}/);
   assert.match(ehFavoriteSync, /import \{ hasValidWorkerConfig \} from '\.\/worker-config'/);
   assert.match(ehFavoriteSync, /hasValidWorkerConfig\(\)/);
+});
+
+test('EH cookie settings provide a Worker-backed check action', () => {
+  const home = read('src/pages/Home.jsx');
+  const worker = read('worker.js');
+  const css = read('src/index.css');
+  assert.match(home, /handleCheckEhCookie/);
+  assert.match(home, /\/eh\/check/);
+  assert.match(home, /eh-cookie-check-btn/);
+  assert.match(home, /data\.cookie && data\.cookie !== cookie/);
+  assert.match(worker, /url\.pathname === '\/eh\/check'/);
+  assert.match(worker, /readSetCookieValue\(exHentai\.response, 'igneous'\)/);
+  assert.match(worker, /writeCookieValue\(cookie, 'igneous', igneous\)/);
+  assert.match(css, /\.eh-cookie-input-row\s*\{/);
 });
 
 test('scheduled history cleanup force-validates cached records without UI feedback', () => {
