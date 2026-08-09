@@ -6,6 +6,7 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Content-Encoding, x-sync-token, x-lrr-server-scope',
+  'Access-Control-Expose-Headers': 'Refresh-Igneous',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -410,12 +411,43 @@ async function ehProxy(request) {
   }
 
   try {
-    const res = await safeEhFetch(targetUrl, {
-      headers: buildEHHeaders(u.hostname, cookie),
-      cf: { cacheEverything: false },
-    }, { galleryOnly: true });
+    const fetchOnce = async (useCookie) => {
+      const res = await safeEhFetch(targetUrl, {
+        headers: buildEHHeaders(u.hostname, useCookie),
+        cf: { cacheEverything: false },
+      }, { galleryOnly: true });
+      return { res, html: await res.text() };
+    };
 
-    const htmlText = await res.text();
+    let { res, html: htmlText } = await fetchOnce(cookie);
+
+    const isSessionBlock = (html) => {
+      const b = detectNonGallery(html);
+      return b === 'login-or-banned' || b === 'content-warning' || b === 'empty-or-redirect';
+    };
+
+    // Cookie 已配置但评论/画廊因旧 igneous 失效而失败时，剥离 igneous 自动刷新重试一次。
+    if (isSessionBlock(htmlText) && /(?:^|;\s*)igneous\s*=/i.test(String(cookie || ''))) {
+      const retry = await fetchOnce(removeCookieValue(cookie, 'igneous'));
+      const retryBlock = detectNonGallery(retry.html);
+      const retryOk = retry.res.ok && !retryBlock && retry.html.length >= 500 && (
+        /id=["']cdiv["']/i.test(retry.html) ||
+        /class=["'][^"']*\bc1\b/i.test(retry.html) ||
+        /var\s+gid\s*=\s*\d+/i.test(retry.html) ||
+        /var\s+token\s*=\s*["'][^"']+["']/i.test(retry.html)
+      );
+      if (retryOk) {
+        let refreshedIgneous = '';
+        try {
+          const newIg = readSetCookieValue(retry.res, 'igneous');
+          if (newIg && newIg !== 'mystery' && newIg !== readCookieValue(cookie, 'igneous')) refreshedIgneous = newIg;
+        } catch {}
+        return text(retry.html, 200, {
+          'Cache-Control': 'no-store',
+          ...(refreshedIgneous ? { 'Refresh-Igneous': refreshedIgneous } : {}),
+        });
+      }
+    }
 
     if (!res.ok) {
       const blockType = detectNonGallery(htmlText);

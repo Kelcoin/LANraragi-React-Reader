@@ -4186,6 +4186,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               ehCookie={settings.ehCookie}
               ehWorker={workerReady ? getWorkerUrl() : ''}
               ehToken={getSyncToken()}
+              onCookieRefresh={(newCookie) => updateSettings((s) => ({ ...s, ehCookie: newCookie }))}
               ehMinScore={settings.ehMinScore}
               ehMaxComments={settings.ehMaxComments}
               ehSortMethod={settings.ehSortMethod}

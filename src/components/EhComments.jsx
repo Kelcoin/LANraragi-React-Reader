@@ -202,7 +202,7 @@ function ehRequestError(code, detail = '') {
   return error;
 }
 
-export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, ehToken, ehMinScore, ehMaxComments, ehSortMethod, ehSortOrder }) {
+export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, ehToken, ehMinScore, ehMaxComments, ehSortMethod, ehSortOrder, onCookieRefresh }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -223,6 +223,8 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
   const votingRef = useRef(null);
 
   const cookie = getSafeCookie(ehCookie);
+  const onCookieRefreshRef = useRef(onCookieRefresh);
+  onCookieRefreshRef.current = onCookieRefresh;
 
   useEffect(() => {
     requestSeqRef.current += 1;
@@ -326,6 +328,11 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         body: JSON.stringify({ url: realUrl, cookie: cookie || '' }),
         signal: controller.signal,
       });
+
+      const refreshedIgneous = galleryRes.headers.get('Refresh-Igneous');
+      if (refreshedIgneous && cookie && onCookieRefreshRef.current) {
+        onCookieRefreshRef.current(cookie.replace(/\bigneous=[^;\s]*/i, `igneous=${refreshedIgneous}`));
+      }
 
       if (!galleryRes.ok) {
         let jsonErr = null;

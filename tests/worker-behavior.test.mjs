@@ -100,6 +100,31 @@ test('Worker classifies content-warning pages', async () => {
   assert.equal((await response.json()).error, 'CONTENT_WARNING');
 });
 
+test('Worker strips stale igneous and retries the gallery when the first response needs login', async () => {
+  const calls = [];
+  const validPage = '<html><body>' + 'gallery '.repeat(120) + '<div id="cdiv"></div></body></html>';
+  const dispatch = createWorker([], {
+    fetch: async (url, options) => {
+      calls.push({ url: String(url), cookie: options.headers.Cookie });
+      if (calls.length === 1) {
+        return new Response('<title>Please login</title>', { status: 200 });
+      }
+      return new Response(validPage, { status: 200, headers: { 'set-cookie': 'igneous=fresh; Path=/' } });
+    },
+  });
+  const response = await dispatch('/', {
+    method: 'POST',
+    body: { url: 'https://exhentai.org/g/1/abc/', cookie: 'igneous=stale; ipb_member_id=1; ipb_pass_hash=h' },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 2);
+  // 重试请求必须剥离旧 igneous
+  assert.doesNotMatch(calls[1].cookie, /igneous=stale/);
+  assert.equal(response.headers.get('Refresh-Igneous'), 'fresh');
+  assert.match(await response.text(), /id="cdiv"/);
+});
+
 test('Worker returns structured data for unknown upstream errors', async () => {
   const dispatch = createWorker([], { fetch: async () => new Response('temporary upstream error', { status: 503 }) });
   const response = await dispatch('/', {
