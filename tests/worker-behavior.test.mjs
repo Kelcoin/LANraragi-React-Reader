@@ -141,6 +141,55 @@ test('Worker checks both EH sites and refreshes igneous after an invalid ExHenta
   assert.match(calls[2].cookie, /nw=1/);
 });
 
+test('Worker reads igneous from a later Set-Cookie header (Cloudflare multi-value behavior)', async () => {
+  // Cloudflare Workers concatenates nothing for Set-Cookie: headers.get returns
+  // the first value only, multiple Set-Cookie headers require getAll. The cookie
+  // check must read igneous even when it is not the first Set-Cookie header.
+  const validPage = '<html><body>' + 'gallery '.repeat(120) + '</body></html>';
+  function cfHeaders(setCookies) {
+    return {
+      get(name) {
+        if (name.toLowerCase() !== 'set-cookie') return null;
+        return setCookies[0] || null; // CF: only the first Set-Cookie is visible via get
+      },
+      getAll(name) {
+        if (name.toLowerCase() !== 'set-cookie') return [];
+        return setCookies;
+      },
+    };
+  }
+  let exCalls = 0;
+  const dispatch = createWorker([], {
+    fetch: async (url) => {
+      const u = String(url);
+      if (u.includes('e-hentai.org')) {
+        return { status: 200, ok: true, text: async () => validPage, headers: cfHeaders([]) };
+      }
+      if (u.includes('exhentai.org') && u.endsWith('/')) {
+        exCalls += 1;
+        if (exCalls === 1) {
+          return {
+            status: 200, ok: true, text: async () => 'Sad Panda',
+            headers: cfHeaders(['ipb_member_id=123; Path=/', 'igneous=refreshed; Path=/; HttpOnly']),
+          };
+        }
+        return { status: 200, ok: true, text: async () => validPage, headers: cfHeaders([]) };
+      }
+      return { status: 200, ok: true, text: async () => validPage, headers: cfHeaders([]) };
+    },
+  });
+  const response = await dispatch('/eh/check', {
+    method: 'POST',
+    body: { cookie: 'ipb_member_id=123; ipb_pass_hash=hash' },
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.eHentai.ok, true);
+  assert.equal(result.exHentai.ok, true);
+  assert.equal(result.refreshed, true);
+  assert.match(result.cookie, /igneous=refreshed/);
+});
+
 test('Worker status page input fields have explicit hover and focus states', async () => {
   const html = await (await createWorker()('/')).text();
   assert.match(html, /input:hover, textarea:hover \{ border-color:rgba\(255,255,255,\.24\); background:#141b26; \}/);

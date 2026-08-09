@@ -314,9 +314,16 @@ function writeCookieValue(cookie, name, value) {
 }
 
 function readSetCookieValue(response, name) {
-  const header = response.headers.get('set-cookie') || '';
-  const match = header.match(new RegExp(`(?:^|,\\s*)${name}=([^;,\\s]+)`, 'i'));
-  return match?.[1] || '';
+  // Cloudflare Workers: multiple Set-Cookie headers are only reachable via
+  // getAll; get() returns the first value only and may miss a later cookie.
+  const all = typeof response?.headers?.getAll === 'function'
+    ? response.headers.getAll('set-cookie')
+    : [response.headers?.get('set-cookie') || ''];
+  for (const value of all) {
+    const match = String(value || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;,\\s]+)`, 'i'));
+    if (match) return match[1];
+  }
+  return '';
 }
 
 async function probeEhSite(hostname, cookie) {
