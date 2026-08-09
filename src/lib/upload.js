@@ -34,6 +34,22 @@ export function parseUploadUrls(text = '') {
   return { valid, invalid };
 }
 
+export function createUploadUrlTasks(urls = [], existingLabels = new Set()) {
+  const seen = new Set(existingLabels);
+  return Array.from(urls || []).filter((url) => {
+    if (seen.has(url)) return false;
+    seen.add(url);
+    return true;
+  }).map((url) => ({
+    type: 'url',
+    label: url,
+    url,
+    status: 'queued',
+    progress: 0,
+    message: '',
+  }));
+}
+
 function compilePattern(pattern) {
   if (!pattern) return null;
   const literal = pattern.match(/^\/(.*)\/([dgimsuvy]*)$/);

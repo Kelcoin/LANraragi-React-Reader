@@ -39,6 +39,7 @@ import { reduceArchiveRefreshPhase } from '../lib/archiveRefreshMotion';
 import { ARCHIVE_PROGRESS_VISIBILITY, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
 import { consumeArchiveCatalogDirty } from '../lib/archiveMetadataCache';
+import { ARCHIVE_CARD_COVER_HEIGHT, ARCHIVE_CARD_META_GAP, ARCHIVE_CARD_META_ROW_HEIGHT, ARCHIVE_CARD_TITLE_GAP, ARCHIVE_CARD_TITLE_SLOT_HEIGHT, ARCHIVE_CARD_WIDTH } from '../lib/archiveGridLayout';
 
 const TOAST_DURATION_MS = 3600;
 const TOAST_ERROR_DURATION_MS = 7000;
@@ -83,12 +84,23 @@ const FILTER_ACTIONS_MIN_WIDTH = 320;
 const FILTER_LAYOUT_GAP = 12;
 const FILTER_STACK_BREAKPOINT = FILTER_INPUT_MIN_WIDTH + FILTER_ACTIONS_MIN_WIDTH + FILTER_LAYOUT_GAP;
 const HOME_NARROW_MAX_WIDTH = 720;
+const HOME_MAX_WIDTH = 1680;
 const HOME_CAROUSEL_EXPANDED_HEIGHT = '420px';
 const UNTAGGED_CATEGORY_ID = '__untagged__';
 const UNTAGGED_CATEGORY = Object.freeze({ id: UNTAGGED_CATEGORY_ID, name: '无标签' });
 
 function getHomeCarouselPadding(isNarrow) {
   return `12px ${isNarrow ? 14 : 20}px 20px`;
+}
+
+function getRandomSkeletonCount(viewportWidth, isNarrow) {
+  const safeViewportWidth = Number.isFinite(viewportWidth) ? Math.max(0, viewportWidth) : 0;
+  const shellWidth = Math.min(safeViewportWidth, HOME_MAX_WIDTH);
+  const shellPadding = isNarrow ? 20 : 40;
+  const carouselPadding = isNarrow ? 28 : 40;
+  const gap = isNarrow ? 10 : 16;
+  const availableWidth = Math.max(ARCHIVE_CARD_WIDTH, shellWidth - shellPadding - carouselPadding);
+  return Math.max(5, Math.ceil((availableWidth + gap) / (ARCHIVE_CARD_WIDTH + gap)));
 }
 
 function readFilter() {
@@ -236,11 +248,12 @@ function shouldRevalidateHydratedRandoms(snapshot, boot) {
 const DEFAULT_FILTER = { query: '', sortBy: 'date_added', order: 'desc', active: false };
 const bootState = getBootState();
 
-function SkeletonCard({ showProgress = false, fillWidth = false }) {
+function SkeletonCard({ showProgress = false }) {
   return (
     <div style={{
-      flex: fillWidth ? '1 1 0' : '0 0 150px',
-      minWidth: '150px', width: fillWidth ? 'auto' : '150px',
+      flex: `0 0 ${ARCHIVE_CARD_WIDTH}px`,
+      minWidth: `${ARCHIVE_CARD_WIDTH}px`, width: `${ARCHIVE_CARD_WIDTH}px`,
+      boxSizing: 'border-box',
       background: 'var(--surface-1)',
       borderRadius: 'var(--radius-card)',
       border: '1px solid var(--glass-border)',
@@ -248,7 +261,7 @@ function SkeletonCard({ showProgress = false, fillWidth = false }) {
       overflow: 'hidden',
     }}>
       <div style={{
-        width: '100%', height: '210px',
+        width: '100%', height: `${ARCHIVE_CARD_COVER_HEIGHT}px`,
         borderRadius: '8px',
         background: 'var(--reader-skeleton-base)',
         position: 'relative',
@@ -259,18 +272,21 @@ function SkeletonCard({ showProgress = false, fillWidth = false }) {
       {showProgress && (
         <div style={{ width: '100%', height: '3px', marginTop: '2px', borderRadius: 'var(--radius-chip)', background: 'var(--accent-soft)' }} />
       )}
+      <div style={{ marginTop: `${ARCHIVE_CARD_TITLE_GAP}px`, height: `${ARCHIVE_CARD_TITLE_SLOT_HEIGHT}px`, overflow: 'hidden' }}>
+        <div style={{
+          height: '12px', borderRadius: '4px',
+          background: 'var(--reader-skeleton-base)',
+          width: '84%',
+        }} />
+        <div style={{
+          height: '12px', borderRadius: '4px',
+          background: 'var(--reader-skeleton-base)',
+          width: '66%', marginTop: '8px',
+        }} />
+      </div>
       <div style={{
-        height: '12px', borderRadius: '4px',
-        background: 'var(--reader-skeleton-base)',
-        width: '84%', marginTop: '12px',
-      }} />
-      <div style={{
-        height: '12px', borderRadius: '4px',
-        background: 'var(--reader-skeleton-base)',
-        width: '66%', marginTop: '8px',
-      }} />
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', marginTop: '10px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        height: `${ARCHIVE_CARD_META_ROW_HEIGHT}px`, marginTop: `${ARCHIVE_CARD_META_GAP}px`,
       }}>
         <div style={{
           height: '8px', borderRadius: '4px',
@@ -2113,6 +2129,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const handleRemoveHistory = useCallback(() => {
     removeHistoryArchive(historyDeleteTarget);
   }, [historyDeleteTarget, removeHistoryArchive]);
+  const randomSkeletonCount = getRandomSkeletonCount(window.innerWidth, isNarrow);
 
   return (
     <>
@@ -2153,7 +2170,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         border-radius: 4px;
       }
     `}</style>
-    <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: '1680px', margin: '0 auto' }}>
+    <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: `${HOME_MAX_WIDTH}px`, margin: '0 auto' }}>
       <div className="metadata-toast-stack" aria-live="polite">
         {toasts.map(status => (
           <div
@@ -2408,8 +2425,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsRefreshing ? 0.72 : 1 }}>刷新</button>
           </div>
           <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'contain', padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px', position: 'relative', zIndex: 1 }} className="no-scrollbar">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <SkeletonCard key={`rsk-${i}`} fillWidth showProgress={showGlobalArchiveProgress} />
+            {Array.from({ length: randomSkeletonCount }).map((_, i) => (
+              <SkeletonCard key={`rsk-${i}`} showProgress={showGlobalArchiveProgress} />
             ))}
           </div>
         </section>
@@ -2428,8 +2445,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           </div>
           <div style={{ overflow: 'hidden', transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)', maxHeight: randomCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
             <div ref={randomScroller.ref} onWheelCapture={randomScroller.onWheelCapture} onScroll={randomScroller.onScroll} onMouseDown={randomScroller.onMouseDown} onClickCapture={randomScroller.onClickCapture} onDragStart={randomScroller.onDragStart} style={{ display: 'flex', gap: isNarrow ? '10px' : '16px', overflowX: 'auto', overflowY: 'hidden', padding: getHomeCarouselPadding(isNarrow), position: 'relative', zIndex: 1, ...randomScroller.getTouchScrollStyle(), ...randomScroller.getMouseScrollStyle() }} className="no-scrollbar">
-              {randomsRefreshing ? Array.from({ length: Math.max(5, Math.min(8, randoms.length || 5)) }).map((_, i) => (
-                <SkeletonCard key={`rrsk-${i}`} fillWidth showProgress={showGlobalArchiveProgress} />
+              {randomsRefreshing ? Array.from({ length: randomSkeletonCount }).map((_, i) => (
+                <SkeletonCard key={`rrsk-${i}`} showProgress={showGlobalArchiveProgress} />
               )) : randoms.map(arc => (
                 <ArchiveCard key={`rnd-${arc.arcid}`} className={watchlistIds.has(arc.arcid || arc.id) ? 'watchlist-card' : undefined} archive={arc} onClick={() => handleSelectArchive(arc.arcid)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}

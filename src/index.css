@@ -4805,10 +4805,27 @@ textarea:focus-visible,
 .upload-title-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
 
 .upload-mode-tabs { max-width: none; }
-.upload-mode-hint { margin: 0; color: var(--text-sub); font-size: 12px; }
 .upload-results-actions { display: flex; gap: 8px; align-items: center; }
-.upload-results-actions .upload-primary-action { width: auto; }
 .upload-panel { padding: 22px; display: flex; flex-direction: column; gap: 15px; min-height: 460px; }
+.upload-mode-panel-stack { display: grid; flex: 1 1 auto; min-width: 0; }
+.upload-mode-panel {
+  grid-area: 1 / 1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 15px;
+  opacity: 0;
+  transform: translateX(8px);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+.upload-mode-panel.is-active {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+}
 .upload-section-heading { padding-bottom: 13px; border-bottom: 1px solid var(--glass-border); color: var(--accent); }
 .upload-section-heading h2 { color: var(--text-main); font-size: 17px; }
 
@@ -4831,13 +4848,23 @@ textarea:focus-visible,
 .upload-url-summary { display: flex; justify-content: space-between; gap: 10px; min-height: 16px; color: var(--text-sub); font-size: 11px; }
 .upload-url-summary .is-error { color: var(--danger-text); }
 .upload-notice { padding: 9px 11px; border-radius: 9px; background: var(--warning-surface); border: 1px solid var(--warning-border); color: var(--warning-text); font-size: 11px; line-height: 1.5; }
-.upload-primary-action { width: 100%; padding: 11px; border-color: color-mix(in srgb, var(--accent) 50%, var(--glass-border)); background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
 
 .upload-results { margin-top: 18px; padding: 22px; }
 .upload-results-heading h2 { font-size: 17px; }
 .upload-progress { height: 5px; margin: 16px 0; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
 .upload-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
-.upload-task-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 11px; align-items: center; min-height: 40px; padding: 10px 11px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--glass-border); overflow: hidden; box-sizing: border-box; }
+@keyframes uploadTaskReveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes uploadTaskDismiss {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
+.upload-task-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 11px; align-items: center; min-height: 40px; padding: 10px 11px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--glass-border); overflow: hidden; box-sizing: border-box; animation: uploadTaskReveal 220ms ease both; }
+.upload-task-list.is-clearing .upload-task-row { animation: uploadTaskDismiss 180ms ease both; }
 .upload-task-row.has-menu { cursor: context-menu; }
 .upload-task-row::before { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--task-progress, 0%); background: var(--accent-soft); pointer-events: none; transition: width .22s ease; }
 .upload-task-row > * { position: relative; z-index: 1; }
@@ -4853,6 +4880,16 @@ textarea:focus-visible,
 .upload-status-dot.is-failed { background: var(--danger); }
 
 @media (prefers-reduced-motion: reduce) {
+  .upload-mode-panel {
+    transform: none;
+    transition: none;
+  }
+
+  .upload-task-row,
+  .upload-task-list.is-clearing .upload-task-row {
+    animation: none;
+  }
+
   .archive-category-button {
     transform: none !important;
   }
@@ -5207,17 +5244,6 @@ textarea:focus-visible,
 .upload-dropzone.is-dragging {
   background: var(--olive-soft);
   transform: none;
-}
-
-.upload-primary-action {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent-strong);
-}
-
-.upload-primary-action:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--accent-contrast);
 }
 
 .upload-file-row,

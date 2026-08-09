@@ -3,6 +3,7 @@ import { lrrApi } from '../lib/api';
 import { navigateHome, navigateToArchive, navigateToMetadata } from '../lib/navigation';
 import {
   partitionUploadFiles,
+  createUploadUrlTasks,
   matchDownloadPlugin,
   normalizeDownloadPlugins,
   parseUploadUrls,
@@ -49,6 +50,7 @@ export default function UploadPage() {
   const [pluginStatus, setPluginStatus] = useState('');
   const [results, setResults] = useState([]);
   const [running, setRunning] = useState(false);
+  const [clearingResults, setClearingResults] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [notice, setNotice] = useState('');
   const [archiveMenu, setArchiveMenu] = useState(null);
@@ -63,7 +65,7 @@ export default function UploadPage() {
       ? parsedUrls.valid.filter(url => !matchDownloadPlugin(url, pluginState.plugins)).length
       : 0
   ), [parsedUrls.valid, pluginState.plugins, pluginValue]);
-  const completedCount = results.filter(item => item.status === 'success' || item.status === 'failed').length;
+  const queuedTaskCount = results.filter(item => item.status === 'queued').length;
   const totalProgress = results.length ? Math.max(0, Math.min(100, Math.round(results.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / results.length))) : 0;
 
   useEffect(() => {
@@ -86,7 +88,32 @@ export default function UploadPage() {
     return () => window.removeEventListener('beforeunload', guard);
   }, [running]);
 
+  useEffect(() => {
+    if (mode !== 'url' || running || clearingResults || parsedUrls.valid.length === 0) return;
+    setResults(current => {
+      const next = createUploadUrlTasks(
+        parsedUrls.valid,
+        new Set(current.map((item) => item.label)),
+      ).map((task, index) => ({
+        ...task,
+        id: taskKey('url', task.url, current.length + index),
+      }));
+      return next.length ? [...current, ...next] : current;
+    });
+    setUrlText(current => {
+      const valid = new Set(parseUploadUrls(current).valid);
+      return String(current).split(/\r?\n/).filter(line => {
+        const t = line.trim();
+        if (!t) return true;
+        let href = t;
+        try { href = new URL(t).href; } catch { /* 保留无效行 */ }
+        return !valid.has(href);
+      }).join('\n');
+    });
+  }, [mode, parsedUrls.valid, running, clearingResults]);
+
   const addFiles = useCallback((incoming) => {
+    if (clearingResults) return;
     const { accepted, rejected } = partitionUploadFiles(incoming);
     if (accepted.length) {
       setResults(current => {
@@ -106,7 +133,7 @@ export default function UploadPage() {
       });
     }
     setNotice(rejected.length ? `已忽略不支持的文件：${rejected.map((file) => file.name).join('、')}` : '');
-  }, []);
+  }, [clearingResults]);
 
   const clearSearchCache = useCallback(async (successLabel = '档案已提交') => {
     try {
@@ -215,25 +242,6 @@ export default function UploadPage() {
     }
   }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, clearSearchCache]);
 
-  const addUrls = useCallback(() => {
-    const invalidResults = parsedUrls.invalid.map((url, index) => ({
-      id: taskKey('invalid', url, index), type: 'url', label: url, status: 'failed', message: '只支持有效的 HTTP 或 HTTPS URL', progress: 100,
-    }));
-    const validTasks = parsedUrls.valid.map((url, index) => ({
-      id: taskKey('url', url, index), type: 'url', label: url, url, status: 'queued', progress: 0, message: '',
-    }));
-    if (validTasks.length === 0 && invalidResults.length === 0) return;
-    setResults(current => {
-      const existing = new Set(current.map((item) => item.label));
-      return [
-        ...current,
-        ...validTasks.filter((task) => !existing.has(task.label)),
-        ...invalidResults.filter((task) => !existing.has(task.label)),
-      ];
-    });
-    setUrlText('');
-  }, [parsedUrls.invalid, parsedUrls.valid]);
-
   const runPending = useCallback(async () => {
     if (running) return;
     const tasks = results.filter((item) => item.status === 'queued');
@@ -257,6 +265,20 @@ export default function UploadPage() {
     }
   }, [running, results, pluginValue, pluginState.plugins, updateTask, clearSearchCache]);
 
+  const clearResults = useCallback(() => {
+    if (clearingResults || results.length === 0) return;
+    setClearingResults(true);
+  }, [clearingResults, results.length]);
+
+  useEffect(() => {
+    if (!clearingResults) return undefined;
+    const timer = window.setTimeout(() => {
+      setResults([]);
+      setClearingResults(false);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [clearingResults]);
+
   const goBack = () => {
     if (window.history.length > 1) window.history.back();
     else navigateHome();
@@ -277,28 +299,31 @@ export default function UploadPage() {
           type="button"
           role="tab"
           aria-selected={mode === 'local'}
-          className={`settings-category-tab upload-mode-tab${mode === 'local' ? ' is-active' : ''}`}
+          className={`btn settings-category-tab upload-mode-tab${mode === 'local' ? ' is-active' : ''}`}
           onClick={() => setMode('local')}
-          disabled={running}
-        >本地添加</button>
+          disabled={running || clearingResults}
+        >从本地添加</button>
         <button
           type="button"
           role="tab"
           aria-selected={mode === 'url'}
-          className={`settings-category-tab upload-mode-tab${mode === 'url' ? ' is-active' : ''}`}
+          className={`btn settings-category-tab upload-mode-tab${mode === 'url' ? ' is-active' : ''}`}
           onClick={() => setMode('url')}
-          disabled={running}
+          disabled={running || clearingResults}
         >从互联网添加</button>
       </div>
 
       <section className="glass-panel upload-panel">
-        {mode === 'local' ? (
-          <>
+        <div className="upload-mode-panel-stack">
+          <div
+            className={`upload-mode-panel${mode === 'local' ? ' is-active' : ''}`}
+            aria-hidden={mode !== 'local'}
+          >
             <div className="upload-section-heading">
               <ToolbarGlyph name="upload" size={20} />
               <div><h2>从本地添加</h2><p>支持一次选择多个档案文件</p></div>
             </div>
-            <input ref={fileInputRef} type="file" multiple accept={ACCEPTED_FILES} aria-label="选择档案文件" hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
+            <input ref={fileInputRef} type="file" multiple accept={ACCEPTED_FILES} aria-label="选择档案文件" hidden disabled={running || clearingResults} onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
             <div
               className={`upload-dropzone${dragActive ? ' is-dragging' : ''}`}
               role="button"
@@ -313,10 +338,12 @@ export default function UploadPage() {
               <strong>选择文件或拖放到这里</strong>
               <span>ZIP、CBZ、RAR、CBR、7Z、PDF</span>
             </div>
-            <p className="upload-mode-hint">选择的文件会加入下方任务列表，点击「开始处理」统一上传。</p>
-          </>
-        ) : (
-          <>
+          </div>
+
+          <div
+            className={`upload-mode-panel${mode === 'url' ? ' is-active' : ''}`}
+            aria-hidden={mode !== 'url'}
+          >
             <div className="upload-section-heading">
               <ToolbarGlyph name="cloudDownload" size={20} />
               <div><h2>从互联网添加</h2><p>自动根据插件正则匹配每个 URL</p></div>
@@ -326,7 +353,7 @@ export default function UploadPage() {
               value={pluginValue}
               options={pluginState.options}
               onChange={setPluginValue}
-              style={running ? { pointerEvents: 'none', opacity: 0.55 } : undefined}
+              style={running || clearingResults ? { pointerEvents: 'none', opacity: 0.55 } : undefined}
             />
             {(pluginStatus || pluginState.warnings.length > 0) && <div className="upload-notice">
               {pluginStatus && <div>{pluginStatus}</div>}
@@ -340,28 +367,25 @@ export default function UploadPage() {
                 {unmatchedUrlCount > 0 && <span className="is-error">{unmatchedUrlCount} 个未匹配插件</span>}
               </div>
             </div>
-            <textarea id="upload-urls" className="input-glass upload-url-input" value={urlText} onChange={event => setUrlText(event.target.value)} placeholder={'https://example.com/gallery/123\nhttps://example.com/gallery/456'} disabled={running} />
-            <button type="button" className="btn upload-primary-action" onClick={addUrls} disabled={running || (!parsedUrls.valid.length && !parsedUrls.invalid.length)}>
-              添加到队列
-            </button>
-          </>
-        )}
+            <textarea id="upload-urls" className="input-glass upload-url-input" value={urlText} onChange={event => setUrlText(event.target.value)} placeholder={'https://example.com/gallery/123\nhttps://example.com/gallery/456'} disabled={running || clearingResults} />
+          </div>
+        </div>
       </section>
 
       {notice && <div className="upload-notice" role="status">{notice}</div>}
 
-      {results.length > 0 && <section className="glass-panel upload-results" aria-live="polite">
+      <section className="glass-panel upload-results" aria-live="polite">
         <div className="upload-results-heading">
-          <div><h2>任务状态</h2><p>{completedCount} / {results.length} 已完成</p></div>
+          <div><h2>任务列表</h2></div>
           <div className="upload-results-actions">
-            {results.some((item) => item.status === 'queued') && !running && (
-              <button type="button" className="btn upload-primary-action" onClick={runPending}>开始处理（{results.filter((item) => item.status === 'queued').length}）</button>
-            )}
-            {!running && <button type="button" className="btn" onClick={() => setResults([])}>清空结果</button>}
+            <button type="button" className="btn" onClick={runPending} disabled={running || clearingResults || queuedTaskCount === 0}>
+              {running ? '处理中…' : '开始处理'}
+            </button>
+            <button type="button" className="btn" onClick={clearResults} disabled={running || clearingResults || results.length === 0}>清空列表</button>
           </div>
         </div>
         <div className="upload-progress"><span style={{ width: `${totalProgress}%` }} /></div>
-        <div className="upload-task-list">
+        <div className={`upload-task-list${clearingResults ? ' is-clearing' : ''}`}>
           {results.map(item => <div
             key={item.id}
             className={`upload-task-row${item.archive ? ' has-menu' : ''}`}
@@ -373,7 +397,7 @@ export default function UploadPage() {
             <span className={`upload-status-dot is-${item.status}`} title={statusTitle(item.status)} />
           </div>)}
         </div>
-      </section>}
+      </section>
       <ArchiveContextMenu
         menu={archiveMenu}
         onClose={() => setArchiveMenu(null)}

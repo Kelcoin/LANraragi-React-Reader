@@ -1,4 +1,9 @@
 export const ARCHIVE_CARD_WIDTH = 150;
+export const ARCHIVE_CARD_COVER_HEIGHT = 210;
+export const ARCHIVE_CARD_TITLE_GAP = 8;
+export const ARCHIVE_CARD_TITLE_SLOT_HEIGHT = 43.7;
+export const ARCHIVE_CARD_META_GAP = 6;
+export const ARCHIVE_CARD_META_ROW_HEIGHT = 14.85;
 
 export function getWideArchiveCardWidth(gap = 16) {
   const safeGap = Number.isFinite(gap) && gap >= 0 ? gap : 16;
