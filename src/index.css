@@ -1684,6 +1684,8 @@ textarea:focus-visible,
   display: flex;
   min-width: 0;
   flex-direction: column;
+  /* 匹配真实卡片标题区(ARCHIVE_TITLE_VERTICAL_BUDGET 51.7) + meta 行，避免骨架→完成态高度跳变 */
+  min-height: 73px;
 }
 
 .recommendation-loading-line {

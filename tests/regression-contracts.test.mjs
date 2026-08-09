@@ -231,6 +231,7 @@ test('skeleton shimmer keeps a stable base fill and recommendation placeholders 
   assert.match(recommendations, /className="recommendation-loading-card"/);
   assert.match(recommendations, /className="recommendation-loading-cover shimmer-strip"/);
   assert.match(css, /\.recommendation-loading-card\s*\{[^}]*flex:\s*0 0 150px;[^}]*contain:\s*layout paint style;/s);
+  assert.match(css, /\.recommendation-loading-body\s*\{[^}]*min-height:\s*73px;/s);
   assert.doesNotMatch(recommendations, /linear-gradient\(90deg, var\(--reader-skeleton-base\)/);
 });
 
