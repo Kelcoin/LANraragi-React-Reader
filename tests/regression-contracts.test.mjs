@@ -1818,12 +1818,12 @@ test('custom palette picker escapes settings clipping, stays above the modal, an
   assert.match(css, /\.theme-color-picker-trigger:hover,[\s\S]*background:\s*var\(--surface-inset\)/s);
 });
 
-test('release version is 1.5.1 across package manifests', () => {
+test('release version is 1.5.2 across package manifests', () => {
   const packageJson = read('package.json');
   const packageLock = read('package-lock.json');
-  assert.match(packageJson, /"version":\s*"1\.5\.1"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.1"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.1"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.1"/);
+  assert.match(packageJson, /"version":\s*"1\.5\.2"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.2"/);
+  assert.match(packageLock, /"version":\s*"1\.5\.2"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.2"/);
 });
 
 test('sync data survives scope switches and failed flushes', () => {
