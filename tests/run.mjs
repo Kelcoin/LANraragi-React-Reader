@@ -12,6 +12,7 @@ import './reading-progress.test.mjs';
 import './random-archive-filter.test.mjs';
 import './reader-layout.test.mjs';
 import './reader-ui-state.test.mjs';
+import './super-resolution.test.mjs';
 import './deduplicate-selection.test.mjs';
 import './archive-deletion.test.mjs';
 import './session-state.test.mjs';

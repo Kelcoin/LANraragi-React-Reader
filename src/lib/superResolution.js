@@ -5,6 +5,48 @@ export const SUPER_RESOLUTION_MODELS = Object.freeze([
   { value: 'realcugan', label: 'Real-CUGAN' },
 ]);
 
+export function getSuperResolutionModel(value) {
+  return SUPER_RESOLUTION_MODELS.find((model) => model.value === value) ?? null;
+}
+
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function getLayout(manifest, key) {
+  return manifest?.[`${key}Layout`] ?? manifest?.[key]?.layout;
+}
+
+function hasChecksumMetadata(manifest) {
+  const checksum = manifest?.checksum;
+  if (!checksum || typeof checksum !== 'object' || Array.isArray(checksum)) return false;
+  return hasText(checksum.algorithm)
+    && checksum.algorithm.trim().toLowerCase() === 'sha-256'
+    && typeof checksum.digest === 'string'
+    && /^[a-f0-9]{64}$/i.test(checksum.digest);
+}
+
+function hasLicenseMetadata(manifest) {
+  const license = manifest?.license;
+  return Boolean(license
+    && typeof license === 'object'
+    && !Array.isArray(license)
+    && hasText(license.name)
+    && hasText(license.url));
+}
+
+export function validateSuperResolutionManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return false;
+  return hasText(manifest.id)
+    && hasText(manifest.url)
+    && Number.isInteger(manifest.scale)
+    && manifest.scale > 0
+    && ['nchw', 'nhwc'].includes(getLayout(manifest, 'input'))
+    && ['nchw', 'nhwc'].includes(getLayout(manifest, 'output'))
+    && hasChecksumMetadata(manifest)
+    && hasLicenseMetadata(manifest);
+}
+
 function detectGpuSupport() {
   // WebGL 是当前 wasm 引擎（如 Anime4KCPP/realcugan-wasm）在浏览器端可用的最低公共能力标记。
   try {
