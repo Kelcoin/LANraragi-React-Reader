@@ -11,7 +11,7 @@ import { getCachedImage, getImage, primeImage, deleteImageKeys, IMAGE_LOAD_PRIOR
 import { createImageDecodeQueue } from '../lib/imageLoadQueue';
 import { decodeImageSource, getReaderPreviewSource } from '../lib/readerPreviewDecode';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange } from '../lib/readerSettings';
-import { SUPER_RESOLUTION_MODELS, detectSuperResolutionSupport } from '../lib/superResolution';
+import { SUPER_RESOLUTION_MODELS, detectSuperResolutionSupport, shouldAutoEnableSuperResolution } from '../lib/superResolution';
 import {
   clearArchiveProgressMarker,
   getArchiveProgressPercent,
@@ -1170,6 +1170,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState('general');
   const [srSupport] = useState(() => detectSuperResolutionSupport());
+  const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
   const [srToast, setSrToast] = useState('');
   const srToastTimerRef = useRef(null);
   const [showArchivePanel, setShowArchivePanel] = useState(false);
@@ -3430,6 +3431,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     updateSettings((s) => ({ ...s, srEnabled: enabled }));
   }, [srSupport, showSrToast, updateSettings]);
 
+  // 自动超分：当每页平均体积低于阈值时，自动启用当前档案的超分
+  useEffect(() => {
+    if (!settings.srAuto || !settings.srEnabled) {
+      setSrArchiveEnabled(false);
+      return;
+    }
+    const shouldAuto = shouldAutoEnableSuperResolution(archive, settings.srAuto, settings.srAutoThreshold);
+    setSrArchiveEnabled(shouldAuto);
+  }, [archive, settings.srAuto, settings.srEnabled, settings.srAutoThreshold]);
+
   const btnBase = getTopBarButtonStyle(toolbarCompact);
 
   const navBtnBase = getPageNavButtonStyle(isMobile);
@@ -3804,11 +3815,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} compact /></div>
                   </div>
                   <div className="settings-row">
-                    <SettingHint text={'对低分辨率图片自动启用超分。\n配合下方阈值，低于该尺寸的图片会自动处理。'}>自动启用超分</SettingHint>
+                    <SettingHint text={'自动超分逻辑：按归档体积 / 页数算出每页平均体积，低于下方阈值时自动启用当前档案超分。'}>自动启用超分</SettingHint>
                     <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动启用超分" checked={settings.srAuto} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} /></div>
                   </div>
                   <div className="settings-row">
-                    <SettingHint text={'宽度低于此像素数的图片会自动超分。\n填 0：对所有图片都自动超分。'}>自动超分阈值</SettingHint>
+                    <SettingHint text={'每页平均体积阈值（KB）。\n归档体积 ÷ 页数 < 该值时自动启用超分。\n填 0：关闭自动超分。'}>自动超分阈值(KB)</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={String(settings.srAutoThreshold)}
                       onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
@@ -4083,8 +4094,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   <ToolbarGlyph name="cover" size={20} />
                 </button>
                 {settings.srEnabled && (
-                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { updateSettings((s) => ({ ...s, srEnabled: false })); showSrToast('超分已关闭'); revealImmersiveControls(side); }} title="关闭超分" aria-label="关闭超分">
-                    <ToolbarGlyph name="superResolutionOff" size={20} />
+                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { const next = !srArchiveEnabled; setSrArchiveEnabled(next); showSrToast(next ? '已为当前档案启用超分' : '已关闭当前档案超分'); revealImmersiveControls(side); }} title={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'} aria-label={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'}>
+                    <ToolbarGlyph name={srArchiveEnabled ? 'superResolution' : 'superResolutionOff'} size={20} />
                   </button>
                 )}
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate} onClick={() => { if (canNavigate) openThumbnailDrawer(side); hideImmersiveControls(); }} title="缩略面板" aria-label="缩略面板">

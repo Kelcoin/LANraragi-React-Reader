@@ -20,7 +20,7 @@ export const DEFAULT_READER_SETTINGS = Object.freeze({
   srModel: 'anime4k',
   srPreloadCount: 3,
   srAuto: false,
-  srAutoThreshold: 0,
+  srAutoThreshold: 0, // 每页平均体积阈值（KB），低于该值的档案自动启用超分
 });
 
 const allowed = {

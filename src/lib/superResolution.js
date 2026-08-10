@@ -20,9 +20,30 @@ function detectGpuSupport() {
 }
 
 /**
- * 检测当前环境是否支持超分。
- * @returns {{ supported: boolean, reason: string }}
+ * 计算归档每页平均体积（KB）。
+ * 依据：归档总体积（字节）/ 页数，再换算为 KB。
+ * @returns {number|null} 每页平均 KB；数据不足时返回 null。
  */
+export function getArchiveAvgPageSizeKb(archive) {
+  const bytes = Number(archive?.size ?? archive?.filesize ?? archive?.file_size);
+  const pages = Number(archive?.pagecount ?? archive?.total ?? archive?.pages);
+  if (!Number.isFinite(bytes) || bytes <= 0 || !Number.isFinite(pages) || pages <= 0) return null;
+  return bytes / pages / 1024;
+}
+
+/**
+ * 判断是否应自动启用超分。
+ * 依据：每页平均体积低于阈值（KB）时启用。
+ * @returns {boolean} 是否应自动启用。
+ */
+export function shouldAutoEnableSuperResolution(archive, srAuto, srAutoThresholdKb) {
+  if (!srAuto) return false;
+  const avgKb = getArchiveAvgPageSizeKb(archive);
+  if (avgKb === null) return false;
+  const threshold = Number(srAutoThresholdKb);
+  if (!Number.isFinite(threshold) || threshold <= 0) return false;
+  return avgKb < threshold;
+}
 export function detectSuperResolutionSupport() {
   if (typeof globalThis.WebAssembly === 'undefined') {
     return { supported: false, reason: '当前浏览器不支持 WebAssembly，无法运行超分引擎。' };

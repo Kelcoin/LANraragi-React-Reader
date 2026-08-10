@@ -256,17 +256,23 @@ function renderToolbarGlyph(name) {
     case 'superResolution':
       return (
         <>
-          <path d="M4 4.5h3.2M4 4.5V7.7M4 19.5h3.2M4 19.5V16.3M20 4.5h-3.2M20 4.5V7.7M20 19.5h-3.2M20 19.5V16.3" />
-          <path d="M9.55 8.4 11.15 15.6M11.15 15.6 12.75 8.4M10.35 12.6h1.6" />
-          <path d="M15 8.4v7.2M14.2 8.4h1.6M14.2 15.6h1.6" />
+          <path d="M5 5h4v4H5z" />
+          <path d="M11.5 5.5h3v3h-3z" />
+          <path d="M5 11.5h3v3H5z" />
+          <path d="M11.5 12h3v3h-3z" />
+          <circle cx="16.6" cy="16.6" r="3.4" />
+          <path d="M19.2 19.2 21.5 21.5" />
         </>
       );
     case 'superResolutionOff':
       return (
         <>
-          <path d="M4 4.5h3.2M4 4.5V7.7M4 19.5h3.2M4 19.5V16.3M20 4.5h-3.2M20 4.5V7.7M20 19.5h-3.2M20 19.5V16.3" />
-          <path d="M9.55 8.4 11.15 15.6M11.15 15.6 12.75 8.4M10.35 12.6h1.6" />
-          <path d="M15 8.4v7.2M14.2 8.4h1.6M14.2 15.6h1.6" />
+          <path d="M5 5h4v4H5z" />
+          <path d="M11.5 5.5h3v3h-3z" />
+          <path d="M5 11.5h3v3H5z" />
+          <path d="M11.5 12h3v3h-3z" />
+          <circle cx="16.6" cy="16.6" r="3.4" />
+          <path d="M19.2 19.2 21.5 21.5" />
           <path d="M6.5 17.5 17.5 6.5" />
         </>
       );

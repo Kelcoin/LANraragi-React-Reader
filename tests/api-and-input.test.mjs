@@ -174,6 +174,36 @@ test('reader settings normalize super-resolution fields (UI framework)', () => {
   assert.ok(fallback.reason);
 });
 
+test('super resolution avg page size computes from pagecount + size aliases', () => {
+  // 10 页、5120 KB → 每页 512 KB
+  assert.equal(superResolution.getArchiveAvgPageSizeKb({ pagecount: 10, size: 5120 * 1024 }), 512);
+  // filesize / file_size 别名
+  assert.equal(superResolution.getArchiveAvgPageSizeKb({ pagecount: 5, filesize: 2560 * 1024 }), 512);
+  assert.equal(superResolution.getArchiveAvgPageSizeKb({ total: 4, file_size: 4096 * 1024 }), 1024);
+  // 数据不足 → null
+  assert.equal(superResolution.getArchiveAvgPageSizeKb({}), null);
+  assert.equal(superResolution.getArchiveAvgPageSizeKb({ pagecount: 0, size: 100 }), null);
+  assert.equal(superResolution.getArchiveAvgPageSizeKb({ pagecount: 10, size: 0 }), null);
+  assert.equal(superResolution.getArchiveAvgPageSizeKb(null), null);
+});
+
+test('super resolution auto-enable uses avg page size vs threshold', () => {
+  const archive = { pagecount: 10, size: 5120 * 1024 }; // 512 KB/页
+  // 低于阈值 → 启用
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, 600), true);
+  // 高于或等于阈值 → 不启用
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, 512), false);
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, 400), false);
+  // srAuto 关闭 → 不启用
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, false, 600), false);
+  // 阈值 0 / 负值 / 非数字 → 不启用
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, 0), false);
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, -5), false);
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, NaN), false);
+  // 数据不足 → 不启用
+  assert.equal(superResolution.shouldAutoEnableSuperResolution({}, true, 600), false);
+});
+
 test('reader settings keep E-Hentai sorting valid across Home and Reader', () => {
   const defaults = readerSettings.normalizeReaderSettings({});
   assert.equal(defaults.ehMinScore, 0);
