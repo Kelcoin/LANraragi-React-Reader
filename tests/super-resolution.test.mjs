@@ -3,6 +3,44 @@ import test from 'node:test';
 
 import * as superResolution from '../src/lib/superResolution.js';
 import * as tiling from '../src/lib/superResolutionTiling.js';
+import { createSuperResolutionRuntime as createRawSuperResolutionRuntime } from '../src/lib/superResolutionRuntime.js';
+
+function createWorkerHarness() {
+  const messages = [];
+  const listeners = new Map([
+    ['message', new Set()],
+    ['error', new Set()],
+    ['messageerror', new Set()],
+  ]);
+  let terminated = false;
+
+  return {
+    messages,
+    get terminated() {
+      return terminated;
+    },
+    worker: {
+      addEventListener(type, listener) {
+        listeners.get(type)?.add(listener);
+      },
+      removeEventListener(type, listener) {
+        listeners.get(type)?.delete(listener);
+      },
+      postMessage(message, transfer) {
+        messages.push({ message, transfer });
+      },
+      terminate() {
+        terminated = true;
+      },
+    },
+    emit(data) {
+      for (const listener of listeners.get('message')) listener({ data });
+    },
+    emitWorkerEvent(type, event) {
+      for (const listener of listeners.get(type)) listener(event);
+    },
+  };
+}
 
 const productionManifest = {
   id: 'anime4k-x2',
@@ -25,6 +63,234 @@ function validateManifest(manifest) {
   assert.equal(typeof superResolution.validateSuperResolutionManifest, 'function');
   return superResolution.validateSuperResolutionManifest(manifest);
 }
+
+function withTimeout(promise, message = 'promise did not settle') {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), 100);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+test('runtime forwards init, pixel processing, cancellation, and disposal messages', async () => {
+  assert.equal(typeof superResolution.createSuperResolutionRuntime, 'function');
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+
+  const initPromise = runtime.init(productionManifest);
+  const initMessage = harness.messages[0].message;
+  assert.equal(initMessage.type, 'init');
+  assert.equal(typeof initMessage.requestId, 'string');
+  assert.deepEqual(initMessage.manifest, productionManifest);
+  harness.emit({
+    type: 'ready',
+    requestId: initMessage.requestId,
+    backend: 'wasm',
+  });
+  assert.deepEqual(await initPromise, { backend: 'wasm' });
+
+  const pixels = new Uint8Array([1, 2, 3, 4]);
+  const processPromise = runtime.processPixels({
+    requestId: 'pixels-1',
+    pixels,
+    width: 1,
+    height: 1,
+  });
+  const processMessage = harness.messages[1];
+  assert.equal(processMessage.message.type, 'process');
+  assert.equal(processMessage.message.requestId, 'pixels-1');
+  assert.equal(processMessage.message.pixels, pixels);
+  assert.equal(processMessage.transfer.includes(pixels.buffer), true);
+  runtime.cancel('pixels-1');
+  assert.deepEqual(harness.messages[2].message, {
+    type: 'cancel',
+    requestId: 'pixels-1',
+  });
+  await assert.rejects(
+    withTimeout(processPromise),
+    (error) => error?.name === 'AbortError',
+  );
+
+  // A result emitted after cancellation must not settle the cancelled request.
+  harness.emit({
+    type: 'result',
+    requestId: 'pixels-1',
+    pixels,
+  });
+
+  const retryPixels = new Uint8Array([5, 6, 7, 8]);
+  const retryPromise = runtime.processPixels({
+    requestId: 'pixels-1',
+    pixels: retryPixels,
+    width: 1,
+    height: 1,
+  });
+  harness.emit({
+    type: 'result',
+    requestId: 'pixels-1',
+    pixels: retryPixels,
+  });
+  assert.deepEqual(await retryPromise, { requestId: 'pixels-1', pixels: retryPixels });
+
+  runtime.dispose();
+  assert.equal(harness.terminated, true);
+});
+
+test('dispose rejects all pending requests and terminates the worker', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+
+  const initPromise = runtime.init(productionManifest);
+  const processPromise = runtime.processPixels({
+    requestId: 'dispose-process',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+  runtime.dispose();
+
+  await assert.rejects(initPromise, /disposed/);
+  await assert.rejects(processPromise, /disposed/);
+  assert.deepEqual(harness.messages[2].message, { type: 'dispose' });
+  assert.equal(harness.terminated, true);
+});
+
+test('rejects all pending requests on worker error', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+  const initPromise = runtime.init(productionManifest);
+  const processPromise = runtime.processPixels({
+    requestId: 'worker-error-process',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+
+  harness.emitWorkerEvent('error', { error: new Error('worker crashed') });
+
+  await assert.rejects(withTimeout(initPromise), /worker crashed/);
+  await assert.rejects(withTimeout(processPromise), /worker crashed/);
+  runtime.dispose();
+});
+
+test('rejects all pending requests on worker messageerror', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+  const initPromise = runtime.init(productionManifest);
+  const processPromise = runtime.processPixels({
+    requestId: 'message-error-process',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+
+  harness.emitWorkerEvent('messageerror', { message: 'message could not be cloned' });
+
+  await assert.rejects(withTimeout(initPromise), /message could not be cloned/);
+  await assert.rejects(withTimeout(processPromise), /message could not be cloned/);
+  runtime.dispose();
+});
+
+test('rejects matching request ids with a protocol type mismatch', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+  const initPromise = runtime.init(productionManifest);
+  const requestId = harness.messages[0].message.requestId;
+
+  harness.emit({ type: 'result', requestId, pixels: new Uint8Array([1]) });
+
+  await assert.rejects(withTimeout(initPromise), /protocol/i);
+  runtime.dispose();
+});
+
+test('rejects matching request ids with an unknown protocol type', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+  const processPromise = runtime.processPixels({
+    requestId: 'unknown-response-process',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+
+  harness.emit({ type: 'unexpected', requestId: 'unknown-response-process' });
+
+  await assert.rejects(withTimeout(processPromise), /protocol/i);
+  runtime.dispose();
+});
+
+test('rejects non-buffer pixel inputs before posting to the worker', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+
+  await assert.rejects(
+    withTimeout(runtime.processPixels({ pixels: [1, 2, 3, 4], width: 1, height: 1 })),
+    /pixels.*ArrayBuffer/i,
+  );
+  assert.equal(harness.messages.length, 0);
+  runtime.dispose();
+});
+
+test('rejects non-positive or non-integer pixel dimensions before posting', async () => {
+  const invalidDimensions = [
+    { width: 0, height: 1 },
+    { width: 1, height: 0 },
+    { width: 1.5, height: 1 },
+    { width: 1, height: 1.5 },
+  ];
+
+  for (const { width, height } of invalidDimensions) {
+    const harness = createWorkerHarness();
+    const runtime = superResolution.createSuperResolutionRuntime({
+      workerFactory: () => harness.worker,
+    });
+    await assert.rejects(
+      withTimeout(runtime.processPixels({
+        pixels: new Uint8Array([1, 2, 3, 4]),
+        width,
+        height,
+      })),
+      /positive integers/i,
+    );
+    assert.equal(harness.messages.length, 0);
+    runtime.dispose();
+  }
+});
+
+test('raw runtime uses the injected manifest validator', async () => {
+  const harness = createWorkerHarness();
+  const manifest = { id: 'accepted-by-injected-validator' };
+  let receivedManifest;
+  const runtime = createRawSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+    manifestValidator(value) {
+      receivedManifest = value;
+      return true;
+    },
+  });
+
+  const initPromise = runtime.init(manifest);
+  const initMessage = harness.messages[0].message;
+  harness.emit({ type: 'ready', requestId: initMessage.requestId, backend: 'wasm' });
+
+  assert.deepEqual(await initPromise, { backend: 'wasm' });
+  assert.equal(receivedManifest, manifest);
+  runtime.dispose();
+});
 
 test('resolves a super-resolution model by its value', () => {
   assert.equal(typeof superResolution.getSuperResolutionModel, 'function');

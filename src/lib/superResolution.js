@@ -1,3 +1,5 @@
+import { createSuperResolutionRuntime as createRuntime } from './superResolutionRuntime.js';
+
 // 超分能力检测与模型选项（UI 框架；wasm 引擎后续接入）
 export const SUPER_RESOLUTION_MODELS = Object.freeze([
   { value: 'anime4k', label: 'Anime4K' },
@@ -95,4 +97,11 @@ export function detectSuperResolutionSupport() {
     return { supported: false, reason: '当前设备/浏览器不支持 WebGL，无法运行 GPU 超分。' };
   }
   return { supported: true, reason: '' };
+}
+
+export function createSuperResolutionRuntime(options = {}) {
+  return createRuntime({
+    ...options,
+    manifestValidator: validateSuperResolutionManifest,
+  });
 }
