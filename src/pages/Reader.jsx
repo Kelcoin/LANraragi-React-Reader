@@ -46,6 +46,7 @@ import { filterRandomArchives, getRandomHideRead } from '../lib/randomArchiveFil
 import Recommendations from '../components/Recommendations';
 import EhComments from '../components/EhComments';
 import ConfirmDialog from '../components/ConfirmDialog';
+import SettingHint from '../components/SettingHint';
 import CustomSelect from '../components/CustomSelect';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { HomeSectionGlyph, NamespaceGlyph, stripDecoratedLabel, ToolbarGlyph } from '../components/AppGlyphs';
@@ -3652,15 +3653,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             )}
             <button
               className="reader-toolbar-button"
-              disabled={!srSupport.supported && !settings.srEnabled}
-              style={{ ...btnBase, opacity: (!srSupport.supported && !settings.srEnabled) ? 0.45 : 1, cursor: (!srSupport.supported && !settings.srEnabled) ? 'not-allowed' : 'pointer', color: settings.srEnabled ? 'var(--accent)' : undefined }}
-              onClick={() => { if (settings.srEnabled) { updateSettings((s) => ({ ...s, srEnabled: false })); showSrToast('超分已关闭'); } else handleToggleSrEnabled(true); }}
-              title={settings.srEnabled ? '关闭超分' : '启用超分'}
-              aria-label={settings.srEnabled ? '关闭超分' : '启用超分'}
+              disabled={!canNavigate}
+              style={{ ...btnBase, opacity: canNavigate ? 1 : 0.45, cursor: canNavigate ? 'pointer' : 'not-allowed' }}
+              onClick={() => { if (canNavigate) openThumbnailDrawer('right'); }}
+              title="缩略面板"
+              aria-label="缩略面板"
             >
-              <ReaderToolbarButtonContent icon="superResolution" label={settings.srEnabled ? '超分已开启' : '超分'} />
-            </button>
-            <button className="reader-toolbar-button" disabled={!canNavigate} style={{ ...btnBase, opacity: canNavigate ? 1 : 0.45, cursor: canNavigate ? 'pointer' : 'not-allowed' }} onClick={() => { if (canNavigate) openThumbnailDrawer('right'); }} title="缩略面板" aria-label="缩略面板">
               <ReaderToolbarButtonContent icon="grid" label="缩略面板" />
             </button>
           </div>
@@ -3709,32 +3707,53 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             <div className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
               <div className="settings-section-inner">
                 <div className="settings-group">
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ flexShrink: 0 }}>翻页流向</span>
-                    <div style={{ width: '135px', flexShrink: 0 }}>
-                      <CustomSelect
-                        value={settings.direction}
-                        options={[{ label: '从左向右', value: 'ltr' }, { label: '从右向左', value: 'rtl' }]}
-                        onChange={(v) => updateSettings((s) => ({ ...s, direction: v }))}
-                        compact
-                      />
-                    </div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span>页码指示器</span>
-                    <div style={{ width: '135px' }}><CustomSelect value={settings.pageIndicatorVisibilityMode} options={[{ label: '自动避让', value: 'auto' }, { label: '始终显示', value: 'pinned' }, { label: '隐藏', value: 'hidden' }]} onChange={(v) => updateSettings((s) => ({ ...s, pageIndicatorVisibilityMode: v }))} compact /></div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span>阅读布局</span>
-                    <div style={{ width: '135px' }}><CustomSelect value={settings.readingLayout} options={[{ label: '单页', value: 'single' }, { label: '双页', value: 'double' }, { label: '滚动', value: 'webtoon' }, { label: '自动检测', value: 'auto' }]} onChange={(v) => updateSettings((s) => ({ ...s, readingLayout: v }))} compact /></div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span>缩放模式</span>
-                    <div style={{ width: '135px' }}><CustomSelect value={settings.scaleMode} options={[{ label: '适应屏幕', value: 'fit-screen' }, { label: '适应宽度', value: 'fit-width' }, { label: '适应高度', value: 'fit-height' }, { label: '原始尺寸', value: 'original' }]} onChange={(v) => updateSettings((s) => ({ ...s, scaleMode: v }))} compact /></div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    自动裁白边<ToggleSwitch label="自动裁白边" checked={settings.cropBordersEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, cropBordersEnabled: checked }))} />
-                  </label>
+                  <div className="settings-row">
+                    <SettingHint text={'页码指示器：阅读时显示当前页/总页数。\n自动避让：图片靠近指示器时自动移动，避免遮挡。\n隐藏：不显示页码。'}>页码指示器</SettingHint>
+                    <div className="settings-control"><CustomSelect value={settings.pageIndicatorVisibilityMode} options={[{ label: '自动避让', value: 'auto' }, { label: '始终显示', value: 'pinned' }, { label: '隐藏', value: 'hidden' }]} onChange={(v) => updateSettings((s) => ({ ...s, pageIndicatorVisibilityMode: v }))} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'适应屏幕：整页缩放到完全可见。\n适应宽度：按页面宽度铺满。\n适应高度：按视口高度铺满。\n原始尺寸：显示图片原始像素。'}>缩放模式</SettingHint>
+                    <div className="settings-control"><CustomSelect value={settings.scaleMode} options={[{ label: '适应屏幕', value: 'fit-screen' }, { label: '适应宽度', value: 'fit-width' }, { label: '适应高度', value: 'fit-height' }, { label: '原始尺寸', value: 'original' }]} onChange={(v) => updateSettings((s) => ({ ...s, scaleMode: v }))} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'自动识别并裁掉图片四周的白色或空边，让画面更紧凑。'}>自动裁白边</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动裁白边" checked={settings.cropBordersEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, cropBordersEnabled: checked }))} /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'提前加载后续页面的图片，翻页时更流畅。\n范围：1–10 页。'}>预加载</SettingHint>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={preloadInput}
+                      onChange={(e) => { const raw = e.target.value; setPreloadInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 10) { updateSettings((s) => ({ ...s, preloadCount: n })); } }}
+                      onBlur={() => { const n = parseInt(preloadInput, 10); if (isNaN(n) || n < 1) { setPreloadInput('1'); updateSettings((s) => ({ ...s, preloadCount: 1 })); } else if (n > 10) { setPreloadInput('10'); updateSettings((s) => ({ ...s, preloadCount: 10 })); } }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'同时解码的最大图片数量。\n数值越高翻页越流畅，但更耗内存。\n范围：1–6。'}>最大同时解码</SettingHint>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={decodeConcurrencyInput}
+                      onChange={(e) => { const raw = e.target.value; setDecodeConcurrencyInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 6) { updateSettings((s) => ({ ...s, maxConcurrentDecodes: n })); } }}
+                      onBlur={() => { const n = parseInt(decodeConcurrencyInput, 10); const next = Math.max(1, Math.min(6, isNaN(n) ? 3 : n)); setDecodeConcurrencyInput(String(next)); updateSettings((s) => ({ ...s, maxConcurrentDecodes: next })); }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'自动翻页模式下每页停留的秒数。\n范围：1–60 秒。'}>翻页间隔(秒)</SettingHint>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={autoTurnInput}
+                      onChange={(e) => { const raw = e.target.value; setAutoTurnInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 60) { updateSettings((s) => ({ ...s, autoTurnInterval: n })); } }}
+                      onBlur={() => { const n = parseInt(autoTurnInput, 10); if (isNaN(n) || n < 1) { setAutoTurnInput('1'); updateSettings((s) => ({ ...s, autoTurnInterval: 1 })); } else if (n > 60) { setAutoTurnInput('60'); updateSettings((s) => ({ ...s, autoTurnInterval: 60 })); } }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'启用超分后，预先处理后续页面的图片数量。\n范围：0–10，0 表示关闭预超分。'}>预超分数量</SettingHint>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={String(settings.srPreloadCount)}
+                      onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0 && n <= 10) updateSettings((s) => ({ ...s, srPreloadCount: n })); }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -3743,41 +3762,29 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             <div className={`settings-section${settingsCategory === 'reading' ? ' is-active' : ''}`}>
               <div className="settings-section-inner">
                 <div className="settings-group">
+                  <div className="settings-row">
+                    <SettingHint text={'从左向右：第一页在左，向右翻页。\n从右向左：第一页在右，向左翻页（适合日漫）。'}>翻页流向</SettingHint>
+                    <div className="settings-control"><CustomSelect
+                      value={settings.direction}
+                      options={[{ label: '从左向右', value: 'ltr' }, { label: '从右向左', value: 'rtl' }]}
+                      onChange={(v) => updateSettings((s) => ({ ...s, direction: v }))}
+                      compact
+                    /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'单页：每次显示一页。\n双页：跨页显示两页。\n滚动：纵向连续滚动。\n自动检测：根据画面自动选择。'}>阅读布局</SettingHint>
+                    <div className="settings-control"><CustomSelect value={settings.readingLayout} options={[{ label: '单页', value: 'single' }, { label: '双页', value: 'double' }, { label: '滚动', value: 'webtoon' }, { label: '自动检测', value: 'auto' }]} onChange={(v) => updateSettings((s) => ({ ...s, readingLayout: v }))} compact /></div>
+                  </div>
                   {[
-                    ['splitWidePagesEnabled', '拆分宽页'], ['rotateWidePagesEnabled', '旋转宽页'],
-                    ['optimizedImageDecodeEnabled', '优化超大图片解码'],
-                  ].map(([key, label]) => (
-                    <label key={key} style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {label}<ToggleSwitch label={label} checked={settings[key]} onChange={(checked) => updateSettings((s) => ({ ...s, [key]: checked }))} />
-                    </label>
+                    ['splitWidePagesEnabled', '拆分宽页', '将过宽的横向跨页拆成两页依次显示。'],
+                    ['rotateWidePagesEnabled', '旋转宽页', '将过宽的跨页旋转 90° 填满屏幕。'],
+                    ['optimizedImageDecodeEnabled', '优化超大图片解码', '对超大图片使用分块解码，降低内存占用。'],
+                  ].map(([key, label, hint]) => (
+                    <div className="settings-row" key={key}>
+                      <SettingHint text={hint}>{label}</SettingHint>
+                      <div className="settings-control settings-toggle-control"><ToggleSwitch label={label} checked={settings[key]} onChange={(checked) => updateSettings((s) => ({ ...s, [key]: checked }))} /></div>
+                    </div>
                   ))}
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    最大同时解码
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
-                      value={decodeConcurrencyInput}
-                      onChange={(e) => { const raw = e.target.value; setDecodeConcurrencyInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 6) { updateSettings((s) => ({ ...s, maxConcurrentDecodes: n })); } }}
-                      onBlur={() => { const n = parseInt(decodeConcurrencyInput, 10); const next = Math.max(1, Math.min(6, isNaN(n) ? 3 : n)); setDecodeConcurrencyInput(String(next)); updateSettings((s) => ({ ...s, maxConcurrentDecodes: next })); }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
-                    />
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    预加载
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
-                      value={preloadInput}
-                      onChange={(e) => { const raw = e.target.value; setPreloadInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 10) { updateSettings((s) => ({ ...s, preloadCount: n })); } }}
-                      onBlur={() => { const n = parseInt(preloadInput, 10); if (isNaN(n) || n < 1) { setPreloadInput('1'); updateSettings((s) => ({ ...s, preloadCount: 1 })); } else if (n > 10) { setPreloadInput('10'); updateSettings((s) => ({ ...s, preloadCount: 10 })); } }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
-                    />
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    翻页间隔(秒)
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
-                      value={autoTurnInput}
-                      onChange={(e) => { const raw = e.target.value; setAutoTurnInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 60) { updateSettings((s) => ({ ...s, autoTurnInterval: n })); } }}
-                      onBlur={() => { const n = parseInt(autoTurnInput, 10); if (isNaN(n) || n < 1) { setAutoTurnInput('1'); updateSettings((s) => ({ ...s, autoTurnInterval: 1 })); } else if (n > 60) { setAutoTurnInput('60'); updateSettings((s) => ({ ...s, autoTurnInterval: 60 })); } }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
-                    />
-                  </label>
                 </div>
               </div>
             </div>
@@ -3787,35 +3794,27 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               <div className="settings-section-inner">
                 <div className="settings-group">
                   <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '4px' }}>超分</div>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    启用超分
-                    <ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={!srSupport.supported && !settings.srEnabled} onChange={handleToggleSrEnabled} />
-                  </label>
+                  <div className="settings-row">
+                    <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。'}>启用超分</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={!srSupport.supported && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
+                  </div>
                   {!srSupport.supported && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span>超分模型</span>
-                    <div style={{ width: '135px' }}><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} compact /></div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    预超分数量
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
-                      value={String(settings.srPreloadCount)}
-                      onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0 && n <= 10) updateSettings((s) => ({ ...s, srPreloadCount: n })); }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
-                    />
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    自动启用超分
-                    <ToggleSwitch label="自动启用超分" checked={settings.srAuto} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} />
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    自动超分阈值
+                  <div className="settings-row">
+                    <SettingHint text={'超分处理使用的模型。\n不同模型对画质和性能的侧重不同。'}>超分模型</SettingHint>
+                    <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'对低分辨率图片自动启用超分。\n配合下方阈值，低于该尺寸的图片会自动处理。'}>自动启用超分</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动启用超分" checked={settings.srAuto} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'宽度低于此像素数的图片会自动超分。\n填 0：对所有图片都自动超分。'}>自动超分阈值</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={String(settings.srAutoThreshold)}
                       onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
                       style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
-                  </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -4083,9 +4082,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate || coverSetting} onClick={() => { if (canNavigate && !coverSetting) handleSetCover(); revealImmersiveControls(side); }} title="设为封面" aria-label="设为封面">
                   <ToolbarGlyph name="cover" size={20} />
                 </button>
-                <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!srSupport.supported && !settings.srEnabled} onClick={() => { if (settings.srEnabled) { updateSettings((s) => ({ ...s, srEnabled: false })); showSrToast('超分已关闭'); } else handleToggleSrEnabled(true); revealImmersiveControls(side); }} title={settings.srEnabled ? '关闭超分' : '启用超分'} aria-label={settings.srEnabled ? '关闭超分' : '启用超分'}>
-                  <ToolbarGlyph name="superResolution" size={20} />
-                </button>
+                {settings.srEnabled && (
+                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { updateSettings((s) => ({ ...s, srEnabled: false })); showSrToast('超分已关闭'); revealImmersiveControls(side); }} title="关闭超分" aria-label="关闭超分">
+                    <ToolbarGlyph name="superResolutionOff" size={20} />
+                  </button>
+                )}
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate} onClick={() => { if (canNavigate) openThumbnailDrawer(side); hideImmersiveControls(); }} title="缩略面板" aria-label="缩略面板">
                   <ToolbarGlyph name="grid" size={20} />
                 </button>

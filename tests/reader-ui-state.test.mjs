@@ -56,10 +56,10 @@ test('reader toolbar switches to icons before text reaches the title', () => {
   }), 'icons');
 });
 
-test('reader skeleton toolbar includes the super-resolution button on desktop and mobile', () => {
+test('reader skeleton toolbar matches the real toolbar (no super-resolution slot)', () => {
   const desktop = readerUiState.getReaderToolbarGroups(false).right;
   const mobile = readerUiState.getReaderToolbarGroups(true).right;
-  assert.ok(desktop.includes('超分'), 'desktop skeleton toolbar must include 超分');
-  assert.equal(desktop.length, 5, 'desktop right group keeps 沉浸/封面/设定/超分/缩略');
-  assert.equal(mobile.length, 5, 'mobile right group keeps 5 icon slots (incl. super-resolution)');
+  assert.ok(!desktop.includes('超分'), 'desktop skeleton toolbar must not include 超分 (topbar button removed)');
+  assert.equal(desktop.length, 4, 'desktop right group keeps 沉浸/封面/设定/缩略');
+  assert.equal(mobile.length, 4, 'mobile right group keeps 4 icon slots');
 });
