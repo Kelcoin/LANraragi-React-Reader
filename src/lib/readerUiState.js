@@ -1,11 +1,11 @@
 const DESKTOP_TOOLBAR = Object.freeze({
   left: Object.freeze(['← 返回', '快速跳转']),
-  right: Object.freeze(['沉浸模式', '设为封面', '阅读设定', '缩略面板']),
+  right: Object.freeze(['沉浸模式', '设为封面', '阅读设定', '超分', '缩略面板']),
 });
 
 const MOBILE_TOOLBAR = Object.freeze({
   left: Object.freeze(['', '']),
-  right: Object.freeze(['', '', '', '']),
+  right: Object.freeze(['', '', '', '', '']),
 });
 
 export function getReaderToolbarGroups(isMobile) {

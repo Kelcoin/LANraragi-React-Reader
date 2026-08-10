@@ -55,3 +55,11 @@ test('reader toolbar switches to icons before text reaches the title', () => {
     iconRequiredWidth: 700,
   }), 'icons');
 });
+
+test('reader skeleton toolbar includes the super-resolution button on desktop and mobile', () => {
+  const desktop = readerUiState.getReaderToolbarGroups(false).right;
+  const mobile = readerUiState.getReaderToolbarGroups(true).right;
+  assert.ok(desktop.includes('超分'), 'desktop skeleton toolbar must include 超分');
+  assert.equal(desktop.length, 5, 'desktop right group keeps 沉浸/封面/设定/超分/缩略');
+  assert.equal(mobile.length, 5, 'mobile right group keeps 5 icon slots (incl. super-resolution)');
+});

@@ -11,6 +11,7 @@ import { getCachedImage, getImage, primeImage, deleteImageKeys, IMAGE_LOAD_PRIOR
 import { createImageDecodeQueue } from '../lib/imageLoadQueue';
 import { decodeImageSource, getReaderPreviewSource } from '../lib/readerPreviewDecode';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange } from '../lib/readerSettings';
+import { SUPER_RESOLUTION_MODELS, detectSuperResolutionSupport } from '../lib/superResolution';
 import {
   clearArchiveProgressMarker,
   getArchiveProgressPercent,
@@ -1166,6 +1167,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [showDrawer, setShowDrawer] = useState(false);
   const [drawerSide, setDrawerSide] = useState('right');
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState('general');
+  const [srSupport] = useState(() => detectSuperResolutionSupport());
+  const [srToast, setSrToast] = useState('');
+  const srToastTimerRef = useRef(null);
   const [showArchivePanel, setShowArchivePanel] = useState(false);
   const [immersiveControlsSide, setImmersiveControlsSide] = useState(null);
   const [archivePanelType, setArchivePanelType] = useState('history');
@@ -3410,6 +3415,20 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const leftDisabled = !canNavigate || (isLTR ? atFirstSpread : atLastSpread);
   const rightDisabled = !canNavigate || (isLTR ? atLastSpread : atFirstSpread);
 
+  const showSrToast = useCallback((message) => {
+    setSrToast(message);
+    if (srToastTimerRef.current) clearTimeout(srToastTimerRef.current);
+    srToastTimerRef.current = setTimeout(() => setSrToast(''), 3600);
+  }, []);
+
+  const handleToggleSrEnabled = useCallback((enabled) => {
+    if (enabled && !srSupport.supported) {
+      showSrToast(srSupport.reason || '当前环境不支持超分。');
+      return;
+    }
+    updateSettings((s) => ({ ...s, srEnabled: enabled }));
+  }, [srSupport, showSrToast, updateSettings]);
+
   const btnBase = getTopBarButtonStyle(toolbarCompact);
 
   const navBtnBase = getPageNavButtonStyle(isMobile);
@@ -3631,6 +3650,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 </button>
               </>
             )}
+            <button
+              className="reader-toolbar-button"
+              disabled={!srSupport.supported && !settings.srEnabled}
+              style={{ ...btnBase, opacity: (!srSupport.supported && !settings.srEnabled) ? 0.45 : 1, cursor: (!srSupport.supported && !settings.srEnabled) ? 'not-allowed' : 'pointer', color: settings.srEnabled ? 'var(--accent)' : undefined }}
+              onClick={() => { if (settings.srEnabled) { updateSettings((s) => ({ ...s, srEnabled: false })); showSrToast('超分已关闭'); } else handleToggleSrEnabled(true); }}
+              title={settings.srEnabled ? '关闭超分' : '启用超分'}
+              aria-label={settings.srEnabled ? '关闭超分' : '启用超分'}
+            >
+              <ReaderToolbarButtonContent icon="superResolution" label={settings.srEnabled ? '超分已开启' : '超分'} />
+            </button>
             <button className="reader-toolbar-button" disabled={!canNavigate} style={{ ...btnBase, opacity: canNavigate ? 1 : 0.45, cursor: canNavigate ? 'pointer' : 'not-allowed' }} onClick={() => { if (canNavigate) openThumbnailDrawer('right'); }} title="缩略面板" aria-label="缩略面板">
               <ReaderToolbarButtonContent icon="grid" label="缩略面板" />
             </button>
@@ -3657,10 +3686,29 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             }}
           >
             <div data-reader-overlay-scroll className="no-scrollbar" style={{ overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', flex: 1 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <div>
-                <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '10px', borderBottom: '1px solid var(--reader-control-border)', paddingBottom: '6px' }}>翻页设定</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="settings-category-tabs" role="tablist" aria-label="阅读设置分类">
+              {[
+                ['general', '通用'],
+                ['reading', '阅读'],
+                ['other', '其他'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={settingsCategory === key}
+                  className={`btn settings-category-tab${settingsCategory === key ? ' is-active' : ''}`}
+                  onClick={() => setSettingsCategory(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* 通用 */}
+            <div className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
+              <div className="settings-section-inner">
+                <div className="settings-group">
                   <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                     <span style={{ flexShrink: 0 }}>翻页流向</span>
                     <div style={{ width: '135px', flexShrink: 0 }}>
@@ -3684,8 +3732,18 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <span>缩放模式</span>
                     <div style={{ width: '135px' }}><CustomSelect value={settings.scaleMode} options={[{ label: '适应屏幕', value: 'fit-screen' }, { label: '适应宽度', value: 'fit-width' }, { label: '适应高度', value: 'fit-height' }, { label: '原始尺寸', value: 'original' }]} onChange={(v) => updateSettings((s) => ({ ...s, scaleMode: v }))} compact /></div>
                   </label>
+                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    自动裁白边<ToggleSwitch label="自动裁白边" checked={settings.cropBordersEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, cropBordersEnabled: checked }))} />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* 阅读 */}
+            <div className={`settings-section${settingsCategory === 'reading' ? ' is-active' : ''}`}>
+              <div className="settings-section-inner">
+                <div className="settings-group">
                   {[
-                    ['cropBordersEnabled', '自动裁白边'],
                     ['splitWidePagesEnabled', '拆分宽页'], ['rotateWidePagesEnabled', '旋转宽页'],
                     ['optimizedImageDecodeEnabled', '优化超大图片解码'],
                   ].map(([key, label]) => (
@@ -3722,8 +3780,55 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   </label>
                 </div>
               </div>
-
             </div>
+
+            {/* 其他（含超分） */}
+            <div className={`settings-section${settingsCategory === 'other' ? ' is-active' : ''}`}>
+              <div className="settings-section-inner">
+                <div className="settings-group">
+                  <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '4px' }}>超分</div>
+                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    启用超分
+                    <ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={!srSupport.supported && !settings.srEnabled} onChange={handleToggleSrEnabled} />
+                  </label>
+                  {!srSupport.supported && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
+                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                    <span>超分模型</span>
+                    <div style={{ width: '135px' }}><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} compact /></div>
+                  </label>
+                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    预超分数量
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={String(settings.srPreloadCount)}
+                      onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0 && n <= 10) updateSettings((s) => ({ ...s, srPreloadCount: n })); }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </label>
+                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    自动启用超分
+                    <ToggleSwitch label="自动启用超分" checked={settings.srAuto} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} />
+                  </label>
+                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    自动超分阈值
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={String(settings.srAutoThreshold)}
+                      onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+            </div>
+          </div>
+        , document.body)}
+
+        {srToast && createPortal(
+          <div className="metadata-toast-stack" aria-live="polite">
+            <div className="metadata-status-card is-error" role="alert">
+              <span className="metadata-status-icon" aria-hidden="true">!</span>
+              <span className="metadata-status-text">{srToast}</span>
+              <button type="button" className="metadata-status-close" aria-label="关闭提示" onClick={() => setSrToast('')}>×</button>
             </div>
           </div>
         , document.body)}
@@ -3977,6 +4082,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 )}
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate || coverSetting} onClick={() => { if (canNavigate && !coverSetting) handleSetCover(); revealImmersiveControls(side); }} title="设为封面" aria-label="设为封面">
                   <ToolbarGlyph name="cover" size={20} />
+                </button>
+                <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!srSupport.supported && !settings.srEnabled} onClick={() => { if (settings.srEnabled) { updateSettings((s) => ({ ...s, srEnabled: false })); showSrToast('超分已关闭'); } else handleToggleSrEnabled(true); revealImmersiveControls(side); }} title={settings.srEnabled ? '关闭超分' : '启用超分'} aria-label={settings.srEnabled ? '关闭超分' : '启用超分'}>
+                  <ToolbarGlyph name="superResolution" size={20} />
                 </button>
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate} onClick={() => { if (canNavigate) openThumbnailDrawer(side); hideImmersiveControls(); }} title="缩略面板" aria-label="缩略面板">
                   <ToolbarGlyph name="grid" size={20} />

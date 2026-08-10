@@ -7,6 +7,7 @@ import * as categories from '../src/lib/categories.js';
 import * as metadataEditor from '../src/lib/metadataEditor.js';
 import * as upload from '../src/lib/upload.js';
 import * as workerConfig from '../src/lib/worker-config.js';
+import * as superResolution from '../src/lib/superResolution.js';
 
 const read = (path) => readFileSync(path, 'utf8');
 
@@ -145,6 +146,32 @@ test('reader settings reject unsafe automatic turn intervals', () => {
   assert.equal(readerSettings.normalizeReaderSettings({ maxConcurrentDecodes: 0 }).maxConcurrentDecodes, 1);
   assert.equal(readerSettings.normalizeReaderSettings({ maxConcurrentDecodes: 7 }).maxConcurrentDecodes, 6);
   assert.equal(readerSettings.normalizeReaderSettings({ maxConcurrentDecodes: 4.9 }).maxConcurrentDecodes, 4);
+});
+
+test('reader settings normalize super-resolution fields (UI framework)', () => {
+  const defaults = readerSettings.normalizeReaderSettings({});
+  assert.equal(defaults.srEnabled, false);
+  assert.equal(defaults.srModel, 'anime4k');
+  assert.equal(defaults.srPreloadCount, 3);
+  assert.equal(defaults.srAuto, false);
+  assert.equal(defaults.srAutoThreshold, 0);
+
+  assert.equal(readerSettings.normalizeReaderSettings({ srEnabled: 1 }).srEnabled, true);
+  assert.equal(readerSettings.normalizeReaderSettings({ srAuto: 'yes' }).srAuto, true);
+  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'realcugan' }).srModel, 'realcugan');
+  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'unknown' }).srModel, 'anime4k');
+  assert.equal(readerSettings.normalizeReaderSettings({ srPreloadCount: 99 }).srPreloadCount, 10);
+  assert.equal(readerSettings.normalizeReaderSettings({ srPreloadCount: -3 }).srPreloadCount, 0);
+  assert.equal(readerSettings.normalizeReaderSettings({ srPreloadCount: 5 }).srPreloadCount, 5);
+  assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: -1 }).srAutoThreshold, 0);
+  assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: 640 }).srAutoThreshold, 640);
+
+  // 纯函数库可加载；Node 环境（无 document/WebGL）安全降级为不支持
+  assert.equal(typeof superResolution.detectSuperResolutionSupport, 'function');
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((m) => m.value), ['anime4k', 'waifu2x', 'realcugan']);
+  const fallback = superResolution.detectSuperResolutionSupport();
+  assert.equal(fallback.supported, false);
+  assert.ok(fallback.reason);
 });
 
 test('reader settings keep E-Hentai sorting valid across Home and Reader', () => {
