@@ -72,6 +72,527 @@ function withTimeout(promise, message = 'promise did not settle') {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function createDeferred() {
+  let resolve;
+  const promise = new Promise((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
+}
+
+const workerModuleUrl = new URL('../src/lib/superResolution.worker.js', import.meta.url);
+const workerManifest = {
+  id: 'anime4k-x2',
+  url: 'https://models.example.test/anime4k-x2.onnx',
+  scale: 2,
+  inputLayout: 'nchw',
+  outputLayout: 'nchw',
+  checksum: {
+    algorithm: 'SHA-256',
+    digest: 'a'.repeat(64),
+  },
+};
+
+async function loadWorkerHandlerFactory() {
+  try {
+    const module = await import(workerModuleUrl.href);
+    return module.createSuperResolutionWorkerHandler;
+  } catch (error) {
+    if (error?.code === 'ERR_MODULE_NOT_FOUND') return undefined;
+    throw error;
+  }
+}
+
+async function createWorkerHandler(dependencies) {
+  const factory = await loadWorkerHandlerFactory();
+  assert.equal(typeof factory, 'function');
+  return factory(dependencies);
+}
+
+function createWorkerDependencies(overrides = {}) {
+  const modelBytes = new Uint8Array([1, 2, 3, 4]).buffer;
+  const calls = {
+    fetch: [],
+    digest: [],
+    session: [],
+  };
+  const session = {
+    releaseCount: 0,
+    async release() {
+      this.releaseCount += 1;
+    },
+  };
+
+  return {
+    modelBytes,
+    calls,
+    session,
+    dependencies: {
+      fetcher: async (url) => {
+        calls.fetch.push(url);
+        return {
+          ok: true,
+          status: 200,
+          async arrayBuffer() {
+            return modelBytes;
+          },
+        };
+      },
+      digest: async (bytes) => {
+        calls.digest.push(bytes);
+        return workerManifest.checksum.digest;
+      },
+      sessionFactory: async (bytes, backend) => {
+        calls.session.push({ bytes, backend });
+        return session;
+      },
+      ...overrides,
+    },
+  };
+}
+
+test('exports a testable Worker session handler factory', async () => {
+  const factory = await loadWorkerHandlerFactory();
+  assert.equal(typeof factory, 'function');
+});
+
+test('initializes verified model bytes with WebGL and reports the actual backend', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-webgl',
+    manifest: workerManifest,
+  });
+
+  assert.deepEqual(response, {
+    type: 'ready',
+    requestId: 'init-webgl',
+    backend: 'webgl',
+  });
+  assert.deepEqual(fixture.calls.fetch, [workerManifest.url]);
+  assert.equal(fixture.calls.digest.length, 1);
+  assert.deepEqual(Array.from(new Uint8Array(fixture.calls.digest[0])), [1, 2, 3, 4]);
+  assert.equal(fixture.calls.session.length, 1);
+  assert.equal(fixture.calls.session[0].backend, 'webgl');
+  assert.deepEqual(Array.from(new Uint8Array(fixture.calls.session[0].bytes)), [1, 2, 3, 4]);
+});
+
+test('falls back to WASM only after a real WebGL session initialization failure', async () => {
+  const fixture = createWorkerDependencies({
+    sessionFactory: async (bytes, backend) => {
+      fixture.calls.session.push({ bytes, backend });
+      if (backend === 'webgl') throw new Error('WebGL session unavailable');
+      return fixture.session;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-wasm',
+    manifest: workerManifest,
+  });
+
+  assert.deepEqual(response, {
+    type: 'ready',
+    requestId: 'init-wasm',
+    backend: 'wasm',
+  });
+  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgl', 'wasm']);
+});
+
+test('accepts a trimmed case-insensitive SHA-256 algorithm and uppercase 64-hex digest', async () => {
+  const fixture = createWorkerDependencies({
+    digest: async () => 'A'.repeat(64),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-normalized-checksum',
+    manifest: {
+      ...workerManifest,
+      checksum: {
+        algorithm: '  sHa-256  ',
+        digest: 'A'.repeat(64),
+      },
+    },
+  });
+
+  assert.deepEqual(response, {
+    type: 'ready',
+    requestId: 'init-normalized-checksum',
+    backend: 'webgl',
+  });
+});
+
+test('rejects a checksum manifest unless its digest is exactly 64 hexadecimal characters', async () => {
+  for (const digest of ['a'.repeat(63), `${'a'.repeat(63)}g`]) {
+    const fixture = createWorkerDependencies();
+    const handler = await createWorkerHandler(fixture.dependencies);
+
+    const response = await handler.handleMessage({
+      type: 'init',
+      requestId: `init-invalid-digest-${digest.length}`,
+      manifest: {
+        ...workerManifest,
+        checksum: { algorithm: 'SHA-256', digest },
+      },
+    });
+
+    assert.equal(response.type, 'error');
+    assert.equal(response.error.name, 'ProtocolError');
+    assert.equal(fixture.calls.session.length, 0);
+  }
+});
+
+test('falls back to WASM when the WebGL factory returns null and reports the actual backend', async () => {
+  const fixture = createWorkerDependencies({
+    sessionFactory: async (bytes, backend) => {
+      fixture.calls.session.push({ bytes, backend });
+      return backend === 'webgl' ? null : fixture.session;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-null-webgl',
+    manifest: workerManifest,
+  });
+
+  assert.deepEqual(response, {
+    type: 'ready',
+    requestId: 'init-null-webgl',
+    backend: 'wasm',
+  });
+  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgl', 'wasm']);
+});
+
+test('returns SessionInitializationError when both backend factories return null', async () => {
+  const fixture = createWorkerDependencies({
+    sessionFactory: async (bytes, backend) => {
+      fixture.calls.session.push({ bytes, backend });
+      return null;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-null-both',
+    manifest: workerManifest,
+  });
+
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'SessionInitializationError');
+  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgl', 'wasm']);
+});
+
+test('returns a structured checksum error without creating a session', async () => {
+  const fixture = createWorkerDependencies({
+    digest: async () => 'b'.repeat(64),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-bad-digest',
+    manifest: workerManifest,
+  });
+
+  assert.equal(response.type, 'error');
+  assert.equal(response.requestId, 'init-bad-digest');
+  assert.equal(response.error.name, 'ChecksumError');
+  assert.match(response.error.message, /SHA-256.*mismatch/i);
+  assert.equal(fixture.calls.session.length, 0);
+});
+
+test('returns structured fetch failures from init', async () => {
+  const fixture = createWorkerDependencies({
+    fetcher: async () => {
+      const error = new Error('model server unavailable');
+      error.name = 'NetworkError';
+      throw error;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-fetch-error',
+    manifest: workerManifest,
+  });
+
+  assert.deepEqual(response, {
+    type: 'error',
+    requestId: 'init-fetch-error',
+    error: { name: 'NetworkError', message: 'model server unavailable' },
+  });
+  assert.equal(fixture.calls.session.length, 0);
+});
+
+test('returns a structured error when both backend session initializations fail', async () => {
+  const fixture = createWorkerDependencies({
+    sessionFactory: async (_, backend) => {
+      const error = new Error(`${backend} session failed`);
+      error.name = `${backend}Error`;
+      throw error;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-session-error',
+    manifest: workerManifest,
+  });
+
+  assert.equal(response.type, 'error');
+  assert.equal(response.requestId, 'init-session-error');
+  assert.equal(response.error.name, 'SessionInitializationError');
+  assert.match(response.error.message, /WebGL session failed/);
+  assert.match(response.error.message, /WASM session failed/);
+});
+
+test('returns a not-initialized protocol error for process before init', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-before-init',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+
+  assert.deepEqual(response, {
+    type: 'error',
+    requestId: 'process-before-init',
+    error: {
+      name: 'NotInitializedError',
+      message: 'Super-resolution session is not initialized',
+    },
+  });
+});
+
+test('cancellation marks a request stale before later tile processing', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+  await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-cancel',
+    manifest: workerManifest,
+  });
+
+  await handler.handleMessage({ type: 'cancel', requestId: 'stale-tile' });
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'stale-tile',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+
+  assert.deepEqual(response, {
+    type: 'error',
+    requestId: 'stale-tile',
+    error: {
+      name: 'AbortError',
+      message: 'Super-resolution request was cancelled',
+    },
+  });
+});
+
+test('consumes a stale cancellation during process so the same request id can retry', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+  await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-cancel-once',
+    manifest: workerManifest,
+  });
+
+  await handler.handleMessage({ type: 'cancel', requestId: 'retryable-tile' });
+  const cancelledResponse = await handler.handleMessage({
+    type: 'process',
+    requestId: 'retryable-tile',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+  assert.equal(cancelledResponse.error.name, 'AbortError');
+
+  const retryResponse = await handler.handleMessage({
+    type: 'process',
+    requestId: 'retryable-tile',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+  assert.equal(retryResponse.error.name, 'NotImplementedError');
+});
+
+test('releases a session created by an init made stale by dispose without installing it', async () => {
+  const factoryStarted = createDeferred();
+  const sessionGate = createDeferred();
+  const staleSession = {
+    releaseCount: 0,
+    async release() {
+      this.releaseCount += 1;
+    },
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async (bytes, backend) => {
+      fixture.calls.session.push({ bytes, backend });
+      factoryStarted.resolve();
+      await sessionGate.promise;
+      return staleSession;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const initPromise = handler.handleMessage({
+    type: 'init',
+    requestId: 'init-stale-dispose',
+    manifest: workerManifest,
+  });
+  await factoryStarted.promise;
+
+  const disposeResponse = await handler.handleMessage({
+    type: 'dispose',
+    requestId: 'dispose-during-init',
+  });
+  assert.equal(disposeResponse.type, 'disposed');
+
+  sessionGate.resolve();
+  const initResponse = await initPromise;
+  assert.equal(initResponse.type, 'error');
+  assert.equal(initResponse.error.name, 'StaleInitializationError');
+  assert.equal(staleSession.releaseCount, 1);
+
+  const processResponse = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-after-stale-dispose',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+  assert.equal(processResponse.error.name, 'DisposedError');
+});
+
+test('releases a session from an older init when a later init installs a newer session', async () => {
+  const firstFactoryStarted = createDeferred();
+  const firstSessionGate = createDeferred();
+  const firstSession = {
+    releaseCount: 0,
+    async release() {
+      this.releaseCount += 1;
+    },
+  };
+  const secondSession = {
+    releaseCount: 0,
+    async release() {
+      this.releaseCount += 1;
+    },
+  };
+  let factoryCallCount = 0;
+  const fixture = createWorkerDependencies({
+    sessionFactory: async (bytes, backend) => {
+      fixture.calls.session.push({ bytes, backend });
+      factoryCallCount += 1;
+      if (factoryCallCount === 1) {
+        firstFactoryStarted.resolve();
+        await firstSessionGate.promise;
+        return firstSession;
+      }
+      return secondSession;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const firstInitPromise = handler.handleMessage({
+    type: 'init',
+    requestId: 'init-old-generation',
+    manifest: workerManifest,
+  });
+  await firstFactoryStarted.promise;
+
+  const secondResponse = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-new-generation',
+    manifest: workerManifest,
+  });
+  assert.deepEqual(secondResponse, {
+    type: 'ready',
+    requestId: 'init-new-generation',
+    backend: 'webgl',
+  });
+
+  firstSessionGate.resolve();
+  const firstResponse = await firstInitPromise;
+  assert.equal(firstResponse.type, 'error');
+  assert.equal(firstResponse.error.name, 'StaleInitializationError');
+  assert.equal(firstSession.releaseCount, 1);
+  assert.equal(secondSession.releaseCount, 0);
+
+  const processResponse = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-new-generation',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+  assert.equal(processResponse.error.name, 'NotImplementedError');
+});
+
+test('dispose releases the session and clears the handler state', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+  await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-dispose',
+    manifest: workerManifest,
+  });
+
+  const disposeResponse = await handler.handleMessage({
+    type: 'dispose',
+    requestId: 'dispose-session',
+  });
+  assert.deepEqual(disposeResponse, {
+    type: 'disposed',
+    requestId: 'dispose-session',
+  });
+  assert.equal(fixture.session.releaseCount, 1);
+
+  const processResponse = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-after-dispose',
+    pixels: new Uint8Array([1, 2, 3, 4]),
+    width: 1,
+    height: 1,
+  });
+  assert.equal(processResponse.error.name, 'DisposedError');
+});
+
+test('returns structured protocol errors for unknown messages', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'unknown',
+    requestId: 'unknown-request',
+  });
+
+  assert.equal(response.type, 'error');
+  assert.equal(response.requestId, 'unknown-request');
+  assert.equal(response.error.name, 'ProtocolError');
+  assert.match(response.error.message, /unknown message type/i);
+});
+
 test('runtime forwards init, pixel processing, cancellation, and disposal messages', async () => {
   assert.equal(typeof superResolution.createSuperResolutionRuntime, 'function');
   const harness = createWorkerHarness();

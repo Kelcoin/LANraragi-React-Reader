@@ -14,6 +14,7 @@
   "dependencies": {
     "@fontsource-variable/noto-sans-jp": "^5.2.10",
     "@fontsource-variable/noto-sans-sc": "^5.2.10",
+    "onnxruntime-web": "1.27.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
