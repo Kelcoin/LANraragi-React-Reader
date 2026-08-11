@@ -155,7 +155,7 @@ test('reader settings normalize super-resolution fields', () => {
   assert.equal(defaults.preloadCount, 3);
   assert.equal('srPreloadCount' in defaults, false);
   assert.equal(defaults.srAuto, false);
-  assert.equal(defaults.srAutoThreshold, 0);
+  assert.equal(defaults.srAutoThreshold, 500);
 
   assert.equal(readerSettings.normalizeReaderSettings({ srEnabled: 1 }).srEnabled, true);
   assert.equal(readerSettings.normalizeReaderSettings({ srAuto: 'yes' }).srAuto, true);
@@ -164,7 +164,7 @@ test('reader settings normalize super-resolution fields', () => {
   assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'unknown' }).srModel, 'waifu2x');
   assert.equal(readerSettings.normalizeReaderSettings({ preloadCount: 99 }).preloadCount, 10);
   assert.equal('srPreloadCount' in readerSettings.normalizeReaderSettings({ srPreloadCount: 5 }), false);
-  assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: -1 }).srAutoThreshold, 0);
+  assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: -1 }).srAutoThreshold, 500);
   assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: 640 }).srAutoThreshold, 640);
 
   // 纯函数库可加载；Node 环境（无 document/WebGL）安全降级为不支持
@@ -197,12 +197,19 @@ test('super resolution auto-enable uses avg page size vs threshold', () => {
   assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, 400), false);
   // srAuto 关闭 → 不启用
   assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, false, 600), false);
-  // 阈值 0 / 负值 / 非数字 → 不启用
-  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, 0), false);
+  // 阈值 0 → 不限制每页体积；负值 / 非数字 → 不启用
+  assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, 0), true);
   assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, -5), false);
   assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, NaN), false);
   // 数据不足 → 不启用
   assert.equal(superResolution.shouldAutoEnableSuperResolution({}, true, 600), false);
+});
+
+test('unsigned reader setting inputs remove non-digit and negative content', () => {
+  assert.equal(readerSettings.sanitizeUnsignedIntegerInput('500'), '500');
+  assert.equal(readerSettings.sanitizeUnsignedIntegerInput('5a0-0'), '500');
+  assert.equal(readerSettings.sanitizeUnsignedIntegerInput('-12'), '12');
+  assert.equal(readerSettings.sanitizeUnsignedIntegerInput(''), '');
 });
 
 test('super resolution support allows the WASM fallback without WebGL', () => {

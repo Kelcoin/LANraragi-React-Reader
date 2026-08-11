@@ -5,6 +5,10 @@ export function tokenizeArchiveSearch(query = '') {
     .filter(Boolean);
 }
 
+export function hasArchiveSearchQuery(query = '') {
+  return String(query || '').trim().length > 0;
+}
+
 export function formatArchiveSearchTokens(tokens, { trailingComma = false } = {}) {
   const text = (tokens || []).map((token) => token.trim()).filter(Boolean).join(', ');
   if (!text) return '';

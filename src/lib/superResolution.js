@@ -192,7 +192,8 @@ export function shouldAutoEnableSuperResolution(archive, srAuto, srAutoThreshold
   const avgKb = getArchiveAvgPageSizeKb(archive);
   if (avgKb === null) return false;
   const threshold = Number(srAutoThresholdKb);
-  if (!Number.isFinite(threshold) || threshold <= 0) return false;
+  if (!Number.isFinite(threshold) || threshold < 0) return false;
+  if (threshold === 0) return true;
   return avgKb < threshold;
 }
 export function detectSuperResolutionSupport() {

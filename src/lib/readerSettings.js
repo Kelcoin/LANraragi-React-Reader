@@ -19,7 +19,7 @@ export const DEFAULT_READER_SETTINGS = Object.freeze({
   srEnabled: false,
   srModel: 'waifu2x',
   srAuto: false,
-  srAutoThreshold: 0, // 每页平均体积阈值（KB），低于该值的档案自动启用超分
+  srAutoThreshold: 500, // 每页平均体积阈值（KB）；0 表示不限制体积
 });
 
 const allowed = {
@@ -65,8 +65,14 @@ export function normalizeReaderSettings(value = {}) {
   next.srAuto = Boolean(next.srAuto);
   delete next.srPreloadCount;
   const srThreshold = Number(next.srAutoThreshold);
-  next.srAutoThreshold = Number.isFinite(srThreshold) && srThreshold >= 0 ? srThreshold : 0;
+  next.srAutoThreshold = Number.isFinite(srThreshold) && srThreshold >= 0
+    ? srThreshold
+    : DEFAULT_READER_SETTINGS.srAutoThreshold;
   return next;
+}
+
+export function sanitizeUnsignedIntegerInput(value) {
+  return String(value ?? '').replace(/\D/g, '');
 }
 
 export function prepareReaderSettingsForArchiveChange(value = {}) {

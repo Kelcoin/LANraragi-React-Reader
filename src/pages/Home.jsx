@@ -60,8 +60,8 @@ function readStoredCollapsed(key, fallback = false) {
 
 import { subscribeReadingProgressChanged } from '../lib/readingProgress';
 import { migrateLegacyStorageKey } from '../lib/configScope';
-import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings } from '../lib/readerSettings';
-import { getArchiveSearchTotal } from '../lib/archiveSearch';
+import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, sanitizeUnsignedIntegerInput } from '../lib/readerSettings';
+import { getArchiveSearchTotal, hasArchiveSearchQuery } from '../lib/archiveSearch';
 import { filterRandomArchives, getRandomHideRead, setRandomHideRead } from '../lib/randomArchiveFilter';
 import { DEFAULT_THEME_PALETTES, readStoredThemePalettes } from '../lib/theme';
 
@@ -1958,6 +1958,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   };
 
   const handleSearch = () => {
+    if (!hasArchiveSearchQuery(filter.query)) return;
     applyFilter(filter.query, filter.sortBy, filter.order, selectedCategory);
   };
 
@@ -2881,7 +2882,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                     <SettingHint text={'作用：限制每个档案加载的评论数量。\n范围：1–200 条。'}>最多展示数量</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={String(readerSettings.ehMaxComments)}
-                      onChange={(e) => { const v = e.target.value; const n = parseInt(v, 10); if (!isNaN(n) && n >= 1 && n <= 200) updateReaderSettings((s) => ({ ...s, ehMaxComments: n })); }}
+                      onChange={(e) => { const v = sanitizeUnsignedIntegerInput(e.target.value); const n = parseInt(v, 10); if (!isNaN(n) && n >= 1 && n <= 200) updateReaderSettings((s) => ({ ...s, ehMaxComments: n })); }}
                       onBlur={() => { const n = parseInt(readerSettings.ehMaxComments, 10); if (isNaN(n) || n < 1) updateReaderSettings((s) => ({ ...s, ehMaxComments: 45 })); else if (n > 200) updateReaderSettings((s) => ({ ...s, ehMaxComments: 200 })); }}
                       style={{ width: '52px', padding: '5px 6px', fontSize: '12px', textAlign: 'center' }}
                     />

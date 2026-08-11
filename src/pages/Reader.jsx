@@ -11,7 +11,7 @@ import { getCachedImage, getImage, primeImage, putImage, deleteImageKeys, IMAGE_
 import { createImageDecodeQueue } from '../lib/imageLoadQueue';
 import { decodeImageSource, getReaderPreviewSource } from '../lib/readerPreviewDecode';
 import { SUPER_RESOLUTION_MAX_INFERENCE_PIXELS } from '../lib/cachePolicy';
-import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange } from '../lib/readerSettings';
+import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange, sanitizeUnsignedIntegerInput } from '../lib/readerSettings';
 import {
   SUPER_RESOLUTION_MODELS,
   createSuperResolutionRuntime,
@@ -1341,6 +1341,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [preloadInput, setPreloadInput] = useState(String(settings.preloadCount));
   const [decodeConcurrencyInput, setDecodeConcurrencyInput] = useState(String(settings.maxConcurrentDecodes));
   const [autoTurnInput, setAutoTurnInput] = useState(String(settings.autoTurnInterval));
+  const [srThresholdInput, setSrThresholdInput] = useState(String(settings.srAutoThreshold));
   const archiveRef = useRef(archive);
   const pagesRef = useRef(pages);
   const currentIndexRefSnapshot = useRef(currentIndex);
@@ -1442,6 +1443,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setPreloadInput(String(next.preloadCount));
       setDecodeConcurrencyInput(String(next.maxConcurrentDecodes));
       setAutoTurnInput(String(next.autoTurnInterval));
+      setSrThresholdInput(String(next.srAutoThreshold));
       return next;
     });
   }, []);
@@ -1877,6 +1879,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const drawerReturnFocusRef = useRef(null);
   const drawerTransitionTimerRef = useRef(null);
   const drawerOpenFrameRef = useRef(null);
+  const drawerViewportFrameRef = useRef(null);
 
   const clearDrawerTransition = useCallback(() => {
     if (drawerTransitionTimerRef.current) {
@@ -3395,6 +3398,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
   useEffect(() => {
     if (!showDrawer) {
+      if (drawerViewportFrameRef.current) {
+        cancelAnimationFrame(drawerViewportFrameRef.current);
+        drawerViewportFrameRef.current = null;
+      }
       setDrawerViewport((prev) => (prev.height === 0 && prev.scrollTop === 0 && prev.width === 0
         ? prev
         : { height: 0, scrollTop: 0, width: 0 }));
@@ -3404,15 +3411,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const el = drawerGridRef.current;
     if (!el) return undefined;
 
-    const updateViewport = () => {
+    let measuredHeight = el.clientHeight;
+    let measuredWidth = Math.max(0, Math.round(el.clientWidth - (isMobile ? 14 : 12)));
+    const updateDrawerViewport = () => {
+      drawerViewportFrameRef.current = null;
       const nextTop = el.scrollTop;
-      const nextHeight = el.clientHeight;
-      const paddingRight = Number.parseFloat(window.getComputedStyle(el).paddingRight) || 0;
-      const nextWidth = Math.max(0, Math.round(el.clientWidth - paddingRight));
 
       setDrawerViewport((prev) => {
-        const prevRowStride = getDrawerRowStride(prev.width || nextWidth);
-        const nextRowStride = getDrawerRowStride(nextWidth);
+        const prevRowStride = getDrawerRowStride(prev.width || measuredWidth);
+        const nextRowStride = getDrawerRowStride(measuredWidth);
         const prevStartRow = Math.max(0, Math.floor((prev.scrollTop / Math.max(prevRowStride, 1))) - DRAWER_OVERSCAN_ROWS);
         const prevEndRow = Math.min(
           Math.ceil(pages.length / DRAWER_COLUMNS),
@@ -3421,12 +3428,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         const nextStartRow = Math.max(0, Math.floor((nextTop / Math.max(nextRowStride, 1))) - DRAWER_OVERSCAN_ROWS);
         const nextEndRow = Math.min(
           Math.ceil(pages.length / DRAWER_COLUMNS),
-          Math.ceil(((nextTop + nextHeight) / Math.max(nextRowStride, 1))) + DRAWER_OVERSCAN_ROWS,
+          Math.ceil(((nextTop + measuredHeight) / Math.max(nextRowStride, 1))) + DRAWER_OVERSCAN_ROWS,
         );
         const next = {
-          height: nextHeight,
+          height: measuredHeight,
           scrollTop: nextTop,
-          width: nextWidth,
+          width: measuredWidth,
         };
         if (
           prev.height === next.height &&
@@ -3439,16 +3446,30 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         return next;
       });
     };
+    const scheduleViewportUpdate = () => {
+      if (!drawerViewportFrameRef.current) {
+        drawerViewportFrameRef.current = requestAnimationFrame(updateDrawerViewport);
+      }
+    };
+    const measureViewport = () => {
+      measuredHeight = el.clientHeight;
+      measuredWidth = Math.max(0, Math.round(el.clientWidth - (isMobile ? 14 : 12)));
+      scheduleViewportUpdate();
+    };
 
-    updateViewport();
-    el.addEventListener('scroll', updateViewport, { passive: true });
-    window.addEventListener('resize', updateViewport);
+    updateDrawerViewport();
+    el.addEventListener('scroll', scheduleViewportUpdate, { passive: true });
+    window.addEventListener('resize', measureViewport);
 
     return () => {
-      el.removeEventListener('scroll', updateViewport);
-      window.removeEventListener('resize', updateViewport);
+      el.removeEventListener('scroll', scheduleViewportUpdate);
+      window.removeEventListener('resize', measureViewport);
+      if (drawerViewportFrameRef.current) {
+        cancelAnimationFrame(drawerViewportFrameRef.current);
+        drawerViewportFrameRef.current = null;
+      }
     };
-  }, [showDrawer]);
+  }, [isMobile, pages.length, showDrawer]);
 
   useEffect(() => {
     if (!showDrawer) return;
@@ -3460,15 +3481,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const nextTop = Math.max(0, Math.min(targetTop, maxTop));
     if (Math.abs(el.scrollTop - nextTop) > 8) {
       el.scrollTop = nextTop;
-      const paddingRight = Number.parseFloat(window.getComputedStyle(el).paddingRight) || 0;
-      const nextWidth = Math.max(0, Math.round(el.clientWidth - paddingRight));
+      const nextWidth = Math.max(0, Math.round(el.clientWidth - (isMobile ? 14 : 12)));
       setDrawerViewport((prev) => (
         prev.scrollTop === nextTop && prev.height === el.clientHeight && prev.width === nextWidth
           ? prev
           : { ...prev, scrollTop: nextTop, height: el.clientHeight, width: nextWidth }
       ));
     }
-  }, [currentIndex, drawerRowStride, showDrawer]);
+  }, [currentIndex, drawerRowStride, isMobile, showDrawer]);
 
   useEffect(() => {
     if (!canRenderPage) return undefined;
@@ -3896,7 +3916,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <SettingHint text={'提前加载后续页面的图片，翻页时更流畅。\n范围：1–10 页。'}>预加载</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={preloadInput}
-                      onChange={(e) => { const raw = e.target.value; setPreloadInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 10) { updateSettings((s) => ({ ...s, preloadCount: n })); } }}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setPreloadInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 10) { updateSettings((s) => ({ ...s, preloadCount: n })); } }}
                       onBlur={() => { const n = parseInt(preloadInput, 10); if (isNaN(n) || n < 1) { setPreloadInput('1'); updateSettings((s) => ({ ...s, preloadCount: 1 })); } else if (n > 10) { setPreloadInput('10'); updateSettings((s) => ({ ...s, preloadCount: 10 })); } }}
                       style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
@@ -3905,7 +3925,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <SettingHint text={'同时解码的最大图片数量。\n数值越高翻页越流畅，但更耗内存。\n范围：1–6。'}>最大同时解码</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={decodeConcurrencyInput}
-                      onChange={(e) => { const raw = e.target.value; setDecodeConcurrencyInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 6) { updateSettings((s) => ({ ...s, maxConcurrentDecodes: n })); } }}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setDecodeConcurrencyInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 6) { updateSettings((s) => ({ ...s, maxConcurrentDecodes: n })); } }}
                       onBlur={() => { const n = parseInt(decodeConcurrencyInput, 10); const next = Math.max(1, Math.min(6, isNaN(n) ? 3 : n)); setDecodeConcurrencyInput(String(next)); updateSettings((s) => ({ ...s, maxConcurrentDecodes: next })); }}
                       style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
@@ -3914,7 +3934,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <SettingHint text={'自动翻页模式下每页停留的秒数。\n范围：1–60 秒。'}>翻页间隔(秒)</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={autoTurnInput}
-                      onChange={(e) => { const raw = e.target.value; setAutoTurnInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 60) { updateSettings((s) => ({ ...s, autoTurnInterval: n })); } }}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setAutoTurnInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 60) { updateSettings((s) => ({ ...s, autoTurnInterval: n })); } }}
                       onBlur={() => { const n = parseInt(autoTurnInput, 10); if (isNaN(n) || n < 1) { setAutoTurnInput('1'); updateSettings((s) => ({ ...s, autoTurnInterval: 1 })); } else if (n > 60) { setAutoTurnInput('60'); updateSettings((s) => ({ ...s, autoTurnInterval: 60 })); } }}
                       style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
@@ -3975,11 +3995,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动启用超分" checked={settings.srAuto} disabled={!settings.srEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} /></div>
                   </div>
                   <div className="settings-row">
-                    <SettingHint text={'每页平均体积阈值（KB）。\n归档体积 ÷ 页数 < 该值时自动启用超分。\n填 0：关闭自动超分。'}>自动超分阈值(KB)</SettingHint>
+                    <SettingHint text={'每页平均体积阈值（KB）。\n归档体积 ÷ 页数 < 该值时自动启用超分。\n填 0：所有尺寸允许的图片都自动超分。'}>自动超分阈值(KB)</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
-                      value={String(settings.srAutoThreshold)}
+                      value={srThresholdInput}
                       disabled={!settings.srEnabled}
-                      onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setSrThresholdInput(raw); const n = parseInt(raw, 10); if (!isNaN(n)) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
+                      onBlur={() => { const n = parseInt(srThresholdInput, 10); const next = isNaN(n) ? DEFAULT_READER_SETTINGS.srAutoThreshold : n; setSrThresholdInput(String(next)); updateSettings((s) => ({ ...s, srAutoThreshold: next })); }}
                       style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
                   </div>
@@ -4480,9 +4501,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           display: 'flex', justifyContent: drawerSide === 'left' ? 'flex-start' : 'flex-end',
           pointerEvents: showDrawer ? 'auto' : 'none',
           background: showDrawer ? 'var(--overlay-bg)' : 'transparent',
-          backdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
-          WebkitBackdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
-          transition: 'background 0.25s ease, backdrop-filter 0.25s ease, -webkit-backdrop-filter 0.25s ease',
+          transition: 'background 0.25s ease',
           overscrollBehavior: 'contain',
         }}
       >
@@ -4504,8 +4523,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             width: '100%', maxWidth: '420px', height: '100%', background: 'var(--reader-panel-bg)',
             display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1,
             boxShadow: drawerSide === 'left' ? '8px 0 32px rgba(0,0,0,0.5)' : '-8px 0 32px rgba(0,0,0,0.5)',
-            transform: showDrawer ? 'translateX(0)' : `translateX(${drawerSide === 'left' ? '-100%' : '100%'})`,
+            transform: showDrawer ? 'translate3d(0,0,0)' : `translate3d(${drawerSide === 'left' ? '-100%' : '100%'},0,0)`,
             transition: 'transform 0.3s cubic-bezier(0.4,0,0.2,1)',
+            contain: 'layout paint style',
+            willChange: 'transform',
           }}
           onClick={(e) => e.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}

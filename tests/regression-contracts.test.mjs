@@ -765,7 +765,7 @@ test('super-resolution reuses preload count and uses directional state glyphs', 
   assert.match(reader, /预超分页数与“预加载”数量一致/);
   assert.match(reader, /value=\{settings\.srModel\}[\s\S]{0,300}disabled=\{!settings\.srEnabled\}/);
   assert.match(reader, /label="自动启用超分"[^>]*disabled=\{!settings\.srEnabled\}/);
-  assert.match(reader, /value=\{String\(settings\.srAutoThreshold\)\}[\s\S]{0,300}disabled=\{!settings\.srEnabled\}/);
+  assert.match(reader, /value=\{srThresholdInput\}[\s\S]{0,300}disabled=\{!settings\.srEnabled\}/);
 });
 
 test('Reader model selector explains each super-resolution option', () => {
@@ -1279,7 +1279,7 @@ test('Reader sizes panels by viewport and opens the thumbnail drawer from its tr
   assert.equal((reader.match(/openThumbnailDrawer\(/g) || []).length >= 2, true);
   assert.match(reader, /width:\s*'min\(440px, calc\(100vw - 32px\)\)'/);
   assert.match(reader, /justifyContent:\s*drawerSide === 'left' \? 'flex-start' : 'flex-end'/);
-  assert.match(reader, /translateX\(\$\{drawerSide === 'left' \? '-100%' : '100%'\}\)/);
+  assert.match(reader, /translate3d\(\$\{drawerSide === 'left' \? '-100%' : '100%'\},0,0\)/);
   assert.doesNotMatch(reader, /indicatorEl\.addEventListener\('transitionend'/);
   assert.doesNotMatch(reader, /ro\.observe\(indicatorEl\)/);
 });
@@ -1598,7 +1598,7 @@ test('active categories remain selected while applying and clearing text filters
   assert.match(home, /!hasActiveTextFilter && \(isUntaggedMode \|\| isStaticCategoryMode\)/);
   assert.match(home, /category:\s*!isUntaggedMode \? selectedCategoryOverride\?\.id : ''/);
   assert.match(home, /untaggedOnly:\s*isUntaggedMode/);
-  assert.match(home, /const handleSearch = \(\) => \{\s*applyFilter\(filter\.query, filter\.sortBy, filter\.order, selectedCategory\);/);
+  assert.match(home, /const handleSearch = \(\) => \{\s*if \(!hasArchiveSearchQuery\(filter\.query\)\) return;\s*applyFilter\(filter\.query, filter\.sortBy, filter\.order, selectedCategory\);/);
   const clearFilter = home.match(/const clearFilter = \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   assert.doesNotMatch(clearFilter, /setSelectedCategory\(null\)/);
 });
@@ -2038,4 +2038,25 @@ test('sync data survives scope switches and failed flushes', () => {
   // Legacy data migrates into the first scope only.
   assert.match(scope, /const marker = `lrr_legacy_migrated_v1:\$\{base\}`/);
   assert.match(scope, /!localStorage\.getItem\(marker\)/);
+});
+
+test('light theme gives the normal reader stage a light surface', () => {
+  const css = read('src/index.css');
+  const lightTheme = css.match(/:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+  assert.match(lightTheme, /--reader-stage-bg:\s*#(?:fffdf8|f0ebe2|ebe4d9)/i);
+  assert.match(lightTheme, /--reader-stage-border:\s*#(?:d8cfc2|cfc4b5|bdaf9e)/i);
+});
+
+test('reader thumbnail drawer coalesces scroll work without animating backdrop blur', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const drawer = reader.slice(reader.indexOf('/* ===== Thumbnail Drawer ===== */'));
+  assert.match(reader, /drawerViewportFrameRef/);
+  assert.match(reader, /requestAnimationFrame\(updateDrawerViewport/);
+  assert.doesNotMatch(drawer, /backdropFilter|WebkitBackdropFilter|backdrop-filter/);
+});
+
+test('empty archive search is a no-op', () => {
+  const home = read('src/pages/Home.jsx');
+  const handler = home.match(/const handleSearch = \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.match(handler, /if \(!hasArchiveSearchQuery\(filter\.query\)\) return;/);
 });
