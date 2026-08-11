@@ -301,7 +301,7 @@ test('paged readers retain the visible frame until the replacement spread is dec
   assert.match(reader, /getPendingSpreadRenderState\(currentSpread, displayedSpread, targetPending\)/);
   assert.match(reader, /key=\{`spread-slot:\$\{slotIndex\}`\}/);
   assert.match(reader, /const decoded = await decodeImageSource\(resolved\.src/);
-  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread, IMAGE_LOAD_PRIORITY\.CRITICAL, true, activeSuperResolution\)/);
+  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread, IMAGE_LOAD_PRIORITY\.CRITICAL, true, getSuperResolutionForPage\)/);
   assert.match(reader, /const commits = await Promise\.all/);
   assert.match(reader, /commits\.forEach\(\(commit\) =>[\s\S]{0,80}commit\(\)/);
 });

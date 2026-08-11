@@ -5,21 +5,21 @@ import { CONFIG_KEYS, exportConfig } from '../lib/worker-config';
 
 const CONFIG_GROUPS = [
   {
-    title: '服务器连接',
+    title: '服务器地址与 API Key',
     keys: [
       ['lrr_server_url', '服务器地址'],
       ['lrr_api_key', 'API Key'],
     ],
   },
   {
-    title: 'Worker 同步',
+    title: 'Worker 端点与访问 Token',
     keys: [
       ['lrr_worker_url', 'Cloudflare Worker 端点'],
       ['lrr_sync_token', '访问 Token'],
     ],
   },
   {
-    title: 'E-Hentai',
+    title: 'E-Hentai Cookie 与评论',
     keys: [
       ['lrr_eh_cookie', 'E-Hentai Cookie'],
       ['lrr_eh_min_score', '评论最低分数'],
@@ -30,7 +30,7 @@ const CONFIG_GROUPS = [
     ],
   },
   {
-    title: '阅读与档案',
+    title: '阅读器、封面与档案显示',
     keys: [
       ['lrr_reader_settings', '阅读器设置'],
       ['lrr_crop_cover', '裁剪封面'],
@@ -39,7 +39,7 @@ const CONFIG_GROUPS = [
     ],
   },
   {
-    title: '历史与筛选',
+    title: '已读状态与筛选条件',
     keys: [
       ['lrr_hide_read', '隐藏已读完'],
       ['lrr_random_hide_read', '随机漫游隐藏已读完'],
@@ -48,54 +48,58 @@ const CONFIG_GROUPS = [
     ],
   },
   {
-    title: '外观配色',
+    title: '主题与自定义配色',
     keys: [
       ['lrr_theme_mode', '主题模式'],
       ['lrr_custom_theme', '自定义配色'],
     ],
   },
   {
-    title: '图片缓存',
+    title: '图片缓存上限',
     keys: [
       ['lrr_image_cache_limit', '图片缓存上限'],
     ],
   },
 ];
 
-function buildSelection(keys) {
-  return new Set(keys);
+const CONFIG_GROUP_TITLES = CONFIG_GROUPS.map((group) => group.title);
+
+function buildSelection(items) {
+  return new Set(items);
 }
 
 export default function ConfigExportDialog({ open, onClose }) {
-  const [selected, setSelected] = useState(() => buildSelection(CONFIG_KEYS));
+  const [selected, setSelected] = useState(() => buildSelection(CONFIG_GROUP_TITLES));
   const [result, setResult] = useState('');
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (open) {
-      setSelected(buildSelection(CONFIG_KEYS));
+      setSelected(buildSelection(CONFIG_GROUP_TITLES));
       setResult('');
       setCopied(false);
       setError('');
     }
   }, [open]);
 
-  const toggle = (key) => {
+  const toggle = (groupTitle) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(groupTitle)) next.delete(groupTitle);
+      else next.add(groupTitle);
       return next;
     });
   };
 
   const toggleAll = () => {
-    setSelected((prev) => (prev.size === CONFIG_KEYS.length ? new Set() : buildSelection(CONFIG_KEYS)));
+    setSelected((prev) => (prev.size === CONFIG_GROUP_TITLES.length ? new Set() : buildSelection(CONFIG_GROUP_TITLES)));
   };
 
   const generate = () => {
-    const keys = CONFIG_KEYS.filter((key) => selected.has(key));
+    const keys = CONFIG_GROUPS
+      .filter((group) => selected.has(group.title))
+      .flatMap((group) => group.keys.map(([key]) => key));
     if (keys.length === 0) {
       setError('请至少选择一项配置。');
       return;
@@ -114,7 +118,7 @@ export default function ConfigExportDialog({ open, onClose }) {
     }
   };
 
-  const allSelected = selected.size === CONFIG_KEYS.length;
+  const allSelected = selected.size === CONFIG_GROUP_TITLES.length;
 
   return (
     <ConfirmDialog
@@ -139,9 +143,6 @@ export default function ConfigExportDialog({ open, onClose }) {
         </button>
       )}
     >
-      <div className="config-export-hint">
-        勾选需要导出的配置项，默认全选。
-      </div>
       {result ? (
         <textarea
           className="input-glass config-export-text"
@@ -154,17 +155,10 @@ export default function ConfigExportDialog({ open, onClose }) {
       ) : (
         <div className="config-export-list">
           {CONFIG_GROUPS.map((group) => (
-            <fieldset key={group.title} className="config-export-group">
-              <legend className="config-export-group-title">{group.title}</legend>
-              <div className="config-export-items">
-                {group.keys.map(([key, label]) => (
-                  <div key={key} className="config-export-item">
-                    <span className="config-export-item-name">{label}</span>
-                    <ToggleSwitch checked={selected.has(key)} onChange={() => toggle(key)} label={label} />
-                  </div>
-                ))}
-              </div>
-            </fieldset>
+            <div key={group.title} className="config-export-item">
+              <span className="config-export-item-name">{group.title}</span>
+              <ToggleSwitch checked={selected.has(group.title)} onChange={() => toggle(group.title)} label={group.title} />
+            </div>
           ))}
         </div>
       )}

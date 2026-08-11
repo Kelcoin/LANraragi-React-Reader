@@ -108,62 +108,6 @@ test('production Worker loads the registered WebGL build and Vite-managed WASM a
   assert.doesNotMatch(runtimeSource, /new globalThis\.Worker\(new URL/);
 });
 
-test('parses Anime4K shader passes and resolves hooked texture geometry', async () => {
-  const { parseAnime4kPasses } = await import('../src/lib/anime4k.js');
-  const passes = parseAnime4kPasses([`//!DESC first
-//!HOOK MAIN
-//!BIND HOOKED
-//!SAVE FEATURE
-//!WIDTH HOOKED.w
-//!HEIGHT HOOKED.h
-vec4 hook() { return HOOKED_tex(HOOKED_pos); }
-//!DESC upscale
-//!HOOK MAIN
-//!BIND FEATURE
-//!SAVE MAIN
-//!WIDTH FEATURE.w 2 *
-//!HEIGHT FEATURE.h 2 *
-vec4 hook() { return FEATURE_tex(FEATURE_pos); }`]);
-
-  assert.equal(passes.length, 2);
-  assert.deepEqual(passes[0].bindings, [{ uniform: 'HOOKED', source: 'MAIN' }]);
-  assert.deepEqual(passes[1].width, { source: 'FEATURE', scale: 2 });
-  assert.deepEqual(passes[1].height, { source: 'FEATURE', scale: 2 });
-  assert.equal(passes[1].save, 'MAIN');
-});
-
-test('normalizes Anime4K integer offsets for strict WebGL2 shader compilers', async () => {
-  const { parseAnime4kPasses } = await import('../src/lib/anime4k.js');
-  const [pass] = parseAnime4kPasses([`//!DESC strict offsets
-//!HOOK MAIN
-//!BIND HOOKED
-#define go_0(x_off, y_off) MAIN_texOff(vec2(x_off, y_off))
-vec4 hook() {
-  return go_0(1, -1) + MAIN_texOff(vec2(i - KERNELHALFSIZE, 0));
-}`]);
-
-  assert.match(pass.body, /vec2\(float\(x_off\), float\(y_off\)\)/);
-  assert.match(pass.body, /vec2\(float\(i - KERNELHALFSIZE\), 0\.0\)/);
-});
-
-test('binds Anime4K resolved texture names used by shader bodies', async () => {
-  const { buildAnime4kFragmentSource } = await import('../src/lib/anime4k.js');
-  const source = buildAnime4kFragmentSource({
-    bindings: [{ uniform: 'HOOKED', source: 'MAIN' }],
-    body: 'vec4 hook() { return MAIN_texOff(vec2(0.0)); }',
-  });
-
-  assert.match(source, /#define MAIN_tex\(pos\) texture\(HOOKED_tex, pos\)/);
-  assert.match(source, /#define MAIN_texOff\(off\) texture\(HOOKED_tex, vTexCoord \+ \(off\) \/ HOOKED_size\)/);
-  assert.match(source, /#define MAIN_pt \(1\.0 \/ HOOKED_size\)/);
-});
-
-test('Anime4K uses nearest sampling for floating-point feature textures', async () => {
-  const source = await readFile(new URL('../src/lib/anime4k.js', import.meta.url), 'utf8');
-  assert.match(source, /const filter = pixels \? gl\.LINEAR : gl\.NEAREST/);
-  assert.match(source, /gl\.RGBA32F/);
-});
-
 test('Real-CUGAN reflects tile edges and disposes every inference tensor', async () => {
   const { createRealCuganProcessor, reflectIndex } = await import('../src/lib/realCugan.js');
   assert.deepEqual([-2, -1, 0, 3, 4, 5].map((index) => reflectIndex(index, 4)), [2, 1, 0, 3, 2, 1]);
@@ -388,57 +332,6 @@ test('honors a model manifest that requires the WASM execution provider', async 
     backend: 'wasm',
   });
   assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['wasm']);
-});
-
-test('dispatches Anime4K manifests to the WebGL processor and releases it', async () => {
-  const calls = [];
-  const processor = {
-    process(pixels, width, height) {
-      calls.push({ pixels, width, height });
-      return { pixels: new Uint8ClampedArray(width * height * 16), width: width * 2, height: height * 2 };
-    },
-    dispose() { calls.push('dispose'); },
-  };
-  let encoded;
-  const fixture = createWorkerDependencies({
-    anime4kFactory: async () => processor,
-    decodeImage: async () => ({
-      width: 2,
-      height: 2,
-      pixels: new Uint8ClampedArray(16).fill(128),
-      close() {},
-    }),
-    encodeImage: async (image) => {
-      encoded = image;
-      return new Blob(['anime4k'], { type: 'image/png' });
-    },
-  });
-  const handler = await createWorkerHandler(fixture.dependencies);
-  const manifest = {
-    ...workerManifest,
-    engine: 'anime4k-webgl',
-    url: 'builtin:anime4k-v4-ultra-x2',
-  };
-
-  const ready = await handler.handleMessage({ type: 'init', requestId: 'anime-init', manifest });
-  assert.equal(ready.type, 'ready');
-  assert.equal(ready.backend, 'webgl');
-  assert.equal(fixture.calls.fetch.length, 0);
-
-  const result = await handler.handleMessage({
-    type: 'process',
-    requestId: 'anime-process',
-    manifest,
-    blob: new Blob(['source']),
-  });
-  assert.equal(result.type, 'result', result.error?.message);
-  assert.equal(result.width, 4);
-  assert.equal(result.height, 4);
-  assert.equal(encoded.width, 4);
-  assert.equal(encoded.height, 4);
-
-  await handler.handleMessage({ type: 'dispose', requestId: 'anime-dispose' });
-  assert.equal(calls.at(-1), 'dispose');
 });
 
 test('dispatches Real-CUGAN manifests to its TensorFlow.js processor', async () => {
@@ -1719,7 +1612,7 @@ test('resolves a super-resolution model by its value', () => {
 
 test('does not ship the test-only ONNX sub-pixel model', () => {
   assert.equal(superResolution.getSuperResolutionModel('onnx-subpixel-x3'), null);
-  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((model) => model.value), ['anime4k', 'waifu2x', 'realcugan']);
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((model) => model.value), ['waifu2x', 'realcugan']);
 });
 
 test('describes every selectable super-resolution model', () => {

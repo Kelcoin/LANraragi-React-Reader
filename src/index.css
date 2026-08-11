@@ -2429,32 +2429,11 @@ textarea:focus-visible,
 }
 
 .config-export-list {
-  display: grid;
-  gap: 12px;
-  max-height: min(52vh, 420px);
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.config-export-group {
-  margin: 0;
-  padding: 10px 12px 12px;
   border: 1px solid color-mix(in srgb, var(--glass-border) 62%, transparent);
   border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--surface-inset) 55%, transparent);
-}
-
-.config-export-group-title {
-  padding: 0 2px 8px;
-  color: var(--text-main);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.config-export-items {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
 }
 
 .config-export-item {
@@ -2462,10 +2441,15 @@ textarea:focus-visible,
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 36px;
-  padding: 4px 2px;
+  min-height: 48px;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 48%, transparent);
   color: var(--text-sub);
   font-size: 12px;
+}
+
+.config-export-item:last-child {
+  border-bottom: 0;
 }
 
 .config-export-text {

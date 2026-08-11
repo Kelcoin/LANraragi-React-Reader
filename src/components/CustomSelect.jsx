@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ToolbarGlyph } from './AppGlyphs';
 import SettingHint from './SettingHint';
 
-export default function CustomSelect({ value, options, onChange, style, compact, ariaLabel }) {
+export default function CustomSelect({ value, options, onChange, style, compact, ariaLabel, disabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const listboxId = useId();
@@ -35,6 +35,10 @@ export default function CustomSelect({ value, options, onChange, style, compact,
   }, []);
 
   useEffect(() => {
+    if (disabled) setIsOpen(false);
+  }, [disabled]);
+
+  useEffect(() => {
     if (!isOpen) return undefined;
     updatePosition();
     window.addEventListener('scroll', updatePosition, true);
@@ -55,39 +59,43 @@ export default function CustomSelect({ value, options, onChange, style, compact,
   }, [onChange]);
 
   const openDropdown = useCallback(() => {
+    if (disabled) return;
     if (!isOpen && triggerRef.current) updatePosition();
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : (options.length > 0 ? 0 : -1));
     setIsOpen(true);
-  }, [isOpen, options.length, selectedIndex, updatePosition]);
+  }, [disabled, isOpen, options.length, selectedIndex, updatePosition]);
 
   useEffect(() => {
     if (!isOpen) setActiveIndex(selectedIndex);
   }, [isOpen, selectedIndex]);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', minWidth: compact ? (isNarrow ? '80px' : '100px') : '150px', ...style }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', minWidth: compact ? (isNarrow ? '80px' : '100px') : '150px', opacity: disabled ? 0.55 : 1, ...style }}>
       <div 
         ref={triggerRef}
         className="input-glass"
         role="button"
         aria-haspopup="listbox"
-        aria-expanded={isOpen}
+        aria-expanded={disabled ? false : isOpen}
+        aria-disabled={disabled}
         aria-controls={isOpen ? listboxId : undefined}
         aria-activedescendant={isOpen && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
         aria-label={ariaLabel}
-        tabIndex={0}
+        tabIndex={disabled ? -1 : 0}
         style={{ 
-          cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+          cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
           userSelect: 'none',
           padding: compact && isNarrow ? '6px 8px' : undefined,
           background: isOpen ? 'var(--accent-soft)' : undefined,
           borderColor: isOpen ? 'var(--accent)' : undefined
         }}
         onClick={() => {
+            if (disabled) return;
             if (isOpen) setIsOpen(false);
             else openDropdown();
           }}
         onKeyDown={(e) => {
+          if (disabled) return;
           if (e.key === 'Escape') {
             e.preventDefault();
             setIsOpen(false);

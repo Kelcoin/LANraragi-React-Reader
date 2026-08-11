@@ -1139,9 +1139,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [bootstrapRetryToken, setBootstrapRetryToken] = useState(0);
 
   // ===== UI States =====
-  const [viewMode, setViewMode] = useState(() => readerSnapshot?.viewMode || 'normal');
+  const [viewMode, setViewMode] = useState('normal');
   const [showUI, setShowUI] = useState(true);
-  const [showHeader, setShowHeader] = useState(() => readerSnapshot?.showHeader ?? true);
+  const [showHeader, setShowHeader] = useState(true);
   const [showDrawer, setShowDrawer] = useState(false);
   const [drawerSide, setDrawerSide] = useState('right');
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
@@ -1221,12 +1221,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }, [archiveId, canRenderPage]);
 
   // ===== Zoom =====
-  const [zoomScale, setZoomScale] = useState(() => readerSnapshot?.zoomScale || 1.0);
+  const [zoomScale, setZoomScale] = useState(1.0);
   const fullPrecisionDecode = zoomScale > 1.0;
 
   // ===== Pan (drag-to-scroll when zoomed) =====
-  const [panX, setPanX] = useState(() => readerSnapshot?.panX || 0);
-  const [panY, setPanY] = useState(() => readerSnapshot?.panY || 0);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
 
   // Reset pan offset whenever zoom returns to 100%
   useEffect(() => {
@@ -1298,6 +1298,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const activeSuperResolution = srArchiveEnabled && !currentPageTooLargeForSuperResolution
     ? srRuntimeContext
     : null;
+  function getSuperResolutionForPage(pageIndex) {
+    if (!srArchiveEnabled || !srRuntimeContext) return null;
+    const size = pageSizes[pageIndex];
+    if (size?.width && size?.height && srManifest?.scale
+      && size.width * size.height * srManifest.scale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS) {
+      return null;
+    }
+    return srRuntimeContext;
+  }
   const [autoWebtoon, setAutoWebtoon] = useState(false);
   const [autoMangaEligible, setAutoMangaEligible] = useState(false);
   const [readerContainerWidth, setReaderContainerWidth] = useState(() => window.innerWidth);
@@ -1337,7 +1346,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const currentIndexRefSnapshot = useRef(currentIndex);
   const splitPartRef = useRef(splitPart);
   const displayedIndexRef = useRef(displayedIndex);
-  const viewModeSnapshotRef = useRef(viewMode);
   const pageLoadPhaseRef = useRef(pageLoadPhase);
   const bootstrapGenerationRef = useRef(0);
 
@@ -1346,7 +1354,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   useEffect(() => { currentIndexRefSnapshot.current = currentIndex; }, [currentIndex]);
   useEffect(() => { splitPartRef.current = splitPart; }, [splitPart]);
   useEffect(() => { displayedIndexRef.current = displayedIndex; }, [displayedIndex]);
-  useEffect(() => { viewModeSnapshotRef.current = viewMode; }, [viewMode]);
   useEffect(() => { pageLoadPhaseRef.current = pageLoadPhase; }, [pageLoadPhase]);
 
   useEffect(() => {
@@ -1385,13 +1392,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       currentIndex: currentIndexRefSnapshot.current,
       splitPart: splitPartRef.current,
       displayedIndex: displayedIndexRef.current,
-      viewMode: viewModeSnapshotRef.current,
-      showHeader,
-      zoomScale: zoomScaleRef.current,
-      panX: panRef.current.x,
-      panY: panRef.current.y,
     });
-  }, [archiveId, persistReadingProgress, showHeader]);
+  }, [archiveId, persistReadingProgress]);
   useEffect(() => {
     serverInfoRef.current = { ...(serverInfoRef.current || {}), server_tracks_progress: serverTracksProgress };
   }, [serverTracksProgress]);
@@ -1552,7 +1554,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         snapshotSaveTimerRef.current = null;
       }
     };
-  }, [archive, pages, currentIndex, splitPart, displayedIndex, viewMode, zoomScale, panX, panY, saveReaderStateSnapshot]);
+  }, [archive, pages, currentIndex, splitPart, displayedIndex, saveReaderStateSnapshot]);
 
   useEffect(() => {
     if (splitPart !== 1) return;
@@ -2231,11 +2233,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
     }
     const loadSpread = async (refs, spread, priority, preserveVisible = false, superResolution = null) => {
+      const resolveSuperResolution = typeof superResolution === 'function'
+        ? superResolution
+        : () => superResolution;
       const first = spread[0]
-        ? loadImg(refs[0], spread[0], priority, preserveVisible, superResolution)
+        ? loadImg(refs[0], spread[0], priority, preserveVisible, resolveSuperResolution(spread[0].pageIndex))
         : Promise.resolve(false);
       const second = spread[1]
-        ? loadImg(refs[1], spread[1], priority, preserveVisible, superResolution)
+        ? loadImg(refs[1], spread[1], priority, preserveVisible, resolveSuperResolution(spread[1].pageIndex))
         : Promise.resolve(() => { unloadImg(refs[1]); return true; });
       const commits = await Promise.all([first, second]);
       if (commits.some((commit) => typeof commit !== 'function')) {
@@ -2247,7 +2252,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return committed;
     };
 
-    loadSpread([imgCurrRef, imgCurrSecondRef], activeSpread, IMAGE_LOAD_PRIORITY.CRITICAL, true, activeSuperResolution).then((ok) => {
+    loadSpread([imgCurrRef, imgCurrSecondRef], activeSpread, IMAGE_LOAD_PRIORITY.CRITICAL, true, getSuperResolutionForPage).then((ok) => {
       if (!alive || loadSeq !== immersiveLoadSeqRef.current) return;
       if (currentIndexRef.current !== idx || currentSpreadIndexRef.current !== activeSpreadIndex) return;
       if (ok) {
@@ -2482,16 +2487,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           targetIndex: restoredIndex,
           shownAt: Date.now(),
         });
-        setViewMode(readerSnapshot.viewMode || 'normal');
-        setShowHeader(readerSnapshot.showHeader ?? true);
-        const restoredZoom = readerSnapshot.zoomScale || 1.0;
-        const restoredPanX = readerSnapshot.panX || 0;
-        const restoredPanY = readerSnapshot.panY || 0;
-        zoomScaleRef.current = restoredZoom;
-        panRef.current = { x: restoredPanX, y: restoredPanY, startX: 0, startY: 0, originX: restoredPanX, originY: restoredPanY };
-        setZoomScale(restoredZoom);
-        setPanX(restoredPanX);
-        setPanY(restoredPanY);
         dispatchRender({ type: 'reset', hasMetadata: !!restoredArchive, hasManifest: restoredPages.length > 0, hasSelection: true });
         return;
       }
@@ -3965,7 +3960,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 <div className="settings-group">
                   <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '4px' }}>超分</div>
                   <div className="settings-row">
-                    <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。\n图片过大、不适合超分时，沉浸模式中的超分按钮会自动隐藏。'}>启用超分</SettingHint>
+                    <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。\n预超分页数与“预加载”数量一致；实际同时处理数量受“最大同时解码”限制。\n图片过大、不适合超分时，沉浸模式中的超分按钮会自动隐藏。'}>启用超分</SettingHint>
                     <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={(!srSupport.supported || !srManifest) && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
                   </div>
                   {!srSupport.supported && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
@@ -3973,16 +3968,17 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   {srRuntimeError && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srRuntimeError}</div>}
                   <div className="settings-row">
                     <span className="settings-row-title">超分模型</span>
-                    <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} compact /></div>
+                    <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} disabled={!settings.srEnabled} compact /></div>
                   </div>
                   <div className="settings-row">
                     <SettingHint text={'自动超分逻辑：按归档体积 / 页数算出每页平均体积，低于下方阈值时自动启用当前档案超分。'}>自动启用超分</SettingHint>
-                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动启用超分" checked={settings.srAuto} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} /></div>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动启用超分" checked={settings.srAuto} disabled={!settings.srEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} /></div>
                   </div>
                   <div className="settings-row">
                     <SettingHint text={'每页平均体积阈值（KB）。\n归档体积 ÷ 页数 < 该值时自动启用超分。\n填 0：关闭自动超分。'}>自动超分阈值(KB)</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={String(settings.srAutoThreshold)}
+                      disabled={!settings.srEnabled}
                       onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
                       style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
@@ -4054,7 +4050,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                           serializedDecode
                           previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                           sourceSize={pageSizes[index]}
-                          superResolution={index === currentIndex ? activeSuperResolution : null}
+                          superResolution={getSuperResolutionForPage(index)}
                           onSuperResolutionError={handleSuperResolutionError}
                           onNaturalSize={handlePageNaturalSize}
                           onLoadStart={distance === 0 ? handlePageVisualLoadStart : undefined}
@@ -4086,7 +4082,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                         previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                         fullPrecision={fullPrecisionDecode}
                         sourceSize={pageSizes[unit.pageIndex]}
-                        superResolution={activeSuperResolution}
+                        superResolution={getSuperResolutionForPage(unit.pageIndex)}
                         onSuperResolutionError={handleSuperResolutionError}
                         onNaturalSize={handlePageNaturalSize}
                         loadingLabel={`正在加载第 ${unit.pageIndex + 1} 页`}
@@ -4146,6 +4142,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                       fullPrecision={fullPrecisionDecode}
                       sourceSize={pageSizes[pageIndex]}
+                      superResolution={getSuperResolutionForPage(pageIndex)}
+                      onSuperResolutionError={handleSuperResolutionError}
                       onNaturalSize={handlePageNaturalSize}
                       style={{ width: '1px', height: '1px' }}
                     />
@@ -4287,7 +4285,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       serializedDecode
                       previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                       sourceSize={pageSizes[index]}
-                      superResolution={index === currentIndex ? activeSuperResolution : null}
+                      superResolution={getSuperResolutionForPage(index)}
                       onSuperResolutionError={handleSuperResolutionError}
                       onNaturalSize={handlePageNaturalSize}
                       style={{ width: '100%', height: 'auto', maxWidth: '100%', objectFit: 'contain', borderRadius: 0 }}

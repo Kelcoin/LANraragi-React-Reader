@@ -359,6 +359,28 @@ test('transient notifications use the shared toast module', () => {
   assert.match(css, /\.toast-card\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
 });
 
+test('config export selects whole groups in one flat list', () => {
+  const dialog = read('src/components/ConfigExportDialog.jsx');
+  const css = read('src/index.css');
+  for (const title of [
+    '服务器地址与 API Key',
+    'Worker 端点与访问 Token',
+    'E-Hentai Cookie 与评论',
+    '阅读器、封面与档案显示',
+    '已读状态与筛选条件',
+    '主题与自定义配色',
+    '图片缓存上限',
+  ]) assert.match(dialog, new RegExp(`title: '${title}'`));
+  assert.match(dialog, /CONFIG_GROUPS\.map\(\(group\) => group\.title\)/);
+  assert.match(dialog, /CONFIG_GROUPS[\s\S]{0,80}\.filter\([\s\S]*\.flatMap\(\(group\) => group\.keys\.map\(\(\[key\]\) => key\)\)/);
+  assert.match(dialog, /CONFIG_GROUPS\.map\(\(group\) => \([\s\S]*label=\{group\.title\}/);
+  assert.doesNotMatch(dialog, /group\.keys\.map\(\(\[key, label\]\)/);
+  assert.doesNotMatch(dialog, /<fieldset|<legend/);
+  assert.match(css, /\.config-export-list\s*\{[^}]*border:/s);
+  assert.match(css, /\.config-export-item\s*\{[^}]*border-bottom:/s);
+  assert.doesNotMatch(css, /\.config-export-group\s*\{/);
+});
+
 test('reader setting hints escape the scroll container and size to their content', () => {
   const hint = read('src/components/SettingHint.jsx');
   const css = read('src/index.css');
@@ -740,6 +762,10 @@ test('super-resolution reuses preload count and uses directional state glyphs', 
   assert.match(glyphs, /case 'superResolutionOff':[\s\S]*?M4\.5 4\.5 19\.5 19\.5/);
   assert.doesNotMatch(glyphs, /case 'superResolution':[\s\S]*?stroke="var\(/);
   assert.doesNotMatch(glyphs, /case 'superResolutionOff':[\s\S]*?stroke="var\(/);
+  assert.match(reader, /预超分页数与“预加载”数量一致/);
+  assert.match(reader, /value=\{settings\.srModel\}[\s\S]{0,300}disabled=\{!settings\.srEnabled\}/);
+  assert.match(reader, /label="自动启用超分"[^>]*disabled=\{!settings\.srEnabled\}/);
+  assert.match(reader, /value=\{String\(settings\.srAutoThreshold\)\}[\s\S]{0,300}disabled=\{!settings\.srEnabled\}/);
 });
 
 test('Reader model selector explains each super-resolution option', () => {
@@ -768,10 +794,25 @@ test('Reader super-resolution processes only visible pages and preserves origina
   assert.match(reader, /commitPageImage\(originalResolved, originalDecoded,[\s\S]{0,800}processSuperResolutionImageSource/);
   assert.match(reader, /commitImmersiveImage\(originalDecoded,[\s\S]{0,240}startSuperResolutionUpgrade/);
   assert.match(reader, /keepAlive: true/);
-  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread,[^\n]+true, activeSuperResolution\)/);
+  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread,[^\n]+true, getSuperResolutionForPage\)/);
   assert.doesNotMatch(reader, /loadSpread\(\[img(?:Left|Right)Ref,[^\n]+activeSuperResolution/);
-  assert.match(reader, /superResolution=\{index === currentIndex \? activeSuperResolution : null\}/);
+  assert.match(reader, /function getSuperResolutionForPage\(pageIndex\)/);
+  assert.match(reader, /superResolution=\{getSuperResolutionForPage\(index\)\}/);
+  assert.doesNotMatch(reader, /superResolution=\{index === currentIndex \? activeSuperResolution : null\}/);
   assert.match(reader, /decodeTickets\.forEach\(\(ticket\) => ticket\.cancel\(\)\)/);
+});
+
+test('Reader snapshots do not persist immersive mode or image transforms', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.doesNotMatch(reader, /viewMode: viewModeSnapshotRef\.current/);
+  assert.doesNotMatch(reader, /showHeader:/);
+  assert.doesNotMatch(reader, /zoomScale: zoomScaleRef\.current/);
+  assert.doesNotMatch(reader, /panX: panRef\.current\.x/);
+  assert.doesNotMatch(reader, /panY: panRef\.current\.y/);
+  assert.match(reader, /const \[viewMode, setViewMode\] = useState\('normal'\)/);
+  assert.match(reader, /const \[zoomScale, setZoomScale\] = useState\(1\.0\)/);
+  assert.match(reader, /const \[panX, setPanX\] = useState\(0\)/);
+  assert.match(reader, /const \[panY, setPanY\] = useState\(0\)/);
 });
 
 test('Reader reuses derived image cache entries and cancels adjacent super-resolution preloads', () => {

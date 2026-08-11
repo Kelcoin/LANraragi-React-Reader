@@ -1,6 +1,5 @@
 import { createTilePlan } from './superResolutionTiling.js';
 import { loadOrtBackend } from './superResolutionOrt.js';
-import { createProductionAnime4kProcessor } from './anime4k.js';
 import { createProductionRealCuganProcessor } from './realCugan.js';
 import {
   READER_SUPER_RESOLUTION_DISPLAY_PIXELS,
@@ -594,7 +593,6 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
   const decodeImage = dependencies.decodeImage ?? decodeImageBlob;
   const encodeImage = dependencies.encodeImage ?? encodeImageBlob;
   const tensorFactory = dependencies.tensorFactory ?? createProductionTensor;
-  const anime4kFactory = dependencies.anime4kFactory ?? createProductionAnime4kProcessor;
   const realCuganFactory = dependencies.realCuganFactory ?? createProductionRealCuganProcessor;
   let session = null;
   let processor = null;
@@ -622,22 +620,6 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
     if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');
     const initGeneration = ++generation;
     validateInitManifest(manifest);
-
-    if (manifest.engine === 'anime4k-webgl') {
-      const nextProcessor = await anime4kFactory(manifest);
-      await ensureCurrentGeneration(initGeneration, nextProcessor);
-      if (!nextProcessor || typeof nextProcessor.process !== 'function') {
-        throw createNamedError('SessionInitializationError', 'Anime4K processor is unavailable');
-      }
-      if (session && typeof session.release === 'function') await session.release();
-      processor?.dispose?.();
-      session = null;
-      processor = nextProcessor;
-      backend = WEBGL_BACKEND;
-      activeManifest = manifest;
-      staleRequestIds.clear();
-      return { type: 'ready', requestId, backend };
-    }
 
     if (manifest.engine === 'realcugan-tfjs') {
       const initialized = await realCuganFactory(manifest);
@@ -773,7 +755,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
             const processProcessor = processor;
             const processBackend = backend;
             const processManifest = message.manifest ?? activeManifest;
-            if (['anime4k-webgl', 'realcugan-tfjs'].includes(processManifest?.engine)) {
+            if (processManifest?.engine === 'realcugan-tfjs') {
               return await processPixelProcessorBlob({
                 blob: message.blob,
                 manifest: processManifest,

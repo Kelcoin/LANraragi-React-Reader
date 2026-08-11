@@ -6,27 +6,6 @@ const visiblePageJobs = new Map();
 // 超分能力检测与模型选项（UI 框架；wasm 引擎后续接入）
 export const SUPER_RESOLUTION_MODELS = Object.freeze([
   {
-    value: 'anime4k',
-    label: 'Anime4K',
-    description: '偏重动漫线条锐化，速度最快，适合实时阅读；不会生成新细节，照片类图片可能显得过锐。',
-    id: 'anime4k-v4-ultra-x2',
-    engine: 'anime4k-webgl',
-    url: 'builtin:anime4k-v4-ultra-x2',
-    scale: 2,
-    inputLayout: 'nhwc',
-    outputLayout: 'nhwc',
-    colorSpace: 'rgb',
-    executionProviders: ['webgl'],
-    checksum: {
-      algorithm: 'SHA-256',
-      digest: '61dc121789f4ed98d2d1a739a1a4ee8a49341474b77de0b3edc20fe18b9588c8',
-    },
-    license: {
-      name: 'MIT',
-      url: 'https://github.com/bloc97/Anime4K/blob/2f86fc51a0e28f475e41bbfb8ef861259904abae/LICENSE',
-    },
-  },
-  {
     value: 'waifu2x',
     label: 'Waifu2x',
     description: '动漫插画通用模型，兼顾去噪、线条和色块，画质与速度较均衡。',
@@ -161,7 +140,7 @@ export function validateSuperResolutionManifest(manifest) {
     && hasText(manifest.url)
     && Number.isInteger(manifest.scale)
     && manifest.scale > 0
-    && [undefined, 'onnx', 'anime4k-webgl', 'realcugan-tfjs'].includes(manifest.engine)
+    && [undefined, 'onnx', 'realcugan-tfjs'].includes(manifest.engine)
     && ['nchw', 'nhwc'].includes(getLayout(manifest, 'input'))
     && ['nchw', 'nhwc'].includes(getLayout(manifest, 'output'))
     && [undefined, 'rgb', 'ycbcr-y'].includes(manifest.colorSpace)
@@ -178,7 +157,7 @@ export function getSuperResolutionCacheKey(sourceUrl, manifest) {
 }
 
 function detectGpuSupport() {
-  // WebGL 是当前 wasm 引擎（如 Anime4KCPP/realcugan-wasm）在浏览器端可用的最低公共能力标记。
+  // WebGL 是 Real-CUGAN 等浏览器端引擎可用的最低公共能力标记。
   try {
     const canvas = globalThis.document?.createElement?.('canvas');
     if (!canvas) return false;

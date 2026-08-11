@@ -17,7 +17,7 @@ export const DEFAULT_READER_SETTINGS = Object.freeze({
   progressBarVisibility: ARCHIVE_PROGRESS_VISIBILITY.HISTORY,
   // 超分
   srEnabled: false,
-  srModel: 'anime4k',
+  srModel: 'waifu2x',
   srAuto: false,
   srAutoThreshold: 0, // 每页平均体积阈值（KB），低于该值的档案自动启用超分
 });
@@ -58,7 +58,7 @@ export function normalizeReaderSettings(value = {}) {
   next.progressBarVisibility = normalizeArchiveProgressVisibility(next.progressBarVisibility);
   if (next.splitWidePagesEnabled) next.rotateWidePagesEnabled = false;
   // 超分字段
-  if (next.srModel === 'onnx-subpixel-x3' || !['anime4k', 'waifu2x', 'realcugan'].includes(next.srModel)) {
+  if (next.srModel === 'onnx-subpixel-x3' || next.srModel === 'anime4k' || !['waifu2x', 'realcugan'].includes(next.srModel)) {
     next.srModel = DEFAULT_READER_SETTINGS.srModel;
   }
   next.srEnabled = Boolean(next.srEnabled);

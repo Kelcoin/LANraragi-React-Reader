@@ -1,4 +1,5 @@
 import { normalizeThemePalettes } from './theme.js';
+import { normalizeReaderSettings } from './readerSettings.js';
 
 const WORKER_URL_KEY = 'lrr_worker_url';
 const SYNC_TOKEN_KEY = 'lrr_sync_token';
@@ -117,6 +118,13 @@ export function importConfig(encoded) {
         const normalizedTheme = normalizeThemePalettes(parsedTheme);
         if (!normalizedTheme) continue;
         localStorage.setItem(key, JSON.stringify(normalizedTheme));
+        count++;
+        continue;
+      }
+      if (key === 'lrr_reader_settings') {
+        let parsedSettings;
+        try { parsedSettings = JSON.parse(cfg[key]); } catch { continue; }
+        localStorage.setItem(key, JSON.stringify(normalizeReaderSettings(parsedSettings)));
         count++;
         continue;
       }

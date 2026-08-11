@@ -151,7 +151,7 @@ test('reader settings reject unsafe automatic turn intervals', () => {
 test('reader settings normalize super-resolution fields', () => {
   const defaults = readerSettings.normalizeReaderSettings({});
   assert.equal(defaults.srEnabled, false);
-  assert.equal(defaults.srModel, 'anime4k');
+  assert.equal(defaults.srModel, 'waifu2x');
   assert.equal(defaults.preloadCount, 3);
   assert.equal('srPreloadCount' in defaults, false);
   assert.equal(defaults.srAuto, false);
@@ -159,9 +159,9 @@ test('reader settings normalize super-resolution fields', () => {
 
   assert.equal(readerSettings.normalizeReaderSettings({ srEnabled: 1 }).srEnabled, true);
   assert.equal(readerSettings.normalizeReaderSettings({ srAuto: 'yes' }).srAuto, true);
-  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'onnx-subpixel-x3' }).srModel, 'anime4k');
+  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'onnx-subpixel-x3' }).srModel, 'waifu2x');
   assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'realcugan' }).srModel, 'realcugan');
-  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'unknown' }).srModel, 'anime4k');
+  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'unknown' }).srModel, 'waifu2x');
   assert.equal(readerSettings.normalizeReaderSettings({ preloadCount: 99 }).preloadCount, 10);
   assert.equal('srPreloadCount' in readerSettings.normalizeReaderSettings({ srPreloadCount: 5 }), false);
   assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: -1 }).srAutoThreshold, 0);
@@ -169,7 +169,7 @@ test('reader settings normalize super-resolution fields', () => {
 
   // 纯函数库可加载；Node 环境（无 document/WebGL）安全降级为不支持
   assert.equal(typeof superResolution.detectSuperResolutionSupport, 'function');
-  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((m) => m.value), ['anime4k', 'waifu2x', 'realcugan']);
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((m) => m.value), ['waifu2x', 'realcugan']);
   const fallback = superResolution.detectSuperResolutionSupport();
   assert.equal(fallback.supported, false);
   assert.ok(fallback.reason);
@@ -310,6 +310,60 @@ test('config import ignores non-string field values', () => {
     assert.equal(values.has('lrr_server_url'), false);
     assert.equal(values.get('lrr_api_key'), 'ok');
     assert.equal(values.get('lrr_random_hide_read'), '1');
+  } finally {
+    globalThis.localStorage = previousStorage;
+  }
+});
+
+test('config export includes super-resolution reader settings', () => {
+  const previousStorage = globalThis.localStorage;
+  const readerSettingsValue = JSON.stringify({
+    srEnabled: true,
+    srModel: 'realcugan',
+    srAuto: true,
+    srAutoThreshold: 768,
+  });
+  globalThis.localStorage = {
+    getItem: (key) => key === 'lrr_reader_settings' ? readerSettingsValue : null,
+  };
+  try {
+    const binary = atob(workerConfig.exportConfig());
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const exported = JSON.parse(new TextDecoder().decode(bytes));
+    assert.deepEqual(JSON.parse(exported.lrr_reader_settings), JSON.parse(readerSettingsValue));
+  } finally {
+    globalThis.localStorage = previousStorage;
+  }
+});
+
+test('config import normalizes super-resolution reader settings', () => {
+  const previousStorage = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+  try {
+    const payload = {
+      lrr_reader_settings: JSON.stringify({
+        srEnabled: true,
+        srModel: 'anime4k',
+        srAuto: true,
+        srAutoThreshold: 640,
+        srPreloadCount: 8,
+      }),
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    assert.equal(workerConfig.importConfig(btoa(binary)), 1);
+    const imported = JSON.parse(values.get('lrr_reader_settings'));
+    assert.equal(imported.srEnabled, true);
+    assert.equal(imported.srModel, 'waifu2x');
+    assert.equal(imported.srAuto, true);
+    assert.equal(imported.srAutoThreshold, 640);
+    assert.equal('srPreloadCount' in imported, false);
   } finally {
     globalThis.localStorage = previousStorage;
   }
