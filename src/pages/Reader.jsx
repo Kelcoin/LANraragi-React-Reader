@@ -4501,7 +4501,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           display: 'flex', justifyContent: drawerSide === 'left' ? 'flex-start' : 'flex-end',
           pointerEvents: showDrawer ? 'auto' : 'none',
           background: showDrawer ? 'var(--overlay-bg)' : 'transparent',
-          transition: 'background 0.25s ease',
+          backdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
+          WebkitBackdropFilter: showDrawer ? 'blur(4px)' : 'blur(0px)',
+          transition: 'background 0.25s ease, backdrop-filter 0.25s ease, -webkit-backdrop-filter 0.25s ease',
           overscrollBehavior: 'contain',
         }}
       >

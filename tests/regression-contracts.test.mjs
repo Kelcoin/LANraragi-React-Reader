@@ -2047,12 +2047,14 @@ test('light theme gives the normal reader stage a light surface', () => {
   assert.match(lightTheme, /--reader-stage-border:\s*#(?:d8cfc2|cfc4b5|bdaf9e)/i);
 });
 
-test('reader thumbnail drawer coalesces scroll work without animating backdrop blur', () => {
+test('reader thumbnail drawer coalesces scroll work and animates backdrop blur', () => {
   const reader = read('src/pages/Reader.jsx');
   const drawer = reader.slice(reader.indexOf('/* ===== Thumbnail Drawer ===== */'));
   assert.match(reader, /drawerViewportFrameRef/);
   assert.match(reader, /requestAnimationFrame\(updateDrawerViewport/);
-  assert.doesNotMatch(drawer, /backdropFilter|WebkitBackdropFilter|backdrop-filter/);
+  assert.match(drawer, /backdropFilter: showDrawer \? 'blur\(4px\)' : 'blur\(0px\)'/);
+  assert.match(drawer, /WebkitBackdropFilter: showDrawer \? 'blur\(4px\)' : 'blur\(0px\)'/);
+  assert.match(drawer, /backdrop-filter 0\.25s ease/);
 });
 
 test('empty archive search is a no-op', () => {
