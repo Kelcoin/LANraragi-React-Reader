@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hasArchiveReadingProgress } from '../lib/archiveProgress';
 import { getFavoriteState, setArchiveFavorite } from '../lib/categories';
+import { useToast } from './Toast';
 
 function clampMenuPosition(x, y, height = 214) {
   const width = 150;
@@ -27,17 +28,17 @@ function MenuButton({ children, danger = false, disabled = false, onClick }) {
 }
 
 export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncognito, onClearProgress, onEditMetadata, onDownload, onDelete, onCopyLink, onRemoveHistory, onAddWatchlist, onRemoveWatchlist }) {
+  const { showToast } = useToast();
   const archiveId = menu?.archive?.arcid || menu?.archive?.id || '';
   const [favorite, setFavorite] = useState(false);
   const [favoriteKnown, setFavoriteKnown] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
-  const [favoriteError, setFavoriteError] = useState('');
   const showRemoveHistory = !!menu?.showRemoveHistory && !!onRemoveHistory;
   const showRemoveWatchlist = !!menu?.showRemoveWatchlist && !!onRemoveWatchlist;
   const showAddWatchlist = !showRemoveWatchlist && !!onAddWatchlist;
   const showClearProgress = !!onClearProgress && hasArchiveReadingProgress(menu?.archive);
   const extraRows = (showRemoveHistory ? 1 : 0) + (showRemoveWatchlist || showAddWatchlist ? 1 : 0) + (onDelete ? 1 : 0) + (onEditMetadata ? 1 : 0) + (showClearProgress ? 1 : 0);
-  const menuHeight = 214 + extraRows * 36 + (favoriteError ? 48 : 0);
+  const menuHeight = 214 + extraRows * 36;
   const pos = useMemo(() => clampMenuPosition(menu?.x || 0, menu?.y || 0, menuHeight), [menu?.x, menu?.y, menuHeight]);
 
   useEffect(() => {
@@ -62,7 +63,6 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
     let active = true;
     setFavorite(false);
     setFavoriteKnown(false);
-    setFavoriteError('');
     if (!archiveId) return undefined;
     setFavoriteBusy(true);
     getFavoriteState(archiveId)
@@ -73,13 +73,13 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
         }
       })
       .catch((error) => {
-        if (active) setFavoriteError(`读取收藏状态失败：${error?.message || '未知错误'}`);
+        if (active) showToast(`读取收藏状态失败：${error?.message || '未知错误'}`, 'error');
       })
       .finally(() => {
         if (active) setFavoriteBusy(false);
       });
     return () => { active = false; };
-  }, [archiveId]);
+  }, [archiveId, showToast]);
 
   if (!menu?.archive) return null;
 
@@ -92,9 +92,9 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
     event.stopPropagation();
     try {
       const result = await onClearProgress(menu.archive);
-      if (result?.fallback) window.alert('服务器不支持清零，已回退到第一页。');
+      if (result?.fallback) showToast('服务器不支持清零，已回退到第一页。', 'info');
     } catch (error) {
-      window.alert(`清除阅读进度失败：${error?.message || '未知错误'}`);
+      showToast(`清除阅读进度失败：${error?.message || '未知错误'}`, 'error');
     } finally {
       onClose?.();
     }
@@ -103,13 +103,12 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
     event.stopPropagation();
     if (favoriteBusy) return;
     setFavoriteBusy(true);
-    setFavoriteError('');
     try {
       const result = await setArchiveFavorite(archiveId, !favorite);
       setFavorite(result.favorite);
       onClose?.();
     } catch (error) {
-      setFavoriteError(`${favorite ? '移出收藏夹' : '加入收藏夹'}失败：${error?.message || '未知错误'}`);
+      showToast(`${favorite ? '移出收藏夹' : '加入收藏夹'}失败：${error?.message || '未知错误'}`, 'error');
     } finally {
       setFavoriteBusy(false);
     }
@@ -137,9 +136,6 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
           ? (favoriteKnown ? (favorite ? '正在移出收藏夹…' : '正在加入收藏夹…') : '正在读取收藏状态…')
           : (favorite ? '移出收藏夹' : '加入收藏夹')}
       </MenuButton>
-      {favoriteError && (
-        <div className="archive-context-menu-status is-error" aria-live="polite">{favoriteError}</div>
-      )}
       {showAddWatchlist && <MenuButton onClick={run(onAddWatchlist)}>加入待看</MenuButton>}
       {showRemoveWatchlist && <MenuButton onClick={run(onRemoveWatchlist)}>移出待看</MenuButton>}
       {showRemoveHistory && <MenuButton danger onClick={run(onRemoveHistory)}>删除历史记录</MenuButton>}

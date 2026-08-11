@@ -195,6 +195,13 @@ export async function getCachedImage(key) {
   return rememberBlob(key, blob);
 }
 
+export function putImage(key, blob) {
+  if (!key || !blob || typeof blob.size !== 'number') return null;
+  key = scopedCacheKey(key);
+  diskPut(key, blob).catch(() => {});
+  return rememberBlob(key, blob);
+}
+
 // ── Public API ──
 export async function getImage(key, fetcher, { priority = IMAGE_LOAD_PRIORITY.NORMAL } = {}) {
   const scope = getConfigScopeId();

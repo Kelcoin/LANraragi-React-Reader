@@ -20,6 +20,7 @@ import { addWatchlistItem } from '../lib/watchlist';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
 import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
 import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
+import { useToast } from '../components/Toast';
 
 const ACCEPTED_FILES = '.zip,.cbz,.rar,.cbr,.7z,.pdf';
 
@@ -42,6 +43,7 @@ function statusTitle(status) {
 }
 
 export default function UploadPage() {
+  const { showToast } = useToast();
   const fileInputRef = useRef(null);
   const [mode, setMode] = useState('local');
   const [urlText, setUrlText] = useState('');
@@ -52,7 +54,6 @@ export default function UploadPage() {
   const [running, setRunning] = useState(false);
   const [clearingResults, setClearingResults] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [notice, setNotice] = useState('');
   const [archiveMenu, setArchiveMenu] = useState(null);
   const [archiveDeleteTarget, setArchiveDeleteTarget] = useState(null);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(getEhFavoriteDeleteSync);
@@ -132,16 +133,16 @@ export default function UploadPage() {
         return [...current, ...next];
       });
     }
-    setNotice(rejected.length ? `已忽略不支持的文件：${rejected.map((file) => file.name).join('、')}` : '');
-  }, [clearingResults]);
+    if (rejected.length) showToast(`已忽略不支持的文件：${rejected.map((file) => file.name).join('、')}`, 'info');
+  }, [clearingResults, showToast]);
 
   const clearSearchCache = useCallback(async (successLabel = '档案已提交') => {
     try {
       await lrrApi.clearSearchCache();
     } catch (error) {
-      setNotice(`${successLabel}，但搜索缓存清理失败：${error.message || '请稍后在首页刷新'}`);
+        showToast(`${successLabel}，但搜索缓存清理失败：${error.message || '请稍后在首页刷新'}`, 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const updateTask = useCallback((update) => {
     const updateId = update.item?.id;
@@ -182,9 +183,9 @@ export default function UploadPage() {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      alert(err.message || '下载失败');
+      showToast(err.message || '下载失败', 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const handleArchiveCopyLink = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -371,8 +372,6 @@ export default function UploadPage() {
           </div>
         </div>
       </section>
-
-      {notice && <div className="upload-notice" role="status">{notice}</div>}
 
       <section className="glass-panel upload-results" aria-live="polite">
         <div className="upload-results-heading">

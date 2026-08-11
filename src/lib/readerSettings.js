@@ -15,10 +15,9 @@ export const DEFAULT_READER_SETTINGS = Object.freeze({
   maxConcurrentDecodes: 3,
   allowProgressRegression: true,
   progressBarVisibility: ARCHIVE_PROGRESS_VISIBILITY.HISTORY,
-  // 超分（UI 框架，wasm 引擎后续接入）
+  // 超分
   srEnabled: false,
   srModel: 'anime4k',
-  srPreloadCount: 3,
   srAuto: false,
   srAutoThreshold: 0, // 每页平均体积阈值（KB），低于该值的档案自动启用超分
 });
@@ -59,10 +58,12 @@ export function normalizeReaderSettings(value = {}) {
   next.progressBarVisibility = normalizeArchiveProgressVisibility(next.progressBarVisibility);
   if (next.splitWidePagesEnabled) next.rotateWidePagesEnabled = false;
   // 超分字段
-  if (!['anime4k', 'waifu2x', 'realcugan'].includes(next.srModel)) next.srModel = DEFAULT_READER_SETTINGS.srModel;
+  if (next.srModel === 'onnx-subpixel-x3' || !['anime4k', 'waifu2x', 'realcugan'].includes(next.srModel)) {
+    next.srModel = DEFAULT_READER_SETTINGS.srModel;
+  }
   next.srEnabled = Boolean(next.srEnabled);
   next.srAuto = Boolean(next.srAuto);
-  next.srPreloadCount = Math.max(0, Math.min(10, Number(next.srPreloadCount) || 0));
+  delete next.srPreloadCount;
   const srThreshold = Number(next.srAutoThreshold);
   next.srAutoThreshold = Number.isFinite(srThreshold) && srThreshold >= 0 ? srThreshold : 0;
   return next;

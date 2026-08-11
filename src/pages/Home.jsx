@@ -27,6 +27,7 @@ import ConfigExportDialog from '../components/ConfigExportDialog';
 import SettingHint from '../components/SettingHint';
 import SecretInput from '../components/SecretInput';
 import ThemeColorPicker from '../components/ThemeColorPicker';
+import { useToast } from '../components/Toast';
 import { HomeSectionGlyph, ThemeModeGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
 import { deleteFilterPreset, readFilterPresets, renameFilterPreset, saveFilterPreset } from '../lib/filterPresets';
 import { FAVORITES_CATEGORY_NAME, getCategoryDisplayName, getStoredCategories, loadCategories, setArchiveFavorite, sortCategoriesForDisplay, startCategoriesUpdateTimer, stopCategoriesUpdateTimer } from '../lib/categories';
@@ -41,9 +42,6 @@ import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressAct
 import { consumeArchiveCatalogDirty } from '../lib/archiveMetadataCache';
 import { ARCHIVE_CARD_COVER_HEIGHT, ARCHIVE_CARD_META_GAP, ARCHIVE_CARD_META_ROW_HEIGHT, ARCHIVE_CARD_TITLE_GAP, ARCHIVE_CARD_TITLE_SLOT_HEIGHT, ARCHIVE_CARD_WIDTH } from '../lib/archiveGridLayout';
 
-const TOAST_DURATION_MS = 3600;
-const TOAST_ERROR_DURATION_MS = 7000;
-const TOAST_CLOSE_MS = 280;
 
 const HOME_COLLAPSE_STORAGE_KEYS = {
   history: 'lrr_home_collapsed_history',
@@ -373,6 +371,7 @@ function writeReaderSettings(settings) {
 }
 
 export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', onThemeModeChange, themePalettes = null, onThemePalettesChange }) {
+  const { showToast } = useToast();
   const supportsAutomaticArchiveLoading = typeof IntersectionObserver !== 'undefined';
   const workerReady = hasValidWorkerConfig();
   const [archiveCatalogDirty] = useState(() => consumeArchiveCatalogDirty());
@@ -441,9 +440,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [historySyncing, setHistorySyncing] = useState(false);
   const [watchlistChecking, setWatchlistChecking] = useState(false);
   const [ehCookieChecking, setEhCookieChecking] = useState(false);
-  const [toasts, setToasts] = useState([]);
-  const statusTimersRef = useRef(new Map());
-  const statusIdRef = useRef(0);
 
   const [cfgWorkerUrl, setCfgWorkerUrl] = useState(getWorkerUrl());
   const [cfgSyncToken, setCfgSyncToken] = useState(getSyncToken());
@@ -534,6 +530,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const pendingArchivesScrollRef = useRef(false);
   const archivesRef = useRef([]);
   const randomsRef = useRef([]);
+  const randomFetchSeqRef = useRef(0);
   const randomsAutoFillBlockedRef = useRef(false);
   const randomsAutoFillInFlightRef = useRef(false);
   useEffect(() => { archivesRef.current = archives; }, [archives]);
@@ -695,49 +692,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     });
   }, []);
 
-  useEffect(() => {
-    return () => {
-      statusTimersRef.current.forEach(clearTimeout);
-      statusTimersRef.current.clear();
-    };
-  }, []);
-
-  const clearStatusTimer = useCallback((id) => {
-    const timer = statusTimersRef.current.get(id);
-    if (timer) clearTimeout(timer);
-    statusTimersRef.current.delete(id);
-  }, []);
-
-  const closeStatus = useCallback((id) => {
-    clearStatusTimer(id);
-    setToasts(current => current.map((toast) => (
-      toast.id === id ? { ...toast, closing: true } : toast
-    )));
-    const timer = setTimeout(() => {
-      statusTimersRef.current.delete(id);
-      setToasts(current => current.filter((toast) => toast.id !== id));
-    }, TOAST_CLOSE_MS);
-    statusTimersRef.current.set(id, timer);
-  }, [clearStatusTimer]);
-
-  const showStatus = useCallback((text, type = 'info', { autoHide = true, duration = type === 'error' ? TOAST_ERROR_DURATION_MS : TOAST_DURATION_MS } = {}) => {
-    statusIdRef.current += 1;
-    const id = statusIdRef.current;
-    setToasts(current => [...current, { id, text, type, closing: false, autoHide, duration }]);
-    if (autoHide) {
-      const timer = setTimeout(() => closeStatus(id), duration);
-      statusTimersRef.current.set(id, timer);
-    }
-  }, [closeStatus]);
-
   const handleCheckEhCookie = useCallback(async () => {
     const cookie = String(readerSettings.ehCookie || '').trim();
     if (!hasValidEhCookie(cookie)) {
-      showStatus('请先填写包含 ipb_member_id 和 ipb_pass_hash 的 Cookie。', 'error');
+      showToast('请先填写包含 ipb_member_id 和 ipb_pass_hash 的 Cookie。', 'error');
       return;
     }
     if (!hasValidWorkerConfig(cfgWorkerUrl, cfgSyncToken)) {
-      showStatus('请先填写有效的 Worker 端点和访问 Token。', 'error');
+      showToast('请先填写有效的 Worker 端点和访问 Token。', 'error');
       return;
     }
     setEhCookieChecking(true);
@@ -754,13 +716,13 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       const xOk = !!data.exHentai?.ok;
       const updated = data.refreshed || (data.cookie && data.cookie !== cookie);
       const text = `E-Hentai：${eOk ? '正常' : '失败'}；ExHentai：${xOk ? '正常' : '失败'}${updated ? '；已更新 igneous' : ''}`;
-      showStatus(text, eOk && xOk ? 'success' : 'info');
+      showToast(text, eOk && xOk ? 'success' : 'info');
     } catch (error) {
-      showStatus(error?.message || '检测失败。', 'error');
+      showToast(error?.message || '检测失败。', 'error');
     } finally {
       setEhCookieChecking(false);
     }
-  }, [cfgSyncToken, cfgWorkerUrl, readerSettings.ehCookie, updateReaderSettings, showStatus]);
+  }, [cfgSyncToken, cfgWorkerUrl, readerSettings.ehCookie, updateReaderSettings, showToast]);
 
   const watchlistWithProgress = useMemo(() => mergeWatchlistProgress(watchlist, history), [history, watchlist]);
   const watchlistAutoRemoveIds = useMemo(() => getWatchlistAutoRemoveIds(watchlistWithProgress), [watchlistWithProgress]);
@@ -791,9 +753,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      alert(err.message || '下载失败');
+      showToast(err.message || '下载失败', 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const handleArchiveCopyLink = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -1518,6 +1480,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, []);
 
   const fetchRandoms = useCallback(async ({ background = false, preferFresh = true, append = false, silent = false } = {}) => {
+    const requestSeq = ++randomFetchSeqRef.current;
     exitColdRestoreMode();
     if (!append) randomsAutoFillBlockedRef.current = false;
     if (background && !silent) setRandomsRefreshing(true);
@@ -1545,6 +1508,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           return null;
         }
       }));
+      if (requestSeq !== randomFetchSeqRef.current) return 0;
       for (const batch of results) {
         if (!batch) continue;
         const score = preferFresh ? scoreRandomBatch(batch, currentIds, recentIds) : 0;
@@ -1591,14 +1555,22 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       writeRecentRandomIds(mergedRecentIds);
       return append ? plannedAdditions.length : bestBatch.length;
     } catch (e) {
-      console.error('随机推荐获取失败', e);
+      if (requestSeq !== randomFetchSeqRef.current) return 0;
+      if (!background && !silent) showToast(`随机推荐获取失败：${e?.message || '未知错误'}`, 'error');
       if (randomsRef.current.length > 0) setRandoms(randomsRef.current);
       return 0;
     } finally {
-      if (background && !silent) setRandomsRefreshing(false);
-      else if (!background) setRandomsLoading(false);
+      if (background && !silent) {
+        if (requestSeq === randomFetchSeqRef.current) setRandomsRefreshing(false);
+      } else if (!background) {
+        if (requestSeq === randomFetchSeqRef.current) setRandomsLoading(false);
+      }
     }
-  }, [exitColdRestoreMode, history, randomHideRead]);
+  }, [exitColdRestoreMode, history, randomHideRead, showToast]);
+
+  useEffect(() => () => {
+    randomFetchSeqRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (
@@ -2171,21 +2143,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       }
     `}</style>
     <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: `${HOME_MAX_WIDTH}px`, margin: '0 auto' }}>
-      <div className="metadata-toast-stack" aria-live="polite">
-        {toasts.map(status => (
-          <div
-            key={status.id}
-            className={`metadata-status-card is-${status.type}${status.closing ? ' is-closing' : ''}`}
-            role={status.type === 'error' ? 'alert' : 'status'}
-            style={{ '--toast-duration': `${status.duration}ms` }}
-          >
-            <span className="metadata-status-icon" aria-hidden="true">{status.type === 'success' ? '✓' : status.type === 'error' ? '!' : 'i'}</span>
-            <span className="metadata-status-text">{status.text}</span>
-            <button type="button" className="metadata-status-close" aria-label="关闭提示" onClick={() => closeStatus(status.id)}>×</button>
-            {status.autoHide && <span className="metadata-status-progress" aria-hidden="true" />}
-          </div>
-        ))}
-      </div>
       <div className="home-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '18px', marginBottom: '32px', flexWrap: 'wrap' }}>
         <div className="home-brand">
           <h1 className="home-brand-title" translate="no" aria-label="Readoshi" style={{ fontWeight: 600, margin: '0 0 8px 0', fontSize: '28px', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2422,7 +2379,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         <section className="glass-panel section-reveal section-reveal-delay-2" style={{ marginBottom: '40px', padding: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
-            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsRefreshing ? 0.72 : 1 }}>刷新</button>
+            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>刷新</button>
           </div>
           <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'contain', padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px', position: 'relative', zIndex: 1 }} className="no-scrollbar">
             {Array.from({ length: randomSkeletonCount }).map((_, i) => (
@@ -2435,7 +2392,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsRefreshing ? 0.72 : 1 }}>刷新</button>
+            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>刷新</button>
               <CollapseButton
                 collapsed={randomCollapsed}
                 onClick={() => setRandomCollapsed(v => !v)}
@@ -2457,7 +2414,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         <section className="glass-panel section-reveal section-reveal-delay-2" style={{ marginBottom: '40px', padding: 0, display: 'flex', flexDirection: 'column' }}>
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
-            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsRefreshing ? 0.72 : 1 }}>{randomsRefreshing ? '刷新中' : '刷新'}</button>
+            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>{randomsRefreshing ? '刷新中' : '刷新'}</button>
           </div>
           <div style={{ padding: isNarrow ? '10px 14px 18px' : '10px 20px 20px', color: 'var(--text-sub)', fontSize: '13px' }}>
             暂无随机漫游结果

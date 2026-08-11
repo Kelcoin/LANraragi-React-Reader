@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getFavoriteState, setArchiveFavorite } from '../lib/categories';
+import { useToast } from './Toast';
 
 function clampPosition(x, y, height) {
   const width = 150;
@@ -12,12 +13,12 @@ function clampPosition(x, y, height) {
 }
 
 export default function DedupeArchiveContextMenu({ menu, onClose, onOpenNewTab, onViewThumbnails }) {
+  const { showToast } = useToast();
   const archiveId = menu?.archive?.arcid || menu?.archive?.id || '';
   const [favorite, setFavorite] = useState(false);
   const [favoriteKnown, setFavoriteKnown] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
-  const [favoriteError, setFavoriteError] = useState('');
-  const menuHeight = 128 + (favoriteError ? 48 : 0);
+  const menuHeight = 128;
   const position = useMemo(() => clampPosition(menu?.x || 0, menu?.y || 0, menuHeight), [menu?.x, menu?.y, menuHeight]);
 
   useEffect(() => {
@@ -42,7 +43,6 @@ export default function DedupeArchiveContextMenu({ menu, onClose, onOpenNewTab, 
     let active = true;
     setFavorite(false);
     setFavoriteKnown(false);
-    setFavoriteError('');
     if (!archiveId) return undefined;
     setFavoriteBusy(true);
     getFavoriteState(archiveId)
@@ -53,13 +53,13 @@ export default function DedupeArchiveContextMenu({ menu, onClose, onOpenNewTab, 
         }
       })
       .catch((error) => {
-        if (active) setFavoriteError(`读取收藏状态失败：${error?.message || '未知错误'}`);
+        if (active) showToast(`读取收藏状态失败：${error?.message || '未知错误'}`, 'error');
       })
       .finally(() => {
         if (active) setFavoriteBusy(false);
       });
     return () => { active = false; };
-  }, [archiveId]);
+  }, [archiveId, showToast]);
 
   if (!menu?.archive) return null;
   const run = (action) => (event) => {
@@ -71,13 +71,12 @@ export default function DedupeArchiveContextMenu({ menu, onClose, onOpenNewTab, 
     event.stopPropagation();
     if (favoriteBusy) return;
     setFavoriteBusy(true);
-    setFavoriteError('');
     try {
       const result = await setArchiveFavorite(archiveId, !favorite);
       setFavorite(result.favorite);
       onClose?.();
     } catch (error) {
-      setFavoriteError(`${favorite ? '移出收藏夹' : '加入收藏夹'}失败：${error?.message || '未知错误'}`);
+      showToast(`${favorite ? '移出收藏夹' : '加入收藏夹'}失败：${error?.message || '未知错误'}`, 'error');
     } finally {
       setFavoriteBusy(false);
     }
@@ -102,9 +101,6 @@ export default function DedupeArchiveContextMenu({ menu, onClose, onOpenNewTab, 
           ? (favoriteKnown ? (favorite ? '正在移出收藏夹…' : '正在加入收藏夹…') : '正在读取收藏状态…')
           : (favorite ? '移出收藏夹' : '加入收藏夹')}
       </button>
-      {favoriteError && (
-        <div className="archive-context-menu-status is-error" aria-live="polite">{favoriteError}</div>
-      )}
     </div>,
     document.body,
   );

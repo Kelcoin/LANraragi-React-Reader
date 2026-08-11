@@ -1,25 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import ConfirmDialog from './ConfirmDialog';
+import { useToast } from './Toast';
 
 export default function ArchiveDeletionFailureDialog({
   report,
   onClose,
   message = '已完成其余操作。失败项可稍后重试。',
 }) {
-  const [copyStatus, setCopyStatus] = useState('');
-
-  useEffect(() => {
-    if (!report) setCopyStatus('');
-  }, [report]);
+  const { showToast } = useToast();
 
   const copyEhFailureUrls = async () => {
     const urls = (report?.ehFailures || []).map((item) => item.url).filter(Boolean);
     if (urls.length === 0) return;
     try {
       await navigator.clipboard.writeText(urls.join('\n'));
-      setCopyStatus('已复制');
+      showToast('已复制 E-Hentai 失败链接', 'success');
     } catch {
-      setCopyStatus('复制失败，请手动复制链接');
+      showToast('复制失败，请手动复制链接', 'error');
     }
   };
 
@@ -42,7 +39,6 @@ export default function ArchiveDeletionFailureDialog({
               <button type="button" className="btn" onClick={copyEhFailureUrls}>一键复制</button>
             )}
           </div>
-          <div className="dedupe-failure-copy-status" aria-live="polite">{copyStatus}</div>
           <ul className="dedupe-failure-list">
             {report.ehFailures.map(({ url, message: failureMessage }, index) => (
               <li key={`${url || 'missing'}:${index}`}>

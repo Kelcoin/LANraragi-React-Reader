@@ -195,18 +195,15 @@ test('home lazy route keeps archive skeleton visible during chunk loading', () =
   assert.match(app, /function HomeRouteFallback\(\)[\s\S]*className="home-route-fallback"/);
   assert.match(app, /className="home-route-fallback-grid"/);
   assert.match(app, /function getRouteFallback\(route\)[\s\S]*case 'home':[\s\S]*<HomeRouteFallback \/>/);
-  assert.match(app, /case 'reader':[\s\S]*<ReaderRouteFallback \/>/);
+  assert.match(app, /case 'reader':[\s\S]*<AppRouteFallback \/>/);
   assert.match(app, /case 'metadata':[\s\S]*<MetadataRouteFallback \/>/);
   assert.match(app, /case 'history':[\s\S]*<ArchiveListRouteFallback title="阅读历史" \/>/);
   assert.match(app, /case 'watchlist':[\s\S]*<ArchiveListRouteFallback title="待看档案" \/>/);
   assert.match(app, /case 'dedupe':[\s\S]*<DedupeRouteFallback \/>/);
   assert.match(app, /case 'upload':[\s\S]*<UploadRouteFallback \/>/);
   assert.match(app, /<Suspense fallback=\{getRouteFallback\(route\)\}>/);
-  assert.match(app, /function ReaderRouteFallback\(\)[\s\S]*reader-route-fallback-stage-frame reader-stage-frame[\s\S]*reader-route-fallback-slot reader-stage-slot[\s\S]*reader-route-fallback-nav-row/);
-  assert.match(css, /\.reader-route-fallback-stage-layout\s*\{[\s\S]*max-width:\s*1300px;[\s\S]*padding:\s*24px 16px 0;/);
-  assert.match(css, /\.reader-route-fallback-stage-frame\s*\{[\s\S]*max-width:\s*850px;[\s\S]*height:\s*min\(calc\(100dvh - var\(--reader-route-toolbar-height\) - 24px - var\(--reader-route-nav-row-height\)\), calc\(\(100vw - 32px\) \* 2\)\);/);
-  assert.match(css, /\.reader-route-fallback-nav-row\s*\{[\s\S]*min-height:\s*var\(--reader-route-nav-row-height\);/);
-  assert.match(css, /@media \(max-width: 600px\)[\s\S]*\.reader-route-fallback\s*\{[\s\S]*--reader-route-nav-row-height:\s*92px;/);
+  assert.doesNotMatch(app, /ReaderRouteFallback|reader-route-fallback/);
+  assert.doesNotMatch(css, /reader-route-fallback/);
 });
 
 test('history and watchlist keep skeletons while async local state hydrates', () => {
@@ -252,26 +249,23 @@ test('skeleton shimmer keeps a stable base fill and recommendation placeholders 
 });
 
 test('metadata error statuses dismiss automatically', () => {
-  const page = read('src/pages/MetadataPage.jsx');
+  const toast = read('src/components/Toast.jsx');
   const css = read('src/index.css');
-  assert.match(page, /TOAST_DURATION_MS = 3600/);
-  assert.match(page, /TOAST_ERROR_DURATION_MS = 7000/);
-  assert.match(page, /const \[toasts, setToasts\] = useState\(\[\]\)/);
-  assert.match(page, /setToasts\(current => \[\.\.\.current, \{ id, text, type, closing: false, autoHide, duration \}\]\)/);
-  assert.match(page, /setTimeout\(\(\) => closeStatus\(id\), duration\)/);
-  assert.match(page, /className="metadata-toast-stack"/);
-  assert.doesNotMatch(page, /className="metadata-status-wrap"/);
-  assert.match(page, /className="metadata-status-progress"/);
-  assert.match(css, /\.metadata-toast-stack\s*\{[^}]*position:\s*fixed;[^}]*left:\s*max\(16px, calc\(var\(--app-safe-area-left\) \+ 16px\)\)/s);
-  assert.match(css, /@keyframes metadata-status-enter/);
-  assert.match(css, /@keyframes metadata-status-exit/);
-  assert.match(css, /@keyframes metadata-status-progress[\s\S]*scaleX\(0\)/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.metadata-toast-stack[\s\S]*?\.metadata-status-progress[\s\S]*?animation:\s*none\s*!important/);
+  assert.match(toast, /TOAST_DURATION_MS = 3600/);
+  assert.match(toast, /TOAST_ERROR_DURATION_MS = 7000/);
+  assert.match(toast, /setToasts\(\(current\) => \[\.\.\.current, \{ id, text: message, type, closing: false, autoHide, duration: toastDuration \}\]\)/);
+  assert.match(toast, /setTimeout\(\(\) => closeToast\(id\), toastDuration\)/);
+  assert.match(toast, /className="toast-progress"/);
+  assert.match(css, /\.toast-stack\s*\{[^}]*position:\s*fixed;[^}]*left:\s*max\(16px, calc\(var\(--app-safe-area-left\) \+ 16px\)\)/s);
+  assert.match(css, /@keyframes toast-enter/);
+  assert.match(css, /@keyframes toast-exit/);
+  assert.match(css, /@keyframes toast-progress[\s\S]*scaleX\(0\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toast-stack[\s\S]*?\.toast-progress[\s\S]*?animation:\s*none\s*!important/);
 });
 
 test('metadata status cards contain long plugin messages', () => {
   const css = read('src/index.css');
-  assert.match(css, /\.metadata-status-card\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(css, /\.toast-card\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow-wrap:\s*anywhere;/s);
 });
 
 test('metadata plugins merge returned title, summary, and tags into the editable form', () => {
@@ -303,7 +297,7 @@ test('metadata tag entry rejects an already attached tag without hiding its sugg
   assert.doesNotMatch(suggestions, /excludeTags|excludedTagKeys/);
   assert.match(page, /const incomingTags = parseTags\(value\)/);
   assert.match(page, /nextTags\.length === form\.tags\.length/);
-  assert.match(page, /showStatus\(`标签已存在：\$\{incomingTags\[0\]\}`, 'error'\)/);
+  assert.match(page, /showToast\(`标签已存在：\$\{incomingTags\[0\]\}`, 'error'\)/);
 });
 
 test('metadata save updates visible archive state and writes metadata cache immediately', () => {
@@ -339,6 +333,41 @@ test('upload result rows keep a stable one-line status layout', () => {
   assert.match(css, /\.upload-status-dot\.is-failed\s*\{[^}]*background:\s*var\(--danger\)/s);
   assert.match(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--glass-border\)/s);
   assert.doesNotMatch(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--danger-border\)/s);
+});
+
+test('transient notifications use the shared toast module', () => {
+  const toast = read('src/components/Toast.jsx');
+  const main = read('src/main.jsx');
+  const metadata = read('src/pages/MetadataPage.jsx');
+  const home = read('src/pages/Home.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  const css = read('src/index.css');
+  assert.match(toast, /export function ToastProvider/);
+  assert.match(toast, /export function useToast/);
+  assert.match(toast, /className="toast-stack"/);
+  assert.match(main, /<ToastProvider>\s*<App \/>\s*<\/ToastProvider>/s);
+  assert.match(metadata, /useToast/);
+  assert.match(home, /useToast/);
+  assert.match(reader, /useToast/);
+  assert.doesNotMatch(metadata, /const \[toasts, setToasts\] = useState\(\[\]\)/);
+  assert.doesNotMatch(home, /const \[toasts, setToasts\] = useState\(\[\]\)/);
+  assert.doesNotMatch(reader, /const \[srToast, setSrToast\] = useState\(''\)/);
+  assert.doesNotMatch(home, /className="metadata-toast-stack"/);
+  assert.doesNotMatch(metadata, /className="metadata-toast-stack"/);
+  assert.doesNotMatch(reader, /className="metadata-toast-stack"/);
+  assert.match(css, /\.toast-stack\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*100002/s);
+  assert.match(css, /\.toast-card\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+});
+
+test('reader setting hints escape the scroll container and size to their content', () => {
+  const hint = read('src/components/SettingHint.jsx');
+  const css = read('src/index.css');
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(hint, /createPortal/);
+  assert.match(hint, /settings-hint-bubble-portal/);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed;[^}]*inline-size:\s*max-content;/s);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px, calc\(100vw - 48px\)\)/s);
+  assert.match(reader, /width: 'min\(440px, calc\(100vw - 32px\)\)'/);
 });
 
 test('upload modes share settings tabs, animate as equal-height layers, and auto-queue URLs', () => {
@@ -694,6 +723,89 @@ test('immersive Reader replaces its top toolbar with side-aware corner controls'
   assert.match(reader, /data-visible=\{immersiveControlsSide === side \? 'true' : 'false'\}/);
 });
 
+test('auto turn controls report state changes through the shared toast', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const handleToggleAutoTurn = useCallback\(\(\) => \{[\s\S]*showToast\(next \? '已开启自动翻页' : '已停止自动翻页', 'info'\)/);
+  assert.match(reader, /onClick=\{handleToggleAutoTurn\}/);
+  assert.match(reader, /onClick=\{\(\) => \{ handleToggleAutoTurn\(\); revealImmersiveControls\(side\); \}\}/);
+});
+
+test('super-resolution reuses preload count and uses directional state glyphs', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const settings = read('src/lib/readerSettings.js');
+  const glyphs = read('src/components/AppGlyphs.jsx');
+  assert.doesNotMatch(reader, /预超分数量|srPreloadCount/);
+  assert.match(settings, /delete next\.srPreloadCount/);
+  assert.match(glyphs, /case 'superResolution':[\s\S]*?M5\.25 18\.75 18\.75 5\.25/);
+  assert.match(glyphs, /case 'superResolutionOff':[\s\S]*?M4\.5 4\.5 19\.5 19\.5/);
+  assert.doesNotMatch(glyphs, /case 'superResolution':[\s\S]*?stroke="var\(/);
+  assert.doesNotMatch(glyphs, /case 'superResolutionOff':[\s\S]*?stroke="var\(/);
+});
+
+test('Reader model selector explains each super-resolution option', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const select = read('src/components/CustomSelect.jsx');
+
+  assert.match(reader, /<span className="settings-row-title">超分模型<\/span>/);
+  assert.doesNotMatch(reader, /<SettingHint text=\{srModel\?\.description/);
+  assert.match(select, /opt\.description/);
+  assert.match(select, /SettingHint/);
+});
+
+test('Reader hides immersive super-resolution for oversized pages and explains why', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /currentPageTooLargeForSuperResolution/);
+  assert.match(reader, /图片过大、不适合超分时/);
+  assert.match(reader, /settings\.srEnabled && !currentPageTooLargeForSuperResolution/);
+});
+
+test('Reader super-resolution processes only visible pages and preserves original fallback', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /createSuperResolutionRuntime\(\)/);
+  assert.match(reader, /runtime\.init\(srManifest\)/);
+  assert.match(reader, /processSuperResolutionImageSource\(src, \{/);
+  assert.match(reader, /source = src;[\s\S]{0,180}processSuperResolutionImageSource/);
+  assert.match(reader, /commitPageImage\(originalResolved, originalDecoded,[\s\S]{0,800}processSuperResolutionImageSource/);
+  assert.match(reader, /commitImmersiveImage\(originalDecoded,[\s\S]{0,240}startSuperResolutionUpgrade/);
+  assert.match(reader, /keepAlive: true/);
+  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread,[^\n]+true, activeSuperResolution\)/);
+  assert.doesNotMatch(reader, /loadSpread\(\[img(?:Left|Right)Ref,[^\n]+activeSuperResolution/);
+  assert.match(reader, /superResolution=\{index === currentIndex \? activeSuperResolution : null\}/);
+  assert.match(reader, /decodeTickets\.forEach\(\(ticket\) => ticket\.cancel\(\)\)/);
+});
+
+test('Reader reuses derived image cache entries and cancels adjacent super-resolution preloads', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /import \{[^}]*putImage[^}]*\} from '\.\.\/lib\/imageCache';/s);
+  assert.match(reader, /getSuperResolutionCacheKey/);
+  assert.match(reader, /cacheKey:\s*getSuperResolutionCacheKey\(/);
+  assert.match(reader, /getCachedSource:\s*getCachedImage/);
+  assert.match(reader, /cacheResult:\s*putImage/);
+  assert.match(reader, /for \(const idx of indices\.slice\(0, settings\.preloadCount\)\)[\s\S]*ticket = scheduleSuperResolutionPreload\([\s\S]*await ticket\.promise/);
+  assert.match(reader, /function scheduleSuperResolutionPreload[\s\S]*readerImageDecodeQueue\.schedule\([\s\S]*IMAGE_LOAD_PRIORITY\.PRELOAD/);
+  assert.match(reader, /cancelled = true;\s*ticket\?\.cancel\(\)/);
+  assert.doesNotMatch(reader, /indices\.slice\(0, settings\.preloadCount\)\.map\(/);
+});
+
+test('Reader preview decoding uses super-resolution output dimensions', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /sourceSize: pendingSuperResolutionSource \|\| sourceSize/);
+  assert.match(reader, /sourceSize: superResolutionSource,/);
+});
+
+test('Reader disposes immersive super-resolution URLs after image refs detach', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const immersiveSuperResolutionSourceRegistryRef = useRef\(new Set\(\)\)/);
+  assert.match(reader, /registry\?\.add\(source\)/);
+  assert.match(reader, /registry\?\.delete\(previous\)/);
+  assert.match(reader, /disposeImmersiveSuperResolutionSources\(immersiveSuperResolutionSourceRegistryRef\.current\)/);
+});
+
+test('Reader silently falls back for unsupported super-resolution images', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /if \(error\?\.name === 'NotSupportedError'\) return;/);
+});
+
 test('build and proxy hardening are reproducible', () => {
   const app = read('src/App.jsx');
   const vite = read('vite.config.js');
@@ -736,10 +848,10 @@ test('Docker publish runs only when runtime image inputs change', () => {
 
 test('login import feedback stays outside the height-limited form and expires', () => {
   const app = read('src/App.jsx');
-  const css = read('src/index.css');
-  assert.match(app, /className="login-stack-notice"/);
-  assert.match(app, /setTimeout\(\(\) => setLoginNotice\(null\), 3000\)/);
-  assert.match(css, /\.login-stack-notice\s*\{[^}]*width:\s*100%/s);
+  const main = read('src/main.jsx');
+  assert.match(app, /showToast\(err\.message \|\| '无法连接到服务器/);
+  assert.match(app, /showToast\(`已导入 \$\{count\} 项配置`, 'success'\)/);
+  assert.match(main, /<ToastProvider>/);
 });
 
 test('archive grids use native flex wrapping with shared card sizing', () => {
@@ -1124,7 +1236,7 @@ test('Reader sizes panels by viewport and opens the thumbnail drawer from its tr
   assert.match(reader, /setDrawerSide\(side\);[\s\S]*requestAnimationFrame\(\(\) => setShowDrawer\(true\)\)/s);
   assert.doesNotMatch(reader, /onClick=\{\(\) => \{[^}]*setDrawerSide\(/);
   assert.equal((reader.match(/openThumbnailDrawer\(/g) || []).length >= 2, true);
-  assert.match(reader, /width:\s*'min\(380px, calc\(100vw - 40px\)\)'/);
+  assert.match(reader, /width:\s*'min\(440px, calc\(100vw - 32px\)\)'/);
   assert.match(reader, /justifyContent:\s*drawerSide === 'left' \? 'flex-start' : 'flex-end'/);
   assert.match(reader, /translateX\(\$\{drawerSide === 'left' \? '-100%' : '100%'\}\)/);
   assert.doesNotMatch(reader, /indicatorEl\.addEventListener\('transitionend'/);
@@ -1215,6 +1327,23 @@ test('Worker-dependent controls are hidden without a valid Worker configuration'
   assert.match(ehFavoriteSync, /hasValidWorkerConfig\(\)/);
 });
 
+test('Home random skeleton ignores stale concurrent refreshes', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /const randomFetchSeqRef = useRef\(0\)/);
+  assert.match(home, /const requestSeq = \+\+randomFetchSeqRef\.current/);
+  assert.match(home, /requestSeq !== randomFetchSeqRef\.current/);
+  assert.match(home, /if \(requestSeq === randomFetchSeqRef\.current\) setRandomsLoading\(false\)/);
+  assert.match(home, /if \(requestSeq === randomFetchSeqRef\.current\) setRandomsRefreshing\(false\)/);
+});
+
+test('recommendation skeleton ignores stale refresh results', () => {
+  const recommendations = read('src/components/Recommendations.jsx');
+  assert.match(recommendations, /const recommendationRequestSeqRef = useRef\(0\)/);
+  assert.match(recommendations, /const requestSeq = \+\+recommendationRequestSeqRef\.current/);
+  assert.match(recommendations, /requestSeq !== recommendationRequestSeqRef\.current/);
+  assert.match(recommendations, /if \(requestSeq === recommendationRequestSeqRef\.current\) setLoading\(false\)/);
+});
+
 test('EH cookie settings provide a Worker-backed check action', () => {
   const home = read('src/pages/Home.jsx');
   const worker = read('worker.js');
@@ -1223,8 +1352,8 @@ test('EH cookie settings provide a Worker-backed check action', () => {
   assert.match(home, /\/eh\/check/);
   assert.match(home, /eh-cookie-check-btn/);
   assert.match(home, /data\.cookie && data\.cookie !== cookie/);
-  assert.match(home, /metadata-toast-stack/);
-  assert.match(home, /showStatus\(/);
+  assert.match(home, /useToast/);
+  assert.match(home, /showToast\(/);
   assert.match(worker, /url\.pathname === '\/eh\/check'/);
   assert.match(worker, /removeCookieValue\(cookie, 'igneous'\)/);
   assert.match(worker, /writeCookieValue\(cookie, 'igneous', igneous\)/);
@@ -1249,8 +1378,8 @@ test('manual history cleanup locks page interactions and reports removed records
 
   assert.match(handler, /setMenu\(null\)/);
   assert.match(handler, /const removed = await runHistoryExistenceCheck\(\{ force: true \}\)/);
-  assert.match(handler, /if \(removed > 0\) setNotice\(`已清理 \$\{removed\} 条失效记录。`\)/);
-  assert.match(handler, /catch \(error\)[\s\S]*setNotice\(`清理失败：\$\{error\?\.message \|\| '未知错误'\}`\)/);
+  assert.match(handler, /if \(removed > 0\) showToast\(`已清理 \$\{removed\} 条失效记录。`, 'success'\)/);
+  assert.match(handler, /catch \(error\)[\s\S]*showToast\(`清理失败：\$\{error\?\.message \|\| '未知错误'\}`, 'error'\)/);
   assert.match(handler, /finally \{\s*setChecking\(false\)/);
   assert.match(history, /onClick=\{handleSyncHistory\}[\s\S]*?disabled=\{syncing \|\| checking\}/);
   assert.match(history, /<section[^>]*inert=\{checking \? '' : undefined\}[^>]*aria-busy=\{checking\}/);
@@ -1376,7 +1505,7 @@ test('dedupe reports EH failures even when no gallery URL can be resolved', () =
   assert.match(handler, /ehFailures\.push\(\{ url: galleryUrl/);
 });
 
-test('archive context menus toggle LANraragi Favorites and expose async status', () => {
+test('archive context menus toggle LANraragi Favorites and use shared toast errors', () => {
   const home = read('src/pages/Home.jsx');
   const menu = read('src/components/ArchiveContextMenu.jsx');
   const dedupeMenu = read('src/components/DedupeArchiveContextMenu.jsx');
@@ -1395,13 +1524,30 @@ test('archive context menus toggle LANraragi Favorites and expose async status',
     assert.match(source, /setArchiveFavorite/);
     assert.match(source, /加入收藏夹/);
     assert.match(source, /移出收藏夹/);
-    assert.match(source, /favoriteError\s*&&/);
-    assert.match(source, /aria-live="polite"/);
+    assert.match(source, /const \{ showToast \} = useToast\(\)/);
+    assert.match(source, /showToast\(`读取收藏状态失败：\$\{error\?\.message \|\| '未知错误'\}`, 'error'\)/);
+    assert.match(source, /showToast\(`\$\{favorite \? '移出收藏夹' : '加入收藏夹'\}失败：\$\{error\?\.message \|\| '未知错误'\}`, 'error'\)/);
+    assert.doesNotMatch(source, /favoriteError|setFavoriteError|archive-context-menu-status/);
   }
   assert.match(menu, /加入待看/);
   assert.match(menu, /移出待看/);
   assert.doesNotMatch(menu, /取消待看/);
   assert.doesNotMatch(css, /\.archive-context-menu-status\s*\{[^}]*min-height/s);
+});
+
+test('dedupe, deletion reports, and random recommendations use shared toast feedback', () => {
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const failureDialog = read('src/components/ArchiveDeletionFailureDialog.jsx');
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(dedupe, /catch \(err\) \{[\s\S]*?showToast\(err\.message \|\| '检测失败', 'error'\)/);
+  assert.match(dedupe, /setStatus\('没有可保存的重复分组'\);\s*showToast\('没有可保存的重复分组', 'info'\)/);
+  assert.match(failureDialog, /const \{ showToast \} = useToast\(\)/);
+  assert.match(failureDialog, /showToast\('已复制 E-Hentai 失败链接', 'success'\)/);
+  assert.match(failureDialog, /showToast\('复制失败，请手动复制链接', 'error'\)/);
+  assert.doesNotMatch(failureDialog, /copyStatus|setCopyStatus|dedupe-failure-copy-status/);
+  assert.match(home, /if \(!background && !silent\)\s*showToast\(`随机推荐获取失败：\$\{e\?\.message \|\| '未知错误'\}`, 'error'\)/);
+  assert.doesNotMatch(home, /console\.error\('随机推荐获取失败'/);
 });
 
 test('active categories remain selected while applying and clearing text filters', () => {
@@ -1818,12 +1964,12 @@ test('custom palette picker escapes settings clipping, stays above the modal, an
   assert.match(css, /\.theme-color-picker-trigger:hover,[\s\S]*background:\s*var\(--surface-inset\)/s);
 });
 
-test('release version is 1.5.2 across package manifests', () => {
+test('release version is 1.6.0 across package manifests', () => {
   const packageJson = read('package.json');
   const packageLock = read('package-lock.json');
-  assert.match(packageJson, /"version":\s*"1\.5\.2"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.2"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.2"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.2"/);
+  assert.match(packageJson, /"version":\s*"1\.6\.0"/);
+  assert.match(packageLock, /"version":\s*"1\.6\.0"/);
+  assert.match(packageLock, /"version":\s*"1\.6\.0"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.6\.0"/);
 });
 
 test('sync data survives scope switches and failed flushes', () => {

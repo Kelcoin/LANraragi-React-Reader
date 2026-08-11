@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
+import { ToastProvider } from './components/Toast';
 import { installDiagnostics } from './lib/diagnostics';
 import { markPwaUpdateReload } from './lib/sessionState';
 import '@fontsource-variable/noto-sans-sc/wght.css';
@@ -11,7 +12,9 @@ installDiagnostics();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </React.StrictMode>,
 );
 

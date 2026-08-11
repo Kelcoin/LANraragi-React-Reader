@@ -57,7 +57,7 @@ function createProductionWorker() {
   if (typeof globalThis.Worker !== 'function') {
     throw new TypeError('Worker is unavailable in this browser');
   }
-  return new globalThis.Worker(new URL('./superResolution.worker.js', import.meta.url), {
+  return new Worker(new URL('./superResolution.worker.js', import.meta.url), {
     type: 'module',
   });
 }

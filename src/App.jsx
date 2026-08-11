@@ -9,6 +9,7 @@ import PwaStatus from './components/PwaStatus';
 import SecretInput from './components/SecretInput';
 import AppVersion from './components/AppVersion';
 import ConfigTransferDialog from './components/ConfigTransferDialog';
+import { useToast } from './components/Toast';
 import { cacheServerInfo } from './lib/serverInfoCache';
 import { flushHistorySync } from './lib/history';
 import { flushWatchlistSync } from './lib/watchlist';
@@ -73,38 +74,6 @@ function HomeRouteFallback() {
           ))}
         </div>
       </section>
-    </main>
-  );
-}
-
-function ReaderRouteFallback() {
-  return (
-    <main className="route-fallback-shell reader-route-fallback" role="status" aria-label="正在加载阅读器">
-      <div className="reader-route-fallback-toolbar">
-        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-left">
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-        </div>
-        <span className="reader-route-fallback-title shimmer-strip" />
-        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-right">
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-icon shimmer-strip" />
-        </div>
-      </div>
-      <div className="reader-route-fallback-stage-layout">
-        <div className="reader-route-fallback-stage-frame reader-stage-frame">
-          <div className="reader-route-fallback-slot reader-stage-slot" aria-hidden="true">
-            <span className="shimmer-strip" />
-          </div>
-        </div>
-        <div className="reader-route-fallback-nav-row">
-          <span className="reader-route-fallback-nav-button shimmer-strip" />
-          <span className="reader-route-fallback-page-count shimmer-strip" />
-          <span className="reader-route-fallback-nav-button shimmer-strip" />
-        </div>
-      </div>
     </main>
   );
 }
@@ -175,7 +144,7 @@ function getRouteFallback(route) {
     case 'home':
       return <HomeRouteFallback />;
     case 'reader':
-      return <ReaderRouteFallback />;
+      return <AppRouteFallback />;
     case 'metadata':
       return <MetadataRouteFallback />;
     case 'history':
@@ -192,6 +161,7 @@ function getRouteFallback(route) {
 }
 
 export default function App() {
+  const { showToast } = useToast();
   const [route, setRoute] = useState(() => resolveInitialRoute(parseRouteFromLocation()));
   const [themePalettes, setThemePalettes] = useState(readStoredThemePalettes);
   const [themeMode, setThemeMode] = useState(() => {
@@ -212,17 +182,10 @@ export default function App() {
     syncToken: getSyncToken(),
   });
 
-  const [loginNotice, setLoginNotice] = useState(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [workerCollapsed, setWorkerCollapsed] = useState(true);
   const [configTransfer, setConfigTransfer] = useState(null);
 
-  useEffect(() => {
-    if (loginNotice?.type !== 'success') return undefined;
-    const timer = setTimeout(() => setLoginNotice(null), 3000);
-    return () => clearTimeout(timer);
-  }, [loginNotice]);
-  
   useEffect(() => {
     const run = () => loadTagDB();
     if (typeof requestIdleCallback === 'function') {
@@ -284,7 +247,6 @@ export default function App() {
 
   const handleConnect = async (e) => {
     e.preventDefault();
-    setLoginNotice(null);
     setLoginLoading(true);
     try {
       // Flush the old config's pending sync data before switching scope,
@@ -298,7 +260,7 @@ export default function App() {
       setSyncToken(tempConfig.syncToken);
       setSavedConfig({ url: tempConfig.url, key: tempConfig.key });
     } catch (err) {
-      setLoginNotice({ type: 'error', text: err.message || '无法连接到服务器，请检查 LANraragi 地址和 LANraragi API Key 是否正确，以及 LANraragi 服务是否在运行' });
+      showToast(err.message || '无法连接到服务器，请检查 LANraragi 地址和 LANraragi API Key 是否正确，以及 LANraragi 服务是否在运行', 'error', { autoHide: false });
     } finally {
       setLoginLoading(false);
     }
@@ -330,7 +292,7 @@ export default function App() {
     setThemeMode(nextThemeMode);
     setThemePalettes(nextThemePalettes);
     setConfigTransfer(null);
-    setLoginNotice({ type: 'success', text: `已导入 ${count} 项配置` });
+    showToast(`已导入 ${count} 项配置`, 'success');
   };
 
   if (!savedConfig.url || !savedConfig.key) {
@@ -409,13 +371,6 @@ export default function App() {
             </button>
 
           </form>
-          {loginNotice && (
-            <div className="login-stack-notice">
-              <div className={`login-notice is-${loginNotice.type}`} role={loginNotice.type === 'error' ? 'alert' : 'status'}>
-                {loginNotice.text}
-              </div>
-            </div>
-          )}
           <AppVersion />
           </div>
         </div>

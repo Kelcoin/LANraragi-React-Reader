@@ -130,6 +130,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    worker: { format: 'es' },
     define: {
       __APP_BUILD_ID__: JSON.stringify(appVersion.buildId),
       __APP_VERSION__: JSON.stringify(appVersion.version),

@@ -34,6 +34,7 @@ import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowA
 import { scopedStorageKey } from '../lib/configScope';
 import { getArchiveSearchTotal } from '../lib/archiveSearch';
 import { hasValidWorkerConfig } from '../lib/worker-config';
+import { useToast } from '../components/Toast';
 
 const THUMBNAIL_CONCURRENCY = 4;
 const DEDUPE_SAVED_RESULT_KEY = 'lrr_dedupe_saved_result_v1';
@@ -370,6 +371,7 @@ function EmptyState({ title, detail }) {
 }
 
 export default function DeduplicatePage({ onBack }) {
+  const { showToast } = useToast();
   const workerReady = hasValidWorkerConfig();
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
   const showGlobalArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, false);
@@ -573,10 +575,11 @@ export default function DeduplicatePage({ onBack }) {
     } catch (err) {
       setStatus(err.message || '检测失败');
       setProgress({ label: '检测失败', current: 0, total: 1, detail: err.message || '检测失败' });
+      showToast(err.message || '检测失败', 'error');
     } finally {
       setRunning(false);
     }
-  }, [dateRange.end, dateRange.start, loadAllArchives, workerReady]);
+  }, [dateRange.end, dateRange.start, loadAllArchives, showToast, workerReady]);
 
   const toggleArchiveSelection = useCallback((archive) => {
     const id = archiveId(archive);
@@ -647,7 +650,7 @@ export default function DeduplicatePage({ onBack }) {
       }
       localStorage.setItem(key, JSON.stringify(payload));
     } catch (err) {
-      alert(err.message || '更新保存结果失败，浏览器存储空间可能不足');
+      showToast(err.message || '更新保存结果失败，浏览器存储空间可能不足', 'error');
     }
   }, [
     dateRange,
@@ -655,6 +658,7 @@ export default function DeduplicatePage({ onBack }) {
     savedResultAvailable,
     selectedArchiveIds,
     selectedGroupKeys,
+    showToast,
     status,
     workerWarning,
   ]);
@@ -778,6 +782,7 @@ export default function DeduplicatePage({ onBack }) {
     });
     if (!payload) {
       setStatus('没有可保存的重复分组');
+      showToast('没有可保存的重复分组', 'info');
       return;
     }
     try {
@@ -785,7 +790,7 @@ export default function DeduplicatePage({ onBack }) {
       setSavedResultAvailable(true);
       setStatus('已保存筛选结果');
     } catch (err) {
-      alert(err.message || '保存失败，浏览器存储空间可能不足');
+      showToast(err.message || '保存失败，浏览器存储空间可能不足', 'error');
     }
   }, [
     dateRange,
@@ -793,6 +798,7 @@ export default function DeduplicatePage({ onBack }) {
     lastScanStats,
     selectedArchiveIds,
     selectedGroupKeys,
+    showToast,
     status,
     workerWarning,
   ]);
@@ -836,9 +842,9 @@ export default function DeduplicatePage({ onBack }) {
       setSavedResultAvailable(true);
       setStatus(payload.status || '已载入保存结果');
     } catch (err) {
-      alert(err.message || '载入保存结果失败');
+      showToast(err.message || '载入保存结果失败', 'error');
     }
-  }, [workerReady]);
+  }, [showToast, workerReady]);
 
   const deleteSavedResult = useCallback(() => {
     try {
@@ -846,9 +852,9 @@ export default function DeduplicatePage({ onBack }) {
       setSavedResultAvailable(false);
       setStatus('已删除保存结果');
     } catch (err) {
-      alert(err.message || '删除保存结果失败');
+      showToast(err.message || '删除保存结果失败', 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const allGroupsSelected = workerReady && groups.length > 0 && selectedGroupKeys.size === groups.length;
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { ToolbarGlyph } from './AppGlyphs';
+import SettingHint from './SettingHint';
 
 export default function CustomSelect({ value, options, onChange, style, compact, ariaLabel }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -144,7 +145,9 @@ export default function CustomSelect({ value, options, onChange, style, compact,
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => selectOption(opt.value)}
             >
-              <span>{opt.label}</span>
+              {opt.description ? (
+                <SettingHint text={opt.description} className="custom-select-option-label">{opt.label}</SettingHint>
+              ) : <span>{opt.label}</span>}
               {opt.value === value && <ToolbarGlyph name="check" size={15} color="var(--accent-strong)" />}
             </div>
           ))}

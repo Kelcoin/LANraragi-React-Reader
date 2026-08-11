@@ -7,11 +7,21 @@ import { getWatchlist, loadWatchlistState, mergeWatchlistProgress, removeWatchli
 import { getReaderArchiveListMeta } from '../lib/readerArchiveList';
 import { isArchiveMissingError } from '../lib/historyMaintenance';
 import { translateTag, categorizeTags } from '../lib/tags';
-import { getCachedImage, getImage, primeImage, deleteImageKeys, IMAGE_LOAD_PRIORITY } from '../lib/imageCache';
+import { getCachedImage, getImage, primeImage, putImage, deleteImageKeys, IMAGE_LOAD_PRIORITY } from '../lib/imageCache';
 import { createImageDecodeQueue } from '../lib/imageLoadQueue';
 import { decodeImageSource, getReaderPreviewSource } from '../lib/readerPreviewDecode';
+import { SUPER_RESOLUTION_MAX_INFERENCE_PIXELS } from '../lib/cachePolicy';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange } from '../lib/readerSettings';
-import { SUPER_RESOLUTION_MODELS, detectSuperResolutionSupport, shouldAutoEnableSuperResolution } from '../lib/superResolution';
+import {
+  SUPER_RESOLUTION_MODELS,
+  createSuperResolutionRuntime,
+  detectSuperResolutionSupport,
+  getSuperResolutionCacheKey,
+  getSuperResolutionModel,
+  processSuperResolutionImageSource,
+  shouldAutoEnableSuperResolution,
+  validateSuperResolutionManifest,
+} from '../lib/superResolution';
 import {
   clearArchiveProgressMarker,
   getArchiveProgressPercent,
@@ -22,7 +32,6 @@ import {
 } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
 import { rememberArchiveProgressInCatalog } from '../lib/archiveMetadataCache';
-import { getReaderSkeletonToolbarGroups } from '../lib/readerSkeletonLayout';
 import { createReaderRenderState, getReaderCapabilities, loadReaderBootstrapResource, readerRenderReducer } from '../lib/readerRenderPipeline';
 import {
   getReaderArchivePanelModel,
@@ -47,6 +56,7 @@ import Recommendations from '../components/Recommendations';
 import EhComments from '../components/EhComments';
 import ConfirmDialog from '../components/ConfirmDialog';
 import SettingHint from '../components/SettingHint';
+import { useToast } from '../components/Toast';
 import CustomSelect from '../components/CustomSelect';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { HomeSectionGlyph, NamespaceGlyph, stripDecoratedLabel, ToolbarGlyph } from '../components/AppGlyphs';
@@ -68,6 +78,25 @@ import {
 } from '../lib/readerLayout';
 
 const readerImageDecodeQueue = createImageDecodeQueue({ maxConcurrent: 3 });
+const immersiveSuperResolutionSources = new WeakMap();
+
+function replaceImmersiveSuperResolutionSource(image, source = null, registry = null) {
+  const previous = immersiveSuperResolutionSources.get(image);
+  if (previous !== source) {
+    previous?.dispose();
+    registry?.delete(previous);
+  }
+  if (source) {
+    immersiveSuperResolutionSources.set(image, source);
+    registry?.add(source);
+  }
+  else immersiveSuperResolutionSources.delete(image);
+}
+
+function disposeImmersiveSuperResolutionSources(registry) {
+  registry.forEach((source) => source.dispose());
+  registry.clear();
+}
 
 // Pre-generate the scaled preview for an adjacent page while the decode queue
 // is idle. The page blob comes from the shared fetch queue (key-deduped with
@@ -161,6 +190,24 @@ async function resolvePageImageSource(pageUrl, {
   }, { priority });
 }
 
+function scheduleSuperResolutionPreload(pageUrl, superResolution) {
+  const cacheKey = getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution?.manifest);
+  return readerImageDecodeQueue.schedule(`super-resolution:${cacheKey}`, async (signal) => {
+    if (await getCachedImage(cacheKey)) return true;
+    const src = await resolvePageImageSource(pageUrl, { priority: IMAGE_LOAD_PRIORITY.PRELOAD });
+    if (!src || signal.aborted) return false;
+    const result = await processSuperResolutionImageSource(src, {
+      ...superResolution,
+      signal,
+      cacheKey,
+      getCachedSource: getCachedImage,
+      cacheResult: putImage,
+    });
+    result.dispose();
+    return true;
+  }, IMAGE_LOAD_PRIORITY.PRELOAD);
+}
+
 const DRAWER_COLUMNS = 3;
 const DRAWER_GAP = 12;
 const DRAWER_OVERSCAN_ROWS = 4;
@@ -189,6 +236,8 @@ const PageImage = React.forwardRef(({
   previewDecodeEnabled = false,
   fullPrecision = false,
   sourceSize,
+  superResolution = null,
+  onSuperResolutionError,
 }, fwdRef) => {
   const [imgSrc, setImgSrc] = useState(null);
   const [loadState, setLoadState] = useState(() => (pageUrl ? 'loading' : 'idle'));
@@ -199,6 +248,7 @@ const PageImage = React.forwardRef(({
   const readyPageUrlRef = useRef(null);
   const readyPrecisionRef = useRef(null);
   const visibleSourceRef = useRef(null);
+  const superResolutionSourceRef = useRef(null);
   const imgRef = useRef(null);
   const shellRef = useRef(null);
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
@@ -238,7 +288,8 @@ const PageImage = React.forwardRef(({
   }, []);
 
   useLayoutEffect(() => {
-    const precisionKey = previewDecodeEnabled && !fullPrecision ? 'optimized' : 'full';
+    const precision = previewDecodeEnabled && !fullPrecision ? 'optimized' : 'full';
+    const precisionKey = `${precision}:${superResolution?.manifest?.id ?? 'original'}`;
     const preserveReadySource = readyPageUrlRef.current === pageUrl && readyPrecisionRef.current === precisionKey;
     if (preserveReadySource) {
       setShowLoadingStatus(false);
@@ -248,6 +299,7 @@ const PageImage = React.forwardRef(({
 
     let isMounted = true;
     let decodeTicket = null;
+    let pendingSuperResolutionSource = null;
     const requestSeq = ++requestSeqRef.current;
     setShowLoadingStatus(false);
     setNetworkPending(false);
@@ -255,6 +307,8 @@ const PageImage = React.forwardRef(({
       readyPageUrlRef.current = null;
       readyPrecisionRef.current = null;
       visibleSourceRef.current = null;
+      superResolutionSourceRef.current?.dispose();
+      superResolutionSourceRef.current = null;
       setLoadState('idle');
       setImgSrc(null);
       return undefined;
@@ -285,31 +339,83 @@ const PageImage = React.forwardRef(({
           if (serializedDecode) {
             decodeTicket = readerImageDecodeQueue.schedule(`page:${pageUrl}:${requestSeq}`, async (signal) => {
               if (!isMounted || requestSeq !== requestSeqRef.current) return;
-              const resolved = await getReaderPreviewSource(src, {
-                enabled: previewDecodeEnabled,
-                fullPrecision,
-                sourceSize,
-                signal,
-              });
-              const decoded = await decodeImageSource(resolved.src, { signal });
-              if (!isMounted || requestSeq !== requestSeqRef.current || !imgRef.current) return;
-              readyPageUrlRef.current = pageUrl;
-              readyPrecisionRef.current = precisionKey;
-              visibleSourceRef.current = resolved.src;
-              const resolvedNaturalSize = {
-                width: resolved.width || decoded.width,
-                height: resolved.height || decoded.height,
-              };
-              let nextCropInsets = { top: 0, right: 0, bottom: 0, left: 0 };
-              if (cropBorders) {
-                try { nextCropInsets = detectImageBorderInsets(decoded.image); } catch {}
+              try {
+                const commitPageImage = (resolved, decoded, source, readyKey, notifyReady = false) => {
+                  if (!isMounted || requestSeq !== requestSeqRef.current || !imgRef.current) return false;
+                  superResolutionSourceRef.current?.dispose();
+                  superResolutionSourceRef.current = source;
+                  readyPageUrlRef.current = pageUrl;
+                  readyPrecisionRef.current = readyKey;
+                  visibleSourceRef.current = resolved.src;
+                  const resolvedNaturalSize = {
+                    width: resolved.width || decoded.width,
+                    height: resolved.height || decoded.height,
+                  };
+                  let nextCropInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+                  if (cropBorders) {
+                    try { nextCropInsets = detectImageBorderInsets(decoded.image); } catch {}
+                  }
+                  setNaturalSize(resolvedNaturalSize);
+                  onNaturalSize?.(pageIndex, resolvedNaturalSize);
+                  setCropInsets(nextCropInsets);
+                  setImgSrc(resolved.src);
+                  setLoadState('ready');
+                  if (notifyReady) onReady?.(pageIndex);
+                  return true;
+                };
+
+                const originalResolved = await getReaderPreviewSource(src, {
+                  enabled: previewDecodeEnabled,
+                  fullPrecision,
+                  sourceSize,
+                  signal,
+                });
+                const originalDecoded = await decodeImageSource(originalResolved.src, { signal });
+                if (!commitPageImage(originalResolved, originalDecoded, null, `${precision}:original`, true)) return;
+                if (!superResolution) {
+                  readyPrecisionRef.current = precisionKey;
+                  return;
+                }
+
+                let source = src;
+                try {
+                  pendingSuperResolutionSource = await processSuperResolutionImageSource(src, {
+                    ...superResolution,
+                    signal,
+                    keepAlive: true,
+                    cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
+                    getCachedSource: getCachedImage,
+                    cacheResult: putImage,
+                  });
+                  source = pendingSuperResolutionSource.src;
+                } catch (error) {
+                  if (error?.name === 'AbortError') throw error;
+                  onSuperResolutionError?.(error);
+                  readyPrecisionRef.current = precisionKey;
+                  return;
+                }
+                const enhancedResolved = await getReaderPreviewSource(source, {
+                  enabled: previewDecodeEnabled,
+                  fullPrecision,
+                  sourceSize: pendingSuperResolutionSource || sourceSize,
+                  signal,
+                });
+                const enhancedDecoded = await decodeImageSource(enhancedResolved.src, { signal });
+                if (pendingSuperResolutionSource && enhancedResolved.src !== pendingSuperResolutionSource.src) {
+                  pendingSuperResolutionSource.dispose();
+                  pendingSuperResolutionSource = null;
+                }
+                if (commitPageImage(
+                  enhancedResolved,
+                  enhancedDecoded,
+                  pendingSuperResolutionSource,
+                  precisionKey,
+                )) pendingSuperResolutionSource = null;
+              } catch (error) {
+                pendingSuperResolutionSource?.dispose();
+                pendingSuperResolutionSource = null;
+                throw error;
               }
-              setNaturalSize(resolvedNaturalSize);
-              onNaturalSize?.(pageIndex, resolvedNaturalSize);
-              setCropInsets(nextCropInsets);
-              setImgSrc(resolved.src);
-              setLoadState('ready');
-              onReady?.(pageIndex);
             }, priority);
             await decodeTicket.promise;
             return;
@@ -339,8 +445,14 @@ const PageImage = React.forwardRef(({
     return () => {
       isMounted = false;
       decodeTicket?.cancel();
+      pendingSuperResolutionSource?.dispose();
     };
-  }, [allowNetworkFallback, cacheOnly, cropBorders, fullPrecision, onError, onLoadStart, onNaturalSize, onReady, pageIndex, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize]);
+  }, [allowNetworkFallback, cacheOnly, cropBorders, fullPrecision, onError, onLoadStart, onNaturalSize, onReady, onSuperResolutionError, pageIndex, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize, superResolution]);
+
+  useEffect(() => () => {
+    superResolutionSourceRef.current?.dispose();
+    superResolutionSourceRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!networkPending) {
@@ -954,142 +1066,6 @@ function ReaderToolbarButtonContent({ icon, label, size = 18 }) {
   );
 }
 
-function ReaderStageSkeleton({ title = '', hasMeta = false, hasPages = false, isMobile = false }) {
-  const { toolbarRef, mode } = useReaderToolbarMode(isMobile);
-  const compact = mode !== 'full';
-  const topBtnStyle = getTopBarButtonStyle(compact);
-  const toolbarGroups = getReaderSkeletonToolbarGroups(compact);
-  const pageNavBtnStyle = getPageNavButtonStyle(isMobile);
-  const frameStyle = getNormalReaderFrameStyle(isMobile);
-  return (
-    <div className="reader-root" style={{ minHeight: '100vh', background: 'transparent' }}>
-      <div style={skeletonViewportStyle}>
-        <div
-          ref={toolbarRef}
-          className="reader-toolbar"
-          data-reader-toolbar
-          data-mobile={isMobile ? 'true' : 'false'}
-          data-mode={mode}
-          data-compact={compact ? 'true' : 'false'}
-          style={{
-            padding: '14px 24px',
-            background: 'var(--reader-toolbar-bg)',
-            backdropFilter: 'blur(16px)',
-            borderBottom: '1px solid var(--reader-control-border)',
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-            columnGap: '16px',
-            alignItems: 'center',
-            position: 'relative',
-          }}
-        >
-          <div className="reader-toolbar-group reader-toolbar-group-left" style={{ gridColumn: '1', display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '16px', minWidth: 0 }}>
-            {toolbarGroups.left.map((label, index) => (
-              <div
-                key={index}
-                className="reader-toolbar-button reader-toolbar-skeleton"
-                style={{
-                  ...topBtnStyle,
-                  ...(compact ? { width: '40px', height: '40px', padding: 0 } : {}),
-                  color: 'transparent',
-                  background: 'var(--reader-skeleton-base)',
-                  borderColor: 'var(--reader-control-border)',
-                }}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-          {!compact && (
-            <div
-              className="reader-toolbar-title"
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 'min(var(--reader-toolbar-title-width, 240px), calc(100% - 48px))',
-                minWidth: 0,
-                height: '18px',
-                borderRadius: '8px',
-                background: title ? 'transparent' : 'var(--reader-skeleton-base)',
-                color: title ? 'var(--text-main)' : 'transparent',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                textAlign: 'center',
-                fontSize: '15px',
-                fontWeight: 700,
-              }}
-            >
-              <span className="reader-toolbar-title-content" style={{ display: 'inline-block' }}>
-                {title || 'loading'}
-              </span>
-            </div>
-          )}
-          {compact && <span style={{ minWidth: 0 }} />}
-          <div className="reader-toolbar-group reader-toolbar-group-right" style={{ gridColumn: '3', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: isMobile ? '6px' : '8px', minWidth: 0 }}>
-            {toolbarGroups.right.map((label, index) => (
-              <div
-                key={index}
-                className="reader-toolbar-button reader-toolbar-skeleton"
-                style={{
-                  ...topBtnStyle,
-                  ...(compact ? { width: '40px', height: '40px', padding: 0 } : {}),
-                  color: 'transparent',
-                  background: 'var(--reader-skeleton-base)',
-                  borderColor: 'var(--reader-control-border)',
-                }}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={normalReaderStageLayoutStyle}>
-          <div
-            className="reader-shell-pulse reader-stage-frame"
-            style={frameStyle}
-          >
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                maxWidth: '100%',
-                maxHeight: '100%',
-                minWidth: 0,
-                borderRadius: '8px',
-                background: 'var(--reader-skeleton-base)',
-                border: '1px solid var(--reader-control-border)',
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              <div className="shimmer-strip" style={{ position: 'absolute', inset: 0 }} />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: isMobile ? '18px' : '24px', padding: '20px 8px', flexShrink: 0 }}>
-            <div className="reader-skeleton-surface" style={pageNavBtnStyle} />
-            <div className="reader-skeleton-surface" style={{ width: hasPages ? '72px' : '96px', height: '18px', borderRadius: '8px' }} />
-            <div className="reader-skeleton-surface" style={pageNavBtnStyle} />
-          </div>
-        </div>
-
-        {hasMeta && (
-          <div style={{ maxWidth: '1300px', width: '100%', margin: '0 auto', padding: '0 16px 24px 16px' }}>
-            <div className="section-reveal section-reveal-delay-2" style={{ display: 'grid', gap: '20px' }}>
-              <div className="reader-panel-surface glass-panel" style={{ minHeight: '168px' }} />
-              <div className="reader-panel-surface glass-panel" style={{ minHeight: '220px' }} />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ReaderStageSlot({ status, onRetry }) {
   if (status === 'error') {
     return (
@@ -1117,6 +1093,7 @@ function ReaderStageSlot({ status, onRetry }) {
 }
 
 export default function Reader({ archiveId, onBack, coldRestoreBoot = false, incognito = false }) {
+  const { showToast } = useToast();
   const persistReadingProgress = !incognito;
   const workerReady = hasValidWorkerConfig();
   const bootState = getBootState();
@@ -1171,8 +1148,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [settingsCategory, setSettingsCategory] = useState('general');
   const [srSupport] = useState(() => detectSuperResolutionSupport());
   const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
-  const [srToast, setSrToast] = useState('');
-  const srToastTimerRef = useRef(null);
+  const [srRuntimeContext, setSrRuntimeContext] = useState(null);
+  const [srRuntimeError, setSrRuntimeError] = useState('');
+  const srInitToastRequestedRef = useRef(false);
+  const srArchiveManualRef = useRef(false);
+  const srErrorToastKeyRef = useRef('');
   const [showArchivePanel, setShowArchivePanel] = useState(false);
   const [immersiveControlsSide, setImmersiveControlsSide] = useState(null);
   const [archivePanelType, setArchivePanelType] = useState('history');
@@ -1184,8 +1164,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [coverSetPage, setCoverSetPage] = useState(0);
   const [coverConfirmPage, setCoverConfirmPage] = useState(0);
   const [progressClearing, setProgressClearing] = useState(false);
-  const [progressNotice, setProgressNotice] = useState('');
-  const [progressSyncNotice, setProgressSyncNotice] = useState('');
   const [thumbnailQueueState, setThumbnailQueueState] = useState('idle');
   const [thumbnailQueueRetryToken, setThumbnailQueueRetryToken] = useState(0);
   const [drawerPrefetchSet, setDrawerPrefetchSet] = useState(() => new Set());
@@ -1266,6 +1244,60 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     } catch {}
     return { ...DEFAULT_READER_SETTINGS };
   });
+  const srModel = useMemo(() => getSuperResolutionModel(settings.srModel), [settings.srModel]);
+  const srManifest = useMemo(() => (
+    validateSuperResolutionManifest(srModel) ? srModel : null
+  ), [srModel]);
+  useEffect(() => {
+    setSrRuntimeContext(null);
+    setSrRuntimeError('');
+    if (!settings.srEnabled || !srManifest) return undefined;
+
+    let active = true;
+    let runtime;
+    try {
+      runtime = createSuperResolutionRuntime();
+    } catch (error) {
+      const message = error?.message || '超分运行时创建失败';
+      setSrRuntimeError(message);
+      if (srInitToastRequestedRef.current) showToast(`超分初始化失败：${message}`, 'error');
+      srInitToastRequestedRef.current = false;
+      return undefined;
+    }
+    runtime.init(srManifest).then(({ backend }) => {
+      if (!active) return;
+      srInitToastRequestedRef.current = false;
+      setSrRuntimeContext({ runtime, manifest: srManifest, backend });
+    }).catch((error) => {
+      if (!active) return;
+      const message = error?.message || '模型初始化失败';
+      setSrRuntimeError(message);
+      if (srInitToastRequestedRef.current) showToast(`超分初始化失败：${message}`, 'error');
+      srInitToastRequestedRef.current = false;
+    });
+    return () => {
+      active = false;
+      runtime.dispose();
+    };
+  }, [settings.srEnabled, showToast, srManifest]);
+  const handleSuperResolutionError = useCallback((error) => {
+    if (error?.name === 'NotSupportedError') return;
+    if (!srArchiveManualRef.current || error?.name === 'AbortError') return;
+    const message = error?.message || '未知错误';
+    if (srErrorToastKeyRef.current === message) return;
+    srErrorToastKeyRef.current = message;
+    showToast(`超分失败，已显示原图：${message}`, 'error');
+  }, [showToast]);
+  const currentPageSize = pageSizes[currentIndex];
+  const currentPageTooLargeForSuperResolution = Boolean(
+    currentPageSize?.width
+    && currentPageSize?.height
+    && srManifest?.scale
+    && currentPageSize.width * currentPageSize.height * srManifest.scale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS,
+  );
+  const activeSuperResolution = srArchiveEnabled && !currentPageTooLargeForSuperResolution
+    ? srRuntimeContext
+    : null;
   const [autoWebtoon, setAutoWebtoon] = useState(false);
   const [autoMangaEligible, setAutoMangaEligible] = useState(false);
   const [readerContainerWidth, setReaderContainerWidth] = useState(() => window.innerWidth);
@@ -1626,6 +1658,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const imgLeftSecondRef = useRef(null);
   const imgRightRef = useRef(null);
   const imgRightSecondRef = useRef(null);
+  const immersiveSuperResolutionSourceRegistryRef = useRef(new Set());
   const leftDivRef = useRef(null);
   const rightDivRef = useRef(null);
   const immersiveLoadSeqRef = useRef(0);
@@ -1678,10 +1711,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         await lrrApi.updateProgress(id, targetPage, { keepalive });
         rememberArchiveProgressInCatalog(id, targetPage);
         highestLrrSyncedPageRef.current.set(id, targetPage);
-        setProgressSyncNotice('');
       })
       .catch(() => {
-        setProgressSyncNotice('阅读进度同步失败，将自动重试。');
+        showToast('阅读进度同步失败，将自动重试。', 'error');
         if ((highestLrrQueuedPageRef.current.get(id) || 0) === targetPage) {
           const oldTimer = lrrProgressRetryTimersRef.current.get(id);
           if (oldTimer) clearTimeout(oldTimer);
@@ -1700,7 +1732,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
     });
     return next;
-  }, [persistReadingProgress]);
+  }, [persistReadingProgress, showToast]);
 
   useEffect(() => {
     const flushProgress = ({ keepalive = false } = {}) => {
@@ -1930,6 +1962,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const releaseReaderImageElements = useCallback(() => {
     [imgLeftRef.current, imgLeftSecondRef.current, imgCurrRef.current, imgCurrSecondRef.current, imgRightRef.current, imgRightSecondRef.current].forEach((image) => {
       if (!image) return;
+      replaceImmersiveSuperResolutionSource(image, null, immersiveSuperResolutionSourceRegistryRef.current);
       image.onload = null;
       image.onerror = null;
       image.style.display = 'none';
@@ -2007,7 +2040,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       image.style.transformOrigin = 'center center';
     };
 
-    const loadImg = async (imgRef, unit, priority, preserveVisible = false) => {
+    const loadImg = async (imgRef, unit, priority, preserveVisible = false, superResolution = null) => {
       const pageUrl = unit ? pages[unit.pageIndex] : null;
       const pageIndex = unit?.pageIndex;
       if (!pageUrl || !imgRef.current) return false;
@@ -2033,7 +2066,79 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         if (!alive || loadSeq !== immersiveLoadSeqRef.current || !imgRef.current) return false;
         if (src) {
           const image = imgRef.current;
-          const precisionKey = settings.optimizedImageDecodeEnabled && !fullPrecisionDecode ? 'optimized' : 'full';
+          const precision = settings.optimizedImageDecodeEnabled && !fullPrecisionDecode ? 'optimized' : 'full';
+          const precisionKey = `${precision}:${superResolution?.manifest?.id ?? 'original'}`;
+          const commitImmersiveImage = (decoded, decodePrecision, superResolutionSource = null) => {
+            replaceImmersiveSuperResolutionSource(
+              image,
+              superResolutionSource,
+              immersiveSuperResolutionSourceRegistryRef.current,
+            );
+            image.src = decoded.src;
+            image.dataset.sourceWidth = String(decoded.width);
+            image.dataset.sourceHeight = String(decoded.height);
+            image.dataset.decodePrecision = decodePrecision;
+            image.dataset.pageIndex = String(pageIndex);
+            image.dataset.readerUnit = unitKey;
+            setPageSizes((previous) => {
+              const current = previous[pageIndex];
+              if (current?.width === decoded.width && current?.height === decoded.height) return previous;
+              return { ...previous, [pageIndex]: { width: decoded.width, height: decoded.height } };
+            });
+            applyUnitStyle(image, unit);
+            image.style.display = '';
+          };
+          const startSuperResolutionUpgrade = () => {
+            if (!superResolution) return;
+            const upgradeTicket = readerImageDecodeQueue.schedule(
+              `immersive-super-resolution:${loadSeq}:${unitKey}`,
+              async (signal) => {
+                let superResolutionSource = null;
+                try {
+                  superResolutionSource = await processSuperResolutionImageSource(src, {
+                    ...superResolution,
+                    signal,
+                    keepAlive: true,
+                    cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
+                    getCachedSource: getCachedImage,
+                    cacheResult: putImage,
+                  });
+                  const resolved = await getReaderPreviewSource(superResolutionSource.src, {
+                    enabled: settings.optimizedImageDecodeEnabled,
+                    fullPrecision: fullPrecisionDecode,
+                    sourceSize: superResolutionSource,
+                    signal,
+                  });
+                  const decoded = await decodeImageSource(resolved.src, { signal });
+                  if (resolved.src !== superResolutionSource.src) {
+                    superResolutionSource.dispose();
+                    superResolutionSource = null;
+                  }
+                  return {
+                    src: resolved.src,
+                    width: resolved.width || decoded.width,
+                    height: resolved.height || decoded.height,
+                    superResolutionSource,
+                  };
+                } catch (error) {
+                  superResolutionSource?.dispose();
+                  throw error;
+                }
+              },
+              priority,
+            );
+            decodeTickets.push(upgradeTicket);
+            upgradeTicket.promise.then((decoded) => {
+              if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current
+                || image.dataset.readerUnit !== unitKey) {
+                decoded.superResolutionSource?.dispose();
+                return;
+              }
+              commitImmersiveImage(decoded, precisionKey, decoded.superResolutionSource);
+            }).catch((error) => {
+              if (error?.name !== 'AbortError') handleSuperResolutionError(error);
+            });
+          };
           const imageAlreadyReady = image.dataset.pageIndex === String(pageIndex)
             && image.dataset.decodePrecision === precisionKey
             && image.complete
@@ -2066,24 +2171,18 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           );
           decodeTickets.push(decodeTicket);
           const decoded = await decodeTicket.promise;
-          if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current) return false;
-          return () => {
+          if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current) {
+            decoded.superResolutionSource?.dispose();
+            return false;
+          }
+          const commit = () => {
             if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current) return false;
-            image.src = decoded.src;
-            image.dataset.sourceWidth = String(decoded.width);
-            image.dataset.sourceHeight = String(decoded.height);
-            image.dataset.decodePrecision = precisionKey;
-            image.dataset.pageIndex = String(pageIndex);
-            image.dataset.readerUnit = unitKey;
-            setPageSizes((previous) => {
-              const current = previous[pageIndex];
-              if (current?.width === decoded.width && current?.height === decoded.height) return previous;
-              return { ...previous, [pageIndex]: { width: decoded.width, height: decoded.height } };
-            });
-            applyUnitStyle(image, unit);
-            image.style.display = '';
+            const originalDecoded = decoded;
+            commitImmersiveImage(originalDecoded, `${precision}:original`);
+            startSuperResolutionUpgrade();
             return true;
           };
+          return commit;
         }
         return false;
       } catch {
@@ -2092,6 +2191,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     };
     const unloadImg = (imgRef) => {
       if (imgRef.current) {
+        replaceImmersiveSuperResolutionSource(
+          imgRef.current,
+          null,
+          immersiveSuperResolutionSourceRegistryRef.current,
+        );
         imgRef.current.src = '';
         imgRef.current.style.display = 'none';
         delete imgRef.current.dataset.pageIndex;
@@ -2126,21 +2230,24 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         if (ref.current?.parentElement) resizeObserver.observe(ref.current.parentElement);
       }
     }
-    const loadSpread = async (refs, spread, priority, preserveVisible = false) => {
+    const loadSpread = async (refs, spread, priority, preserveVisible = false, superResolution = null) => {
       const first = spread[0]
-        ? loadImg(refs[0], spread[0], priority, preserveVisible)
+        ? loadImg(refs[0], spread[0], priority, preserveVisible, superResolution)
         : Promise.resolve(false);
       const second = spread[1]
-        ? loadImg(refs[1], spread[1], priority, preserveVisible)
+        ? loadImg(refs[1], spread[1], priority, preserveVisible, superResolution)
         : Promise.resolve(() => { unloadImg(refs[1]); return true; });
       const commits = await Promise.all([first, second]);
-      if (commits.some((commit) => typeof commit !== 'function')) return false;
+      if (commits.some((commit) => typeof commit !== 'function')) {
+        commits.forEach((commit) => commit?.dispose?.());
+        return false;
+      }
       let committed = true;
       commits.forEach((commit) => { committed = commit() && committed; });
       return committed;
     };
 
-    loadSpread([imgCurrRef, imgCurrSecondRef], activeSpread, IMAGE_LOAD_PRIORITY.CRITICAL, true).then((ok) => {
+    loadSpread([imgCurrRef, imgCurrSecondRef], activeSpread, IMAGE_LOAD_PRIORITY.CRITICAL, true, activeSuperResolution).then((ok) => {
       if (!alive || loadSeq !== immersiveLoadSeqRef.current) return;
       if (currentIndexRef.current !== idx || currentSpreadIndexRef.current !== activeSpreadIndex) return;
       if (ok) {
@@ -2165,7 +2272,22 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       decodeTickets.forEach((ticket) => ticket.cancel());
       resizeObserver?.disconnect();
     };
-  }, [assetCacheOnly, currentIndex, currentSpreadIndex, fullPrecisionDecode, pages, readerSpreads, settings.direction, settings.optimizedImageDecodeEnabled, settings.rotateWidePagesEnabled, viewMode, webtoonActive]);
+  }, [assetCacheOnly, currentIndex, currentSpreadIndex, fullPrecisionDecode, activeSuperResolution, handleSuperResolutionError, pages, readerSpreads, settings.direction, settings.optimizedImageDecodeEnabled, settings.rotateWidePagesEnabled, viewMode, webtoonActive]);
+
+  useEffect(() => {
+    if (viewMode === 'immersive' && !webtoonActive) return;
+    [imgLeftRef.current, imgLeftSecondRef.current, imgCurrRef.current, imgCurrSecondRef.current, imgRightRef.current, imgRightSecondRef.current]
+      .forEach((image) => image && replaceImmersiveSuperResolutionSource(
+        image,
+        null,
+        immersiveSuperResolutionSourceRegistryRef.current,
+      ));
+    disposeImmersiveSuperResolutionSources(immersiveSuperResolutionSourceRegistryRef.current);
+  }, [viewMode, webtoonActive]);
+
+  useEffect(() => () => {
+    disposeImmersiveSuperResolutionSources(immersiveSuperResolutionSourceRegistryRef.current);
+  }, []);
 
   // ===== Immersive corner controls =====
   useEffect(() => {
@@ -2958,7 +3080,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const handleClearCurrentProgress = useCallback(async () => {
     if (!archive || progressClearing) return;
     setProgressClearing(true);
-    setProgressNotice('');
     try {
       const id = archive.arcid || archive.id;
       const retryTimer = lrrProgressRetryTimersRef.current.get(id);
@@ -2977,13 +3098,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       });
       setHistoryEntries(getHistory());
       commitPageTarget(0, { targetSplitPart: 0 });
-      setProgressNotice(result.fallback ? '服务器不支持清零，已回退到第一页。' : '阅读进度已清除，已返回第一页。');
+      showToast(result.fallback ? '服务器不支持清零，已回退到第一页。' : '阅读进度已清除，已返回第一页。', result.fallback ? 'info' : 'success');
     } catch (error) {
-      setProgressNotice(`清除阅读进度失败：${error?.message || '未知错误'}`);
+      showToast(`清除阅读进度失败：${error?.message || '未知错误'}`, 'error');
     } finally {
       setProgressClearing(false);
     }
-  }, [archive, commitPageTarget, progressClearing]);
+  }, [archive, commitPageTarget, progressClearing, showToast]);
 
   const handleNextRef = useRef(handleNext);
   const handlePrevRef = useRef(handlePrev);
@@ -3118,11 +3239,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setCoverConfirmPage(0);
       scheduleReaderCleanupTimer(() => setCoverSetPage((prev) => (prev === page ? 0 : prev)), 1800);
     } catch (err) {
-      alert(err.message || '设置封面失败');
+      showToast(err.message || '设置封面失败', 'error');
     } finally {
       setCoverSetting(false);
     }
-  }, [archiveId, coverConfirmPage, coverSetting, scheduleReaderCleanupTimer]);
+  }, [archiveId, coverConfirmPage, coverSetting, scheduleReaderCleanupTimer, showToast]);
 
   // ===== Back handler: immersive → normal mode, not home =====
   const handleGoBack = useCallback(() => {
@@ -3395,6 +3516,27 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     });
   }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.optimizedImageDecodeEnabled, settings.preloadCount]);
 
+  useEffect(() => {
+    if (!activeSuperResolution || pages.length === 0 || coldRestoreRef.current) return undefined;
+    if (pageLoadPhase.status !== 'ready' || pageLoadPhase.targetIndex !== currentIndex) return undefined;
+    const indices = getPreloadIndices();
+    let cancelled = false;
+    let ticket = null;
+    const run = async () => {
+      for (const idx of indices.slice(0, settings.preloadCount)) {
+        if (cancelled) break;
+        ticket = scheduleSuperResolutionPreload(pages[idx], activeSuperResolution);
+        try { await ticket.promise; } catch {}
+        ticket = null;
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+      ticket?.cancel();
+    };
+  }, [activeSuperResolution, archiveId, currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.preloadCount]);
+
   // ===== Outside-click to close panels =====
   useEffect(() => {
     if (!showSettingsPanel && !showArchivePanel) return;
@@ -3417,29 +3559,57 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const leftDisabled = !canNavigate || (isLTR ? atFirstSpread : atLastSpread);
   const rightDisabled = !canNavigate || (isLTR ? atLastSpread : atFirstSpread);
 
-  const showSrToast = useCallback((message) => {
-    setSrToast(message);
-    if (srToastTimerRef.current) clearTimeout(srToastTimerRef.current);
-    srToastTimerRef.current = setTimeout(() => setSrToast(''), 3600);
-  }, []);
+  const handleToggleAutoTurn = useCallback(() => {
+    const next = !settings.autoTurnActive;
+    updateSettings((s) => ({ ...s, autoTurnActive: !s.autoTurnActive }));
+    showToast(next ? '已开启自动翻页' : '已停止自动翻页', 'info');
+  }, [settings.autoTurnActive, showToast, updateSettings]);
 
   const handleToggleSrEnabled = useCallback((enabled) => {
     if (enabled && !srSupport.supported) {
-      showSrToast(srSupport.reason || '当前环境不支持超分。');
+      showToast(srSupport.reason || '当前环境不支持超分。', 'error');
       return;
     }
+    if (enabled && !srManifest) {
+      showToast('当前模型尚未配置可验证的模型文件。', 'error');
+      return;
+    }
+    srInitToastRequestedRef.current = enabled;
     updateSettings((s) => ({ ...s, srEnabled: enabled }));
-  }, [srSupport, showSrToast, updateSettings]);
+  }, [showToast, srManifest, srSupport, updateSettings]);
+
+  const handleToggleArchiveSuperResolution = useCallback(() => {
+    const next = !srArchiveEnabled;
+    if (next && !srManifest) {
+      showToast('当前模型尚未配置可验证的模型文件。', 'error');
+      return;
+    }
+    if (next && !srRuntimeContext) {
+      showToast(srRuntimeError ? `超分不可用：${srRuntimeError}` : '超分模型仍在初始化。', 'error');
+      return;
+    }
+    srArchiveManualRef.current = next;
+    srErrorToastKeyRef.current = '';
+    setSrArchiveEnabled(next);
+    showToast(next ? '已为当前档案启用超分' : '已关闭当前档案超分', 'info');
+  }, [showToast, srArchiveEnabled, srManifest, srRuntimeContext, srRuntimeError]);
 
   // 自动超分：当每页平均体积低于阈值时，自动启用当前档案的超分
   useEffect(() => {
     if (!settings.srAuto || !settings.srEnabled) {
+      srArchiveManualRef.current = false;
+      setSrArchiveEnabled(false);
+      return;
+    }
+    if (!srRuntimeContext) {
+      srArchiveManualRef.current = false;
       setSrArchiveEnabled(false);
       return;
     }
     const shouldAuto = shouldAutoEnableSuperResolution(archive, settings.srAuto, settings.srAutoThreshold);
+    srArchiveManualRef.current = false;
     setSrArchiveEnabled(shouldAuto);
-  }, [archive, settings.srAuto, settings.srEnabled, settings.srAutoThreshold]);
+  }, [archive, settings.srAuto, settings.srEnabled, settings.srAutoThreshold, srRuntimeContext]);
 
   const btnBase = getTopBarButtonStyle(toolbarCompact);
 
@@ -3533,9 +3703,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         color: viewMode === 'immersive' ? 'var(--immersive-text)' : 'var(--text-main)',
       }}
     >
-      {progressSyncNotice && (
-        <div className="reader-sync-status" role="status" aria-live="polite">{progressSyncNotice}</div>
-      )}
       <div
         data-reader-normal-flow
         style={viewMode === 'normal'
@@ -3619,7 +3786,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
           <div className="reader-toolbar-group reader-toolbar-group-right" style={{ gridColumn: '3', display: 'flex', alignItems: 'center', gap: toolbarCompact ? '6px' : '8px', justifyContent: 'flex-end', minWidth: 0 }}>
             {viewMode === 'immersive' && !webtoonActive && (
-              <button className="reader-toolbar-button" style={btnBase} onClick={() => updateSettings((s) => ({ ...s, autoTurnActive: !s.autoTurnActive }))} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
+              <button className="reader-toolbar-button" style={btnBase} onClick={handleToggleAutoTurn} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
                 <ReaderToolbarButtonContent
                   icon={settings.autoTurnActive ? 'pause' : 'play'}
                   label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}
@@ -3688,7 +3855,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               zIndex: 9999,
               padding: '22px',
               borderRadius: '14px',
-              width: 'min(380px, calc(100vw - 40px))',
+              width: 'min(440px, calc(100vw - 32px))',
               boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
               border: '1px solid var(--reader-control-border)',
               display: 'flex', flexDirection: 'column',
@@ -3757,14 +3924,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
                   </div>
-                  <div className="settings-row">
-                    <SettingHint text={'启用超分后，预先处理后续页面的图片数量。\n范围：0–10，0 表示关闭预超分。'}>预超分数量</SettingHint>
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
-                      value={String(settings.srPreloadCount)}
-                      onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 0 && n <= 10) updateSettings((s) => ({ ...s, srPreloadCount: n })); }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
-                    />
-                  </div>
                 </div>
               </div>
             </div>
@@ -3806,12 +3965,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 <div className="settings-group">
                   <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '4px' }}>超分</div>
                   <div className="settings-row">
-                    <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。'}>启用超分</SettingHint>
-                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={!srSupport.supported && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
+                    <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。\n图片过大、不适合超分时，沉浸模式中的超分按钮会自动隐藏。'}>启用超分</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={(!srSupport.supported || !srManifest) && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
                   </div>
                   {!srSupport.supported && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
+                  {srSupport.supported && !srManifest && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>当前模型尚未配置可验证的模型文件。</div>}
+                  {srRuntimeError && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srRuntimeError}</div>}
                   <div className="settings-row">
-                    <SettingHint text={'超分处理使用的模型。\n不同模型对画质和性能的侧重不同。'}>超分模型</SettingHint>
+                    <span className="settings-row-title">超分模型</span>
                     <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} compact /></div>
                   </div>
                   <div className="settings-row">
@@ -3829,16 +3990,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 </div>
               </div>
             </div>
-            </div>
-          </div>
-        , document.body)}
-
-        {srToast && createPortal(
-          <div className="metadata-toast-stack" aria-live="polite">
-            <div className="metadata-status-card is-error" role="alert">
-              <span className="metadata-status-icon" aria-hidden="true">!</span>
-              <span className="metadata-status-text">{srToast}</span>
-              <button type="button" className="metadata-status-close" aria-label="关闭提示" onClick={() => setSrToast('')}>×</button>
             </div>
           </div>
         , document.body)}
@@ -3903,6 +4054,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                           serializedDecode
                           previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                           sourceSize={pageSizes[index]}
+                          superResolution={index === currentIndex ? activeSuperResolution : null}
+                          onSuperResolutionError={handleSuperResolutionError}
                           onNaturalSize={handlePageNaturalSize}
                           onLoadStart={distance === 0 ? handlePageVisualLoadStart : undefined}
                           onReady={distance === 0 ? handlePageVisualReady : undefined}
@@ -3933,6 +4086,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                         previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                         fullPrecision={fullPrecisionDecode}
                         sourceSize={pageSizes[unit.pageIndex]}
+                        superResolution={activeSuperResolution}
+                        onSuperResolutionError={handleSuperResolutionError}
                         onNaturalSize={handlePageNaturalSize}
                         loadingLabel={`正在加载第 ${unit.pageIndex + 1} 页`}
                         loadingHint="正在请求图像"
@@ -4086,15 +4241,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   <ToolbarGlyph name="close" size={20} />
                 </button>
                 {!webtoonActive && (
-                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { updateSettings((state) => ({ ...state, autoTurnActive: !state.autoTurnActive })); revealImmersiveControls(side); }} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
+                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { handleToggleAutoTurn(); revealImmersiveControls(side); }} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
                     <ToolbarGlyph name={settings.autoTurnActive ? 'pause' : 'play'} size={20} />
                   </button>
                 )}
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate || coverSetting} onClick={() => { if (canNavigate && !coverSetting) handleSetCover(); revealImmersiveControls(side); }} title="设为封面" aria-label="设为封面">
                   <ToolbarGlyph name="cover" size={20} />
                 </button>
-                {settings.srEnabled && (
-                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { const next = !srArchiveEnabled; setSrArchiveEnabled(next); showSrToast(next ? '已为当前档案启用超分' : '已关闭当前档案超分'); revealImmersiveControls(side); }} title={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'} aria-label={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'}>
+                {settings.srEnabled && !currentPageTooLargeForSuperResolution && (
+                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { handleToggleArchiveSuperResolution(); revealImmersiveControls(side); }} title={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'} aria-label={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'}>
                     <ToolbarGlyph name={srArchiveEnabled ? 'superResolution' : 'superResolutionOff'} size={20} />
                   </button>
                 )}
@@ -4132,6 +4287,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       serializedDecode
                       previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                       sourceSize={pageSizes[index]}
+                      superResolution={index === currentIndex ? activeSuperResolution : null}
+                      onSuperResolutionError={handleSuperResolutionError}
                       onNaturalSize={handlePageNaturalSize}
                       style={{ width: '100%', height: 'auto', maxWidth: '100%', objectFit: 'contain', borderRadius: 0 }}
                     />
@@ -4373,8 +4530,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               </button>
             </div>
           </div>
-
-          {progressNotice && <div role="status" aria-live="polite" style={{ margin: '-10px 0 12px', color: progressNotice.startsWith('清除阅读进度失败') ? 'var(--danger)' : 'var(--text-sub)', fontSize: '12px', textAlign: 'center' }}>{progressNotice}</div>}
 
           <div style={{ marginBottom: '20px', background: 'var(--surface-2)', borderRadius: '8px', display: 'flex', flexDirection: 'column', maxHeight: '35%', flexShrink: 0 }}>
             <div style={{ padding: '14px 14px 0 14px' }}>

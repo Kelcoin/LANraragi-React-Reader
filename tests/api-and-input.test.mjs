@@ -148,21 +148,22 @@ test('reader settings reject unsafe automatic turn intervals', () => {
   assert.equal(readerSettings.normalizeReaderSettings({ maxConcurrentDecodes: 4.9 }).maxConcurrentDecodes, 4);
 });
 
-test('reader settings normalize super-resolution fields (UI framework)', () => {
+test('reader settings normalize super-resolution fields', () => {
   const defaults = readerSettings.normalizeReaderSettings({});
   assert.equal(defaults.srEnabled, false);
   assert.equal(defaults.srModel, 'anime4k');
-  assert.equal(defaults.srPreloadCount, 3);
+  assert.equal(defaults.preloadCount, 3);
+  assert.equal('srPreloadCount' in defaults, false);
   assert.equal(defaults.srAuto, false);
   assert.equal(defaults.srAutoThreshold, 0);
 
   assert.equal(readerSettings.normalizeReaderSettings({ srEnabled: 1 }).srEnabled, true);
   assert.equal(readerSettings.normalizeReaderSettings({ srAuto: 'yes' }).srAuto, true);
+  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'onnx-subpixel-x3' }).srModel, 'anime4k');
   assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'realcugan' }).srModel, 'realcugan');
   assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'unknown' }).srModel, 'anime4k');
-  assert.equal(readerSettings.normalizeReaderSettings({ srPreloadCount: 99 }).srPreloadCount, 10);
-  assert.equal(readerSettings.normalizeReaderSettings({ srPreloadCount: -3 }).srPreloadCount, 0);
-  assert.equal(readerSettings.normalizeReaderSettings({ srPreloadCount: 5 }).srPreloadCount, 5);
+  assert.equal(readerSettings.normalizeReaderSettings({ preloadCount: 99 }).preloadCount, 10);
+  assert.equal('srPreloadCount' in readerSettings.normalizeReaderSettings({ srPreloadCount: 5 }), false);
   assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: -1 }).srAutoThreshold, 0);
   assert.equal(readerSettings.normalizeReaderSettings({ srAutoThreshold: 640 }).srAutoThreshold, 640);
 
@@ -202,6 +203,31 @@ test('super resolution auto-enable uses avg page size vs threshold', () => {
   assert.equal(superResolution.shouldAutoEnableSuperResolution(archive, true, NaN), false);
   // 数据不足 → 不启用
   assert.equal(superResolution.shouldAutoEnableSuperResolution({}, true, 600), false);
+});
+
+test('super resolution support allows the WASM fallback without WebGL', () => {
+  const previous = {
+    document: globalThis.document,
+    Worker: globalThis.Worker,
+    createImageBitmap: globalThis.createImageBitmap,
+    OffscreenCanvas: globalThis.OffscreenCanvas,
+  };
+  globalThis.document = { createElement: () => ({ getContext: () => null }) };
+  globalThis.Worker = function Worker() {};
+  globalThis.createImageBitmap = function createImageBitmap() {};
+  globalThis.OffscreenCanvas = function OffscreenCanvas() {};
+  try {
+    assert.deepEqual(superResolution.detectSuperResolutionSupport(), {
+      supported: true,
+      reason: '',
+      gpu: false,
+    });
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[key];
+      else globalThis[key] = value;
+    }
+  }
 });
 
 test('reader settings keep E-Hentai sorting valid across Home and Reader', () => {

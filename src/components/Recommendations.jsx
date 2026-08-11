@@ -16,6 +16,7 @@ import { scopedStorageKey } from '../lib/configScope';
 import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
 import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
 import { hasValidWorkerConfig } from '../lib/worker-config';
+import { useToast } from './Toast';
 
 const CUSTOM_WEIGHT_TAGS = {
   'female:ahegao': 1.5, 'female:anal intercourse': 2, 'female:anal': 2,
@@ -112,6 +113,7 @@ function calculateSimilarity(sourceTagsLower, archive) {
 }
 
 export default function Recommendations({ currentArchive }) {
+  const { showToast } = useToast();
   const workerReady = hasValidWorkerConfig();
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
   const showGlobalArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, false);
@@ -132,6 +134,7 @@ export default function Recommendations({ currentArchive }) {
   const [nearViewport, setNearViewport] = useState(false);
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
+  const recommendationRequestSeqRef = useRef(0);
   const scroller = useHorizontalScroller();
   const sourceTagsLower = useMemo(() => {
     if (!currentArchive?.tags) return new Set();
@@ -194,6 +197,7 @@ export default function Recommendations({ currentArchive }) {
     if (!nearViewport) return;
     const cacheKey = scopedStorageKey(`lrr_rec_cache_v3_${sameCreatorType}_${currentArchive.arcid}`);
     let cancelled = false;
+    const requestSeq = ++recommendationRequestSeqRef.current;
 
     const fetchAll = async () => {
       setLoading(true);
@@ -203,10 +207,10 @@ export default function Recommendations({ currentArchive }) {
           try {
             const parsed = JSON.parse(cached);
             if (Date.now() - parsed.t < 86400000) {
-              if (cancelled) return;
+              if (cancelled || requestSeq !== recommendationRequestSeqRef.current) return;
               setSimData(applyCanonicalHistoryProgress(parsed.sim || []));
               setArtistData(applyCanonicalHistoryProgress(parsed.artist || []));
-              setLoading(false);
+              if (requestSeq === recommendationRequestSeqRef.current) setLoading(false);
               return;
             }
           } catch {}
@@ -217,17 +221,20 @@ export default function Recommendations({ currentArchive }) {
           buildSameCreator(),
         ]);
 
-        if (cancelled) return;
+        if (cancelled || requestSeq !== recommendationRequestSeqRef.current) return;
         setSimData(applyCanonicalHistoryProgress(sim));
         setArtistData(applyCanonicalHistoryProgress(artist));
         if (sim.length || artist.length) {
           try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), sim: stripRecommendationProgress(sim), artist: stripRecommendationProgress(artist) })); } catch {}
         }
       } catch {}
-      if (!cancelled) setLoading(false);
+      if (!cancelled && requestSeq === recommendationRequestSeqRef.current) setLoading(false);
     };
     fetchAll();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (requestSeq === recommendationRequestSeqRef.current) recommendationRequestSeqRef.current += 1;
+    };
   }, [currentArchive?.arcid, nearViewport, retryTick, sameCreatorType]);
 
   const buildYouMayLike = async () => {
@@ -316,18 +323,20 @@ export default function Recommendations({ currentArchive }) {
 
   const refreshCache = useCallback(async () => {
     const cacheKey = scopedStorageKey(`lrr_rec_cache_v3_${sameCreatorType}_${currentArchive.arcid}`);
+    const requestSeq = ++recommendationRequestSeqRef.current;
     try { localStorage.removeItem(cacheKey); } catch {}
     retryCountRef.current = 0;
     setLoading(true);
     try {
       const [sim, artist] = await Promise.all([buildYouMayLike(), buildSameCreator()]);
+      if (requestSeq !== recommendationRequestSeqRef.current) return;
       setSimData(applyCanonicalHistoryProgress(sim));
       setArtistData(applyCanonicalHistoryProgress(artist));
       if (sim.length || artist.length) {
         try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), sim: stripRecommendationProgress(sim), artist: stripRecommendationProgress(artist) })); } catch {}
       }
     } catch {}
-    setLoading(false);
+    if (requestSeq === recommendationRequestSeqRef.current) setLoading(false);
   }, [currentArchive, sameCreatorType]);
 
   useEffect(() => {
@@ -377,9 +386,9 @@ export default function Recommendations({ currentArchive }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      alert(err.message || '下载失败');
+      showToast(err.message || '下载失败', 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const handleArchiveCopyLink = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;

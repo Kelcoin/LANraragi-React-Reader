@@ -13,6 +13,7 @@ import { hasValidWorkerConfig } from '../lib/worker-config';
 import { getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItems } from '../lib/watchlist';
 import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
+import { useToast } from '../components/Toast';
 
 function HeaderGlyph() {
   return <HomeSectionGlyph name="watchlist" size={24} color={getSectionGlyphColor('watchlist')} />;
@@ -33,6 +34,7 @@ function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
 }
 
 export default function WatchlistPage({ onSelectArchive, onBack }) {
+  const { showToast } = useToast();
   const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [items, setItems] = useState(() => getWatchlist());
@@ -208,9 +210,9 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      alert(err.message || '下载失败');
+      showToast(err.message || '下载失败', 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const handleCopyLink = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;

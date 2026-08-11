@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import * as imageCache from '../src/lib/imageCache.js';
 import * as superResolution from '../src/lib/superResolution.js';
 import * as tiling from '../src/lib/superResolutionTiling.js';
 import { createSuperResolutionRuntime as createRawSuperResolutionRuntime } from '../src/lib/superResolutionRuntime.js';
@@ -81,6 +83,171 @@ function createDeferred() {
 }
 
 const workerModuleUrl = new URL('../src/lib/superResolution.worker.js', import.meta.url);
+
+test('production Worker loads the registered WebGL build and Vite-managed WASM assets', async () => {
+  const workerSource = await readFile(workerModuleUrl, 'utf8');
+  const runtimeSource = await readFile(
+    new URL('../src/lib/superResolutionRuntime.js', import.meta.url),
+    'utf8',
+  );
+  const viteSource = await readFile(new URL('../vite.config.js', import.meta.url), 'utf8');
+  const ortSource = await readFile(
+    new URL('../src/lib/superResolutionOrt.js', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(workerSource, /import \{ loadOrtBackend \} from '\.\/superResolutionOrt\.js';/);
+  assert.doesNotMatch(workerSource, /import\('\.\/superResolutionOrt\.js'\)/);
+  assert.match(ortSource, /import\('onnxruntime-web\/webgl'\)/);
+  assert.match(ortSource, /import\('onnxruntime-web\/wasm'\)/);
+  assert.match(ortSource, /new URL\('\.\.\/\.\.\/node_modules\/onnxruntime-web\/dist\/ort-wasm-simd-threaded\.mjs', import\.meta\.url\)/);
+  assert.match(ortSource, /new URL\('\.\.\/\.\.\/node_modules\/onnxruntime-web\/dist\/ort-wasm-simd-threaded\.wasm', import\.meta\.url\)/);
+  assert.match(ortSource, /ort\.env\.wasm\.wasmPaths\s*=\s*\{[\s\S]*mjs:[\s\S]*wasm:/);
+  assert.match(viteSource, /worker:\s*\{\s*format:\s*'es',?\s*\}/);
+  assert.match(runtimeSource, /new Worker\(new URL\('\.\/superResolution\.worker\.js', import\.meta\.url\)/);
+  assert.doesNotMatch(runtimeSource, /new globalThis\.Worker\(new URL/);
+});
+
+test('parses Anime4K shader passes and resolves hooked texture geometry', async () => {
+  const { parseAnime4kPasses } = await import('../src/lib/anime4k.js');
+  const passes = parseAnime4kPasses([`//!DESC first
+//!HOOK MAIN
+//!BIND HOOKED
+//!SAVE FEATURE
+//!WIDTH HOOKED.w
+//!HEIGHT HOOKED.h
+vec4 hook() { return HOOKED_tex(HOOKED_pos); }
+//!DESC upscale
+//!HOOK MAIN
+//!BIND FEATURE
+//!SAVE MAIN
+//!WIDTH FEATURE.w 2 *
+//!HEIGHT FEATURE.h 2 *
+vec4 hook() { return FEATURE_tex(FEATURE_pos); }`]);
+
+  assert.equal(passes.length, 2);
+  assert.deepEqual(passes[0].bindings, [{ uniform: 'HOOKED', source: 'MAIN' }]);
+  assert.deepEqual(passes[1].width, { source: 'FEATURE', scale: 2 });
+  assert.deepEqual(passes[1].height, { source: 'FEATURE', scale: 2 });
+  assert.equal(passes[1].save, 'MAIN');
+});
+
+test('normalizes Anime4K integer offsets for strict WebGL2 shader compilers', async () => {
+  const { parseAnime4kPasses } = await import('../src/lib/anime4k.js');
+  const [pass] = parseAnime4kPasses([`//!DESC strict offsets
+//!HOOK MAIN
+//!BIND HOOKED
+#define go_0(x_off, y_off) MAIN_texOff(vec2(x_off, y_off))
+vec4 hook() {
+  return go_0(1, -1) + MAIN_texOff(vec2(i - KERNELHALFSIZE, 0));
+}`]);
+
+  assert.match(pass.body, /vec2\(float\(x_off\), float\(y_off\)\)/);
+  assert.match(pass.body, /vec2\(float\(i - KERNELHALFSIZE\), 0\.0\)/);
+});
+
+test('binds Anime4K resolved texture names used by shader bodies', async () => {
+  const { buildAnime4kFragmentSource } = await import('../src/lib/anime4k.js');
+  const source = buildAnime4kFragmentSource({
+    bindings: [{ uniform: 'HOOKED', source: 'MAIN' }],
+    body: 'vec4 hook() { return MAIN_texOff(vec2(0.0)); }',
+  });
+
+  assert.match(source, /#define MAIN_tex\(pos\) texture\(HOOKED_tex, pos\)/);
+  assert.match(source, /#define MAIN_texOff\(off\) texture\(HOOKED_tex, vTexCoord \+ \(off\) \/ HOOKED_size\)/);
+  assert.match(source, /#define MAIN_pt \(1\.0 \/ HOOKED_size\)/);
+});
+
+test('Anime4K uses nearest sampling for floating-point feature textures', async () => {
+  const source = await readFile(new URL('../src/lib/anime4k.js', import.meta.url), 'utf8');
+  assert.match(source, /const filter = pixels \? gl\.LINEAR : gl\.NEAREST/);
+  assert.match(source, /gl\.RGBA32F/);
+});
+
+test('Real-CUGAN reflects tile edges and disposes every inference tensor', async () => {
+  const { createRealCuganProcessor, reflectIndex } = await import('../src/lib/realCugan.js');
+  assert.deepEqual([-2, -1, 0, 3, 4, 5].map((index) => reflectIndex(index, 4)), [2, 1, 0, 3, 2, 1]);
+
+  const disposed = [];
+  let inputShape;
+  const tf = {
+    tensor4d(data, shape) {
+      inputShape = shape;
+      assert.equal(data.length, 64 * 64 * 3);
+      return { dispose: () => disposed.push('input') };
+    },
+  };
+  const model = {
+    async executeAsync() {
+      return {
+        shape: [1, 128, 128, 3],
+        async data() { return new Float32Array(128 * 128 * 3).fill(0.5); },
+        dispose: () => disposed.push('output'),
+      };
+    },
+    dispose: () => disposed.push('model'),
+  };
+  const processor = createRealCuganProcessor({ tf, model });
+  const result = await processor.process(new Uint8ClampedArray(28 * 28 * 4).fill(255), 28, 28);
+
+  assert.deepEqual(inputShape, [1, 64, 64, 3]);
+  assert.equal(result.width, 56);
+  assert.equal(result.height, 56);
+  assert.equal(result.pixels[0], 128);
+  assert.deepEqual(disposed, ['output', 'input']);
+  processor.dispose();
+  assert.deepEqual(disposed, ['output', 'input', 'model']);
+});
+
+test('Real-CUGAN backend initialization falls back from WebGL to WASM', async () => {
+  const { initializeRealCuganBackend } = await import('../src/lib/realCugan.js');
+  const attempts = [];
+  const tf = {
+    async setBackend(backend) {
+      attempts.push(backend);
+      return backend === 'wasm';
+    },
+    async ready() {},
+    getBackend: () => attempts.at(-1),
+  };
+  assert.equal(await initializeRealCuganBackend(tf), 'wasm');
+  assert.deepEqual(attempts, ['webgl', 'wasm']);
+});
+
+test('Real-CUGAN loads verified local weights through a TensorFlow.js IOHandler', async () => {
+  const { createRealCuganModelIOHandler } = await import('../src/lib/realCugan.js');
+  const weightData = new Uint8Array([1, 2, 3, 4]).buffer;
+  const digestBytes = await globalThis.crypto.subtle.digest('SHA-256', weightData);
+  const digest = Array.from(new Uint8Array(digestBytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const requests = [];
+  const handler = createRealCuganModelIOHandler({
+    manifest: {
+      url: '/model.json',
+      weightsUrl: '/weights.json',
+      weightsChecksum: { digest },
+    },
+    fetcher: async (url) => {
+      requests.push(url);
+      if (url === '/model.json') {
+        return {
+          async json() {
+            return {
+              modelTopology: { node: [] },
+              weightsManifest: [{ paths: ['group1-shard1of1.bin'], weights: [{ name: 'weight', shape: [4], dtype: 'int32' }] }],
+              format: 'graph-model',
+            };
+          },
+        };
+      }
+      return { async arrayBuffer() { return weightData; } };
+    },
+  });
+  const artifacts = await handler.load();
+  assert.deepEqual(requests, ['/model.json', '/weights.json']);
+  assert.deepEqual(artifacts.weightSpecs, [{ name: 'weight', shape: [4], dtype: 'int32' }]);
+  assert.equal(artifacts.weightData.byteLength, 4);
+});
+
 const workerManifest = {
   id: 'anime4k-x2',
   url: 'https://models.example.test/anime4k-x2.onnx',
@@ -203,6 +370,131 @@ test('initializes verified model bytes with WebGL and reports the actual backend
   assert.equal(fixture.calls.session.length, 1);
   assert.equal(fixture.calls.session[0].backend, 'webgl');
   assert.deepEqual(Array.from(new Uint8Array(fixture.calls.session[0].bytes)), [1, 2, 3, 4]);
+});
+
+test('honors a model manifest that requires the WASM execution provider', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-wasm-only',
+    manifest: { ...workerManifest, executionProviders: ['wasm'] },
+  });
+
+  assert.deepEqual(response, {
+    type: 'ready',
+    requestId: 'init-wasm-only',
+    backend: 'wasm',
+  });
+  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['wasm']);
+});
+
+test('dispatches Anime4K manifests to the WebGL processor and releases it', async () => {
+  const calls = [];
+  const processor = {
+    process(pixels, width, height) {
+      calls.push({ pixels, width, height });
+      return { pixels: new Uint8ClampedArray(width * height * 16), width: width * 2, height: height * 2 };
+    },
+    dispose() { calls.push('dispose'); },
+  };
+  let encoded;
+  const fixture = createWorkerDependencies({
+    anime4kFactory: async () => processor,
+    decodeImage: async () => ({
+      width: 2,
+      height: 2,
+      pixels: new Uint8ClampedArray(16).fill(128),
+      close() {},
+    }),
+    encodeImage: async (image) => {
+      encoded = image;
+      return new Blob(['anime4k'], { type: 'image/png' });
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = {
+    ...workerManifest,
+    engine: 'anime4k-webgl',
+    url: 'builtin:anime4k-v4-ultra-x2',
+  };
+
+  const ready = await handler.handleMessage({ type: 'init', requestId: 'anime-init', manifest });
+  assert.equal(ready.type, 'ready');
+  assert.equal(ready.backend, 'webgl');
+  assert.equal(fixture.calls.fetch.length, 0);
+
+  const result = await handler.handleMessage({
+    type: 'process',
+    requestId: 'anime-process',
+    manifest,
+    blob: new Blob(['source']),
+  });
+  assert.equal(result.type, 'result', result.error?.message);
+  assert.equal(result.width, 4);
+  assert.equal(result.height, 4);
+  assert.equal(encoded.width, 4);
+  assert.equal(encoded.height, 4);
+
+  await handler.handleMessage({ type: 'dispose', requestId: 'anime-dispose' });
+  assert.equal(calls.at(-1), 'dispose');
+});
+
+test('dispatches Real-CUGAN manifests to its TensorFlow.js processor', async () => {
+  const processor = {
+    async process(_pixels, width, height) {
+      return { pixels: new Uint8ClampedArray(width * height * 16), width: width * 2, height: height * 2 };
+    },
+    dispose() {},
+  };
+  const fixture = createWorkerDependencies({
+    realCuganFactory: async () => ({ processor, backend: 'wasm' }),
+    decodeImage: async () => ({
+      width: 2,
+      height: 2,
+      pixels: new Uint8ClampedArray(16),
+      close() {},
+    }),
+    encodeImage: async (image) => new Blob([String(image.width)], { type: 'image/png' }),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = {
+    ...workerManifest,
+    engine: 'realcugan-tfjs',
+    url: '/models/realcugan-2x-conservative/model.json',
+  };
+
+  const ready = await handler.handleMessage({ type: 'init', requestId: 'cugan-init', manifest });
+  assert.equal(ready.type, 'ready');
+  assert.equal(ready.backend, 'wasm');
+  assert.equal(fixture.calls.fetch.length, 0);
+  const result = await handler.handleMessage({
+    type: 'process',
+    requestId: 'cugan-process',
+    manifest,
+    blob: new Blob(['source']),
+  });
+  assert.equal(result.type, 'result', result.error?.message);
+  assert.equal(result.width, 4);
+  assert.equal(result.height, 4);
+});
+
+test('rejects unsupported manifest execution providers before creating a session', async () => {
+  const fixture = createWorkerDependencies();
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-invalid-provider',
+    manifest: { ...workerManifest, executionProviders: ['webgpu'] },
+  });
+
+  assert.equal(response.type, 'error');
+  assert.equal(response.requestId, 'init-invalid-provider');
+  assert.equal(response.error.name, 'ProtocolError');
+  assert.match(response.error.message, /executionProviders/);
+  assert.equal(fixture.calls.session.length, 0);
 });
 
 test('reuses cached model bytes only after validating them against the manifest checksum', async () => {
@@ -831,6 +1123,67 @@ test('processes an RGBA blob through an NCHW session and preserves nearest alpha
   assert.equal(outputDisposeCount, 1);
 });
 
+test('processes a fixed-size YCbCr luma model and reconstructs source chroma', async () => {
+  let encoded;
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run(feeds) {
+      assert.deepEqual(feeds.input.dims, [1, 1, 2, 2]);
+      for (const value of feeds.input.data) assert.ok(Math.abs(value - 0.299) < 0.002);
+      return {
+        output: {
+          dims: [1, 1, 6, 6],
+          data: new Float32Array(36).fill(0.299),
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 1,
+      height: 1,
+      pixels: new Uint8ClampedArray([255, 0, 0, 80]),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async (image) => {
+      encoded = image;
+      return new Blob(['ycbcr'], { type: 'image/png' });
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = {
+    ...workerManifest,
+    scale: 3,
+    colorSpace: 'ycbcr-y',
+    inputWidth: 2,
+    inputHeight: 2,
+    tileCore: 1,
+    padding: 0,
+  };
+  await handler.handleMessage({ type: 'init', requestId: 'init-ycbcr', manifest });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-ycbcr',
+    blob: new Blob(['source']),
+    manifest,
+  });
+
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.equal(response.width, 3);
+  assert.equal(response.height, 3);
+  for (let offset = 0; offset < encoded.pixels.length; offset += 4) {
+    assert.ok(encoded.pixels[offset] >= 253);
+    assert.ok(encoded.pixels[offset + 1] <= 2);
+    assert.ok(encoded.pixels[offset + 2] <= 2);
+    assert.equal(encoded.pixels[offset + 3], 80);
+  }
+});
+
 test('replicate-pads NHWC tiles, stitches cropped cores, and scales alpha', async () => {
   const inputRows = [];
   let runCount = 0;
@@ -934,6 +1287,45 @@ test('rejects invalid model output dimensions and closes decoded resources', asy
 
   assert.equal(response.type, 'error');
   assert.equal(response.error.name, 'TensorShapeError');
+  assert.equal(decodedCloseCount, 1);
+});
+
+test('rejects oversized output before allocating or running inference', async () => {
+  let decodedCloseCount = 0;
+  let runCount = 0;
+  const session = {
+    async run() {
+      runCount += 1;
+      throw new Error('must not run');
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 4097,
+      height: 4097,
+      pixels: { length: 4097 * 4097 * 4 },
+      close() {
+        decodedCloseCount += 1;
+      },
+    }),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, scale: 4 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-large-output', manifest });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-large-output',
+    blob: new Blob(['source']),
+    manifest,
+  });
+
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'NotSupportedError');
+  assert.match(response.error.message, /inference.*pixel/i);
+  assert.equal(runCount, 0);
   assert.equal(decodedCloseCount, 1);
 });
 
@@ -1318,10 +1710,387 @@ test('raw runtime uses the injected manifest validator', async () => {
 
 test('resolves a super-resolution model by its value', () => {
   assert.equal(typeof superResolution.getSuperResolutionModel, 'function');
-  assert.deepEqual(superResolution.getSuperResolutionModel('realcugan'), {
-    value: 'realcugan',
-    label: 'Real-CUGAN',
+  const model = superResolution.getSuperResolutionModel('realcugan');
+  assert.equal(model.value, 'realcugan');
+  assert.equal(model.label, 'Real-CUGAN');
+  assert.equal(model.engine, 'realcugan-tfjs');
+  assert.equal(validateManifest(model), true);
+});
+
+test('does not ship the test-only ONNX sub-pixel model', () => {
+  assert.equal(superResolution.getSuperResolutionModel('onnx-subpixel-x3'), null);
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((model) => model.value), ['anime4k', 'waifu2x', 'realcugan']);
+});
+
+test('describes every selectable super-resolution model', () => {
+  for (const model of superResolution.SUPER_RESOLUTION_MODELS) {
+    assert.equal(typeof model.description, 'string', model.value);
+    assert.ok(model.description.trim().length > 0, model.value);
+  }
+});
+
+test('ships a pinned Waifu2x CUNet x2 manifest with cropped-output geometry', () => {
+  const model = superResolution.getSuperResolutionModel('waifu2x');
+  assert.equal(model.id, 'waifu2x-cunet-art-scale2x-20250502');
+  assert.equal(model.scale, 2);
+  assert.equal(model.inputName, 'x');
+  assert.equal(model.outputName, 'y');
+  assert.equal(model.inputLayout, 'nchw');
+  assert.equal(model.outputLayout, 'nchw');
+  assert.equal(model.inputWidth, 224);
+  assert.equal(model.inputHeight, 224);
+  assert.equal(model.tileCore, 152);
+  assert.equal(model.padding, 36);
+  assert.equal(model.outputInset, 18);
+  assert.equal(model.checksum.digest, '0966d74dd0739a20de358de88c8fa4eb6cb8c3489bb0e941da9751ad4dcdf495');
+  assert.equal(validateManifest(model), true);
+});
+
+test('accepts the production Waifu2x 224px input and 376px output geometry', async () => {
+  const model = superResolution.getSuperResolutionModel('waifu2x');
+  const session = {
+    inputNames: ['x'],
+    outputNames: ['y'],
+    async run(feeds) {
+      assert.deepEqual(feeds.x.dims, [1, 3, 224, 224]);
+      return { y: { dims: [1, 3, 376, 376], data: new Float32Array(3 * 376 * 376).fill(0.5) } };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 152,
+      height: 152,
+      pixels: new Uint8ClampedArray(152 * 152 * 4).fill(255),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => new Blob(['waifu2x'], { type: 'image/png' }),
   });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = {
+    ...workerManifest,
+    engine: 'onnx',
+    inputName: model.inputName,
+    outputName: model.outputName,
+    inputWidth: model.inputWidth,
+    inputHeight: model.inputHeight,
+    tileCore: model.tileCore,
+    padding: model.padding,
+    outputInset: model.outputInset,
+    scale: model.scale,
+    executionProviders: ['wasm'],
+  };
+  await handler.handleMessage({ type: 'init', requestId: 'init-production-waifu2x', manifest });
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-production-waifu2x',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.equal(response.width, 304);
+  assert.equal(response.height, 304);
+});
+
+test('accepts cropped model outputs and stitches the remaining core', async () => {
+  let encoded;
+  const session = {
+    inputNames: ['x'],
+    outputNames: ['y'],
+    async run(feeds) {
+      assert.deepEqual(feeds.x.dims, [1, 3, 64, 64]);
+      return {
+        y: {
+          dims: [1, 3, 56, 56],
+          data: new Float32Array(3 * 56 * 56).fill(0.5),
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 28,
+      height: 28,
+      pixels: new Uint8ClampedArray(28 * 28 * 4).fill(255),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async (image) => {
+      encoded = image;
+      return new Blob(['waifu2x'], { type: 'image/png' });
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = {
+    ...workerManifest,
+    inputName: 'x',
+    outputName: 'y',
+    scale: 2,
+    inputWidth: 64,
+    inputHeight: 64,
+    tileCore: 28,
+    padding: 18,
+    outputInset: 18,
+  };
+  await handler.handleMessage({ type: 'init', requestId: 'init-cropped-output', manifest });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-cropped-output',
+    blob: new Blob(['source']),
+    manifest,
+  });
+
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.equal(response.width, 56);
+  assert.equal(response.height, 56);
+  assert.equal(encoded.width, 56);
+  assert.equal(encoded.height, 56);
+});
+
+test('rejects fixed model inputs that cannot contain the configured core and padding', () => {
+  assert.equal(validateManifest({
+    ...productionManifest,
+    inputWidth: 10,
+    inputHeight: 10,
+    tileCore: 8,
+    padding: 2,
+  }), false);
+});
+
+test('builds a stable derived image cache key from the model identity and source URL', () => {
+  assert.equal(typeof superResolution.getSuperResolutionCacheKey, 'function');
+  assert.equal(
+    superResolution.getSuperResolutionCacheKey('https://reader.example.test/page/1?size=full', productionManifest),
+    `sr:v1:anime4k-x2:2:${'a'.repeat(64)}:https://reader.example.test/page/1?size=full`,
+  );
+});
+
+test('image cache owns explicitly stored derived image blobs', async () => {
+  assert.equal(typeof imageCache.putImage, 'function');
+  const key = `sr:test:${Date.now()}`;
+  const objectUrl = imageCache.putImage(key, new Blob(['upscaled'], { type: 'image/png' }));
+
+  assert.equal(typeof objectUrl, 'string');
+  assert.equal(await imageCache.getCachedImage(key), objectUrl);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await imageCache.deleteImageKeys(key);
+  await imageCache.clearImageCache();
+});
+
+test('reuses a cached super-resolution result without fetching or running inference', async () => {
+  let fetchCount = 0;
+  let processCount = 0;
+  let createCount = 0;
+  const result = await superResolution.processSuperResolutionImageSource('blob:original', {
+    runtime: {
+      async processBlob() {
+        processCount += 1;
+        return { blob: new Blob(['unexpected']) };
+      },
+    },
+    manifest: productionManifest,
+    cacheKey: 'sr:derived',
+    getCachedSource: async (key) => {
+      assert.equal(key, 'sr:derived');
+      return 'blob:cached-upscaled';
+    },
+    fetcher: async () => {
+      fetchCount += 1;
+      return { ok: true, async blob() { return new Blob(['original']); } };
+    },
+    createObjectURL() {
+      createCount += 1;
+      return 'blob:unexpected';
+    },
+    revokeObjectURL() {},
+  });
+
+  assert.equal(result.src, 'blob:cached-upscaled');
+  assert.equal(result.backend, 'cache');
+  assert.equal(fetchCount, 0);
+  assert.equal(processCount, 0);
+  assert.equal(createCount, 0);
+  result.dispose();
+});
+
+test('stores a new super-resolution result in the shared image cache', async () => {
+  const resultBlob = new Blob(['result'], { type: 'image/png' });
+  const writes = [];
+  const result = await superResolution.processSuperResolutionImageSource('blob:original', {
+    runtime: {
+      async processBlob() {
+        return { blob: resultBlob, width: 20, height: 30, backend: 'webgl' };
+      },
+    },
+    manifest: productionManifest,
+    cacheKey: 'sr:derived',
+    getCachedSource: async () => null,
+    cacheResult(key, blob) {
+      writes.push([key, blob]);
+      return 'blob:cached-upscaled';
+    },
+    fetcher: async () => ({ ok: true, async blob() { return new Blob(['original']); } }),
+    createObjectURL() {
+      throw new Error('cache-owned results must not create a temporary object URL');
+    },
+    revokeObjectURL() {},
+  });
+
+  assert.deepEqual(writes, [['sr:derived', resultBlob]]);
+  assert.deepEqual(result, {
+    src: 'blob:cached-upscaled',
+    width: 20,
+    height: 30,
+    backend: 'webgl',
+    dispose: result.dispose,
+  });
+  result.dispose();
+});
+
+test('shares a keep-alive visible-page inference across renderer switches', async () => {
+  let processCount = 0;
+  let finishInference;
+  let markInferenceStarted;
+  const inferenceGate = new Promise((resolve) => { finishInference = resolve; });
+  const inferenceStarted = new Promise((resolve) => { markInferenceStarted = resolve; });
+  const runtime = {
+    async processBlob() {
+      processCount += 1;
+      markInferenceStarted();
+      await inferenceGate;
+      return { blob: new Blob(['enhanced']), width: 20, height: 20, backend: 'wasm' };
+    },
+  };
+  const cache = new Map();
+  const firstAbort = new AbortController();
+  const options = {
+    runtime,
+    manifest: productionManifest,
+    cacheKey: 'shared-visible-page',
+    keepAlive: true,
+    getCachedSource: async (key) => cache.get(key) ?? null,
+    cacheResult: (key) => {
+      const source = `blob:cached-${key}`;
+      cache.set(key, source);
+      return source;
+    },
+    fetcher: async () => ({ ok: true, blob: async () => new Blob(['source']) }),
+  };
+
+  const first = superResolution.processSuperResolutionImageSource('blob:original', {
+    ...options,
+    signal: firstAbort.signal,
+  });
+  await inferenceStarted;
+  const second = superResolution.processSuperResolutionImageSource('blob:original', options);
+  await Promise.resolve();
+  assert.equal(processCount, 1);
+  firstAbort.abort();
+  finishInference();
+
+  await assert.rejects(first, { name: 'AbortError' });
+  assert.equal((await second).src, 'blob:cached-shared-visible-page');
+  assert.equal(processCount, 1);
+});
+
+test('processes an image source into a disposable super-resolution object URL', async () => {
+  assert.equal(typeof superResolution.processSuperResolutionImageSource, 'function');
+  const originalBlob = new Blob(['original'], { type: 'image/jpeg' });
+  const resultBlob = new Blob(['result'], { type: 'image/png' });
+  const controller = new AbortController();
+  const revoked = [];
+  let processOptions;
+  const result = await superResolution.processSuperResolutionImageSource('blob:original', {
+    runtime: {
+      async processBlob(blob, options) {
+        assert.equal(blob, originalBlob);
+        processOptions = options;
+        return { blob: resultBlob, width: 20, height: 30, backend: 'wasm' };
+      },
+    },
+    manifest: productionManifest,
+    signal: controller.signal,
+    fetcher: async (url, options) => {
+      assert.equal(url, 'blob:original');
+      assert.equal(options.signal, controller.signal);
+      return { ok: true, async blob() { return originalBlob; } };
+    },
+    createObjectURL(blob) {
+      assert.equal(blob, resultBlob);
+      return 'blob:upscaled';
+    },
+    revokeObjectURL(url) {
+      revoked.push(url);
+    },
+  });
+
+  assert.equal(processOptions.manifest, productionManifest);
+  assert.equal(processOptions.signal, controller.signal);
+  assert.deepEqual(result, {
+    src: 'blob:upscaled',
+    width: 20,
+    height: 30,
+    backend: 'wasm',
+    dispose: result.dispose,
+  });
+  result.dispose();
+  result.dispose();
+  assert.deepEqual(revoked, ['blob:upscaled']);
+});
+
+test('rejects an already-aborted image source before fetching or creating a URL', async () => {
+  assert.equal(typeof superResolution.processSuperResolutionImageSource, 'function');
+  const controller = new AbortController();
+  controller.abort();
+  let fetchCount = 0;
+
+  await assert.rejects(
+    superResolution.processSuperResolutionImageSource('blob:original', {
+      runtime: { async processBlob() { throw new Error('must not run'); } },
+      manifest: productionManifest,
+      signal: controller.signal,
+      fetcher: async () => {
+        fetchCount += 1;
+        return { ok: true, async blob() { return new Blob(); } };
+      },
+      createObjectURL() {
+        throw new Error('must not create URL');
+      },
+    }),
+    (error) => error?.name === 'AbortError',
+  );
+  assert.equal(fetchCount, 0);
+});
+
+test('skips animated image sources before super-resolution inference', async () => {
+  const gifFrame = [0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 1, 0, 0];
+  const animatedGif = new Blob([new Uint8Array([
+    ...Buffer.from('GIF89a'), 1, 0, 1, 0, 0, 0, 0,
+    ...gifFrame, ...gifFrame, 0x3b,
+  ])], { type: 'image/gif' });
+  let processCount = 0;
+
+  await assert.rejects(
+    superResolution.processSuperResolutionImageSource('blob:animated', {
+      runtime: {
+        async processBlob() {
+          processCount += 1;
+          throw new Error('must not run');
+        },
+      },
+      manifest: productionManifest,
+      fetcher: async () => ({ ok: true, async blob() { return animatedGif; } }),
+      createObjectURL: () => 'blob:must-not-exist',
+      revokeObjectURL() {},
+    }),
+    (error) => error?.name === 'NotSupportedError',
+  );
+  assert.equal(processCount, 0);
 });
 
 test('accepts a complete production model manifest', () => {
@@ -1349,6 +2118,12 @@ test('rejects production manifests missing required metadata', () => {
       `manifest without ${field} must be rejected`,
     );
   }
+});
+
+test('rejects Real-CUGAN manifests without a local weight payload checksum', () => {
+  const model = superResolution.getSuperResolutionModel('realcugan');
+  assert.equal(validateManifest({ ...model, weightsUrl: undefined }), false);
+  assert.equal(validateManifest({ ...model, weightsChecksum: undefined }), false);
 });
 
 test('rejects incomplete production license metadata', () => {
@@ -1389,6 +2164,15 @@ test('accepts only runtime-supported nchw and nhwc tensor layouts', () => {
   for (const layout of ['rgba8', 'NCHW', 'channels-first']) {
     assert.equal(validateManifest({ ...productionManifest, inputLayout: layout }), false);
     assert.equal(validateManifest({ ...productionManifest, outputLayout: layout }), false);
+  }
+});
+
+test('accepts only non-empty WebGL/WASM execution provider lists', () => {
+  assert.equal(validateManifest({ ...productionManifest, executionProviders: ['wasm'] }), true);
+  assert.equal(validateManifest({ ...productionManifest, executionProviders: ['webgl', 'wasm'] }), true);
+
+  for (const executionProviders of [[], ['webgpu'], ['wasm', 'wasm'], 'wasm']) {
+    assert.equal(validateManifest({ ...productionManifest, executionProviders }), false);
   }
 });
 

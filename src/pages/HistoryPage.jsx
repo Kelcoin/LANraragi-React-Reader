@@ -19,6 +19,7 @@ import { navigateToMetadata } from '../lib/navigation';
 import { removeWatchlistItem } from '../lib/watchlist';
 import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
+import { useToast } from '../components/Toast';
 
 function HeaderGlyph() {
   return <HomeSectionGlyph name="continue" size={24} color={getSectionGlyphColor('continue')} />;
@@ -94,6 +95,7 @@ function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
 }
 
 export default function HistoryPage({ onSelectArchive, onBack }) {
+  const { showToast } = useToast();
   const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [history, setHistoryState] = useState(() => getHistory());
@@ -109,7 +111,6 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   const [archiveDeleting, setArchiveDeleting] = useState(false);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
   const [archiveFailureReport, setArchiveFailureReport] = useState(null);
-  const [notice, setNotice] = useState('');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -195,13 +196,13 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     try {
       const removed = await runHistoryExistenceCheck({ force: true });
       setHistoryState(getHistory());
-      if (removed > 0) setNotice(`已清理 ${removed} 条失效记录。`);
-    } catch (error) {
-      setNotice(`清理失败：${error?.message || '未知错误'}`);
+        if (removed > 0) showToast(`已清理 ${removed} 条失效记录。`, 'success');
+      } catch (error) {
+        showToast(`清理失败：${error?.message || '未知错误'}`, 'error');
     } finally {
       setChecking(false);
     }
-  }, [checking]);
+  }, [checking, showToast]);
 
   const toggleSelection = useCallback((id, event) => {
     if (!id) return;
@@ -272,9 +273,9 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setNotice(`下载失败：${error?.message || '未知错误'}`);
+      showToast(`下载失败：${error?.message || '未知错误'}`, 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const handleCopyLink = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -283,9 +284,9 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     try {
       await navigator.clipboard.writeText(url);
     } catch {
-      setNotice(`无法自动复制，请手动复制：${url}`);
+      showToast(`无法自动复制，请手动复制：${url}`, 'info', { autoHide: false });
     }
-  }, []);
+  }, [showToast]);
 
   const handleClearArchiveProgress = useCallback(async (archive) => {
     const result = await clearConfiguredArchiveReadingProgress(archive);
@@ -327,7 +328,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         if (ehFailures.length > 0) {
           setArchiveFailureReport({ ehFailures, lrrFailures: [], message: '档案已不存在于 LANraragi，相关历史记录已清理；E-Hentai 收藏夹移除失败。' });
         } else {
-          setNotice('档案已不存在于 LANraragi，相关历史记录已清理。');
+            showToast('档案已不存在于 LANraragi，相关历史记录已清理。', 'success');
         }
       } else {
         setArchiveDeleteTarget(null);
@@ -340,7 +341,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     } finally {
       setArchiveDeleting(false);
     }
-  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting, workerReady]);
+  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting, showToast, workerReady]);
 
   return (
     <>
@@ -545,17 +546,6 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         report={archiveFailureReport}
         message={archiveFailureReport?.message}
         onClose={() => setArchiveFailureReport(null)}
-      />
-      <ConfirmDialog
-        open={!!notice}
-        title="操作提示"
-        message={notice}
-        confirmLabel="知道了"
-        showCancel={false}
-        destructive={false}
-        initialFocusSelector="[data-dialog-confirm]"
-        onConfirm={() => setNotice('')}
-        onCancel={() => setNotice('')}
       />
     </>
   );

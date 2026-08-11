@@ -9,6 +9,15 @@ import * as readerSettings from '../src/lib/readerSettings.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
+test('super-resolution display budget preserves aspect ratio', () => {
+  const size = cachePolicy.resolveBoundedImageSize(5000, 4000);
+  assert.ok(size.width * size.height <= cachePolicy.READER_OPTIMIZED_DECODE_PIXELS);
+  assert.ok(Math.abs(size.width / size.height - 1.25) < 0.001);
+  assert.equal(cachePolicy.READER_OPTIMIZED_DECODE_PIXELS, 16_000_000);
+  assert.equal(cachePolicy.READER_SUPER_RESOLUTION_DISPLAY_PIXELS, 32_000_000);
+  assert.equal(cachePolicy.SUPER_RESOLUTION_MAX_INFERENCE_PIXELS, 64_000_000);
+});
+
 test('reader preloads remote pages as blobs without decoding throwaway images', () => {
   const source = read('src/pages/Reader.jsx');
   assert.match(source, /import \{[^}]*primeImage[^}]*\} from '\.\.\/lib\/imageCache';/s);
@@ -292,7 +301,7 @@ test('paged readers retain the visible frame until the replacement spread is dec
   assert.match(reader, /getPendingSpreadRenderState\(currentSpread, displayedSpread, targetPending\)/);
   assert.match(reader, /key=\{`spread-slot:\$\{slotIndex\}`\}/);
   assert.match(reader, /const decoded = await decodeImageSource\(resolved\.src/);
-  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread, IMAGE_LOAD_PRIORITY\.CRITICAL, true\)/);
+  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread, IMAGE_LOAD_PRIORITY\.CRITICAL, true, activeSuperResolution\)/);
   assert.match(reader, /const commits = await Promise\.all/);
   assert.match(reader, /commits\.forEach\(\(commit\) =>[\s\S]{0,80}commit\(\)/);
 });
