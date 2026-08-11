@@ -2,6 +2,7 @@ import { createTilePlan } from './superResolutionTiling.js';
 
 const WEBGL_BACKEND = 'webgl';
 const WASM_BACKEND = 'wasm';
+const MODEL_CACHE_NAME = 'readoshi-super-resolution-models-v1';
 
 function createNamedError(name, message) {
   const error = new Error(message);
@@ -355,6 +356,33 @@ function getDefaultFetcher() {
   return globalThis.fetch.bind(globalThis);
 }
 
+function getDefaultCacheStorage() {
+  return typeof globalThis.caches?.open === 'function' ? globalThis.caches : null;
+}
+
+async function openModelCache(cacheStorage) {
+  if (!cacheStorage || typeof cacheStorage.open !== 'function') return null;
+  try {
+    return await cacheStorage.open(MODEL_CACHE_NAME);
+  } catch {
+    return null;
+  }
+}
+
+async function readCachedModel(cache, url) {
+  const response = await cache.match(url);
+  if (!response) return null;
+  if (response.ok === false || typeof response.arrayBuffer !== 'function') {
+    throw createNamedError('CacheError', 'Cached model response is unreadable');
+  }
+  return response.arrayBuffer();
+}
+
+async function writeCachedModel(cache, url, bytes) {
+  if (typeof globalThis.Response !== 'function') return;
+  await cache.put(url, new globalThis.Response(bytes.slice(0)));
+}
+
 function describeSessionAttempt(backend, error) {
   const label = backend === WEBGL_BACKEND ? 'WebGL' : 'WASM';
   if (error) return `${label} session failed: ${toErrorDetails(error).message}`;
@@ -365,6 +393,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
   const fetcher = dependencies.fetcher ?? getDefaultFetcher();
   const digest = dependencies.digest ?? digestWithWebCrypto;
   const sessionFactory = dependencies.sessionFactory ?? createProductionSession;
+  const cacheStorage = dependencies.cacheStorage ?? getDefaultCacheStorage();
   const decodeImage = dependencies.decodeImage ?? decodeImageBlob;
   const encodeImage = dependencies.encodeImage ?? encodeImageBlob;
   const tensorFactory = dependencies.tensorFactory ?? createProductionTensor;
@@ -395,9 +424,39 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
     const initGeneration = ++generation;
     validateInitManifest(manifest);
 
-    const modelBytes = await fetchModel(fetcher, manifest.url);
-    const actualDigest = await digest(modelBytes);
-    validateDigest(manifest, actualDigest);
+    let cache = await openModelCache(cacheStorage);
+    let modelBytes;
+    if (cache) {
+      try {
+        const cachedBytes = await readCachedModel(cache, manifest.url);
+        if (cachedBytes) {
+          try {
+            validateDigest(manifest, await digest(cachedBytes));
+            modelBytes = cachedBytes;
+          } catch {
+            try {
+              await cache.delete(manifest.url);
+            } catch {
+              // Cache failures must not block a verified network fallback.
+            }
+          }
+        }
+      } catch {
+        cache = null;
+      }
+    }
+
+    if (!modelBytes) {
+      modelBytes = await fetchModel(fetcher, manifest.url);
+      validateDigest(manifest, await digest(modelBytes));
+      if (cache) {
+        try {
+          await writeCachedModel(cache, manifest.url, modelBytes);
+        } catch {
+          // Inference can proceed even when persistent model caching is unavailable.
+        }
+      }
+    }
 
     let nextSession;
     let selectedBackend = WEBGL_BACKEND;

@@ -151,6 +151,32 @@ function createWorkerDependencies(overrides = {}) {
   };
 }
 
+function createMemoryCacheStorage(initialEntries = []) {
+  const entries = new Map(initialEntries.map(([url, bytes]) => [
+    url,
+    new Uint8Array(bytes).slice().buffer,
+  ]));
+  return {
+    entries,
+    cacheStorage: {
+      async open() {
+        return {
+          async match(url) {
+            const bytes = entries.get(url);
+            return bytes ? new Response(bytes) : undefined;
+          },
+          async put(url, response) {
+            entries.set(url, await response.arrayBuffer());
+          },
+          async delete(url) {
+            return entries.delete(url);
+          },
+        };
+      },
+    },
+  };
+}
+
 test('exports a testable Worker session handler factory', async () => {
   const factory = await loadWorkerHandlerFactory();
   assert.equal(typeof factory, 'function');
@@ -177,6 +203,137 @@ test('initializes verified model bytes with WebGL and reports the actual backend
   assert.equal(fixture.calls.session.length, 1);
   assert.equal(fixture.calls.session[0].backend, 'webgl');
   assert.deepEqual(Array.from(new Uint8Array(fixture.calls.session[0].bytes)), [1, 2, 3, 4]);
+});
+
+test('reuses cached model bytes only after validating them against the manifest checksum', async () => {
+  const cachedBytes = new Uint8Array([7, 8, 9]).buffer;
+  const cache = createMemoryCacheStorage([[workerManifest.url, cachedBytes]]);
+  const fixture = createWorkerDependencies({ cacheStorage: cache.cacheStorage });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-cache-hit',
+    manifest: workerManifest,
+  });
+
+  assert.equal(response.type, 'ready', response.error?.message);
+  assert.deepEqual(fixture.calls.fetch, []);
+  assert.deepEqual(Array.from(new Uint8Array(fixture.calls.session[0].bytes)), [7, 8, 9]);
+  assert.equal(fixture.calls.digest.length, 1);
+});
+
+test('evicts corrupt cached model bytes, refetches, and stores only the verified response', async () => {
+  const cache = createMemoryCacheStorage([[
+    workerManifest.url,
+    new Uint8Array([9, 9, 9]).buffer,
+  ]]);
+  const fixture = createWorkerDependencies({
+    cacheStorage: cache.cacheStorage,
+    digest: async (bytes) => (
+      new Uint8Array(bytes)[0] === 9 ? 'b'.repeat(64) : workerManifest.checksum.digest
+    ),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+
+  const response = await handler.handleMessage({
+    type: 'init',
+    requestId: 'init-stale-cache',
+    manifest: workerManifest,
+  });
+
+  assert.equal(response.type, 'ready', response.error?.message);
+  assert.deepEqual(fixture.calls.fetch, [workerManifest.url]);
+  assert.deepEqual(
+    Array.from(new Uint8Array(cache.entries.get(workerManifest.url))),
+    [1, 2, 3, 4],
+  );
+});
+
+test('falls back to direct fetch when Cache Storage reads or writes fail', async () => {
+  let failedReadCount = 0;
+  const readFixture = createWorkerDependencies({
+    cacheStorage: {
+      async open() {
+        return {
+          async match() {
+            failedReadCount += 1;
+            throw new Error('cache read failed');
+          },
+          async put() {},
+          async delete() {},
+        };
+      },
+    },
+  });
+  const readHandler = await createWorkerHandler(readFixture.dependencies);
+  const readResponse = await readHandler.handleMessage({
+    type: 'init',
+    requestId: 'init-cache-read-failure',
+    manifest: workerManifest,
+  });
+
+  let failedWriteCount = 0;
+  const writeFixture = createWorkerDependencies({
+    cacheStorage: {
+      async open() {
+        return {
+          async match() {
+            return undefined;
+          },
+          async put() {
+            failedWriteCount += 1;
+            throw new Error('cache write failed');
+          },
+          async delete() {},
+        };
+      },
+    },
+  });
+  const writeHandler = await createWorkerHandler(writeFixture.dependencies);
+  const writeResponse = await writeHandler.handleMessage({
+    type: 'init',
+    requestId: 'init-cache-write-failure',
+    manifest: workerManifest,
+  });
+
+  assert.equal(readResponse.type, 'ready', readResponse.error?.message);
+  assert.equal(writeResponse.type, 'ready', writeResponse.error?.message);
+  assert.equal(failedReadCount, 1);
+  assert.equal(failedWriteCount, 1);
+  assert.deepEqual(readFixture.calls.fetch, [workerManifest.url]);
+  assert.deepEqual(writeFixture.calls.fetch, [workerManifest.url]);
+});
+
+test('does not cache fetched bytes that fail HTTP or checksum validation', async () => {
+  const checksumCache = createMemoryCacheStorage();
+  const checksumFixture = createWorkerDependencies({
+    cacheStorage: checksumCache.cacheStorage,
+    digest: async () => 'b'.repeat(64),
+  });
+  const checksumHandler = await createWorkerHandler(checksumFixture.dependencies);
+  const checksumResponse = await checksumHandler.handleMessage({
+    type: 'init',
+    requestId: 'init-uncached-checksum-failure',
+    manifest: workerManifest,
+  });
+
+  const httpCache = createMemoryCacheStorage();
+  const httpFixture = createWorkerDependencies({
+    cacheStorage: httpCache.cacheStorage,
+    fetcher: async () => ({ ok: false, status: 503 }),
+  });
+  const httpHandler = await createWorkerHandler(httpFixture.dependencies);
+  const httpResponse = await httpHandler.handleMessage({
+    type: 'init',
+    requestId: 'init-uncached-http-failure',
+    manifest: workerManifest,
+  });
+
+  assert.equal(checksumResponse.error?.name, 'ChecksumError');
+  assert.equal(httpResponse.error?.name, 'FetchError');
+  assert.equal(checksumCache.entries.has(workerManifest.url), false);
+  assert.equal(httpCache.entries.has(workerManifest.url), false);
 });
 
 test('falls back to WASM only after a real WebGL session initialization failure', async () => {
