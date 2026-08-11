@@ -593,6 +593,303 @@ test('returns structured protocol errors for unknown messages', async () => {
   assert.match(response.error.message, /unknown message type/i);
 });
 
+test('processes an RGBA blob through an NCHW session and preserves nearest alpha', async () => {
+  const encoded = [];
+  let decodedCloseCount = 0;
+  let inputDisposeCount = 0;
+  let outputDisposeCount = 0;
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run(feeds) {
+      assert.deepEqual(feeds.input.dims, [1, 3, 1, 1]);
+      assert.equal(feeds.input.data[0], 1);
+      assert.ok(Math.abs(feeds.input.data[1] - 128 / 255) < 1e-6);
+      assert.equal(feeds.input.data[2], 0);
+      return {
+        output: {
+          dims: [1, 3, 2, 2],
+          data: new Float32Array([
+            1, 1, 1, 1,
+            128 / 255, 128 / 255, 128 / 255, 128 / 255,
+            0, 0, 0, 0,
+          ]),
+          dispose() {
+            outputDisposeCount += 1;
+          },
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 1,
+      height: 1,
+      pixels: new Uint8ClampedArray([255, 128, 0, 64]),
+      close() {
+        decodedCloseCount += 1;
+      },
+    }),
+    tensorFactory(data, dims) {
+      return {
+        data,
+        dims,
+        dispose() {
+          inputDisposeCount += 1;
+        },
+      };
+    },
+    encodeImage: async (image) => {
+      encoded.push(image);
+      return new Blob(['upscaled'], { type: 'image/png' });
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-nchw-process', manifest });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-nchw',
+    blob: new Blob(['source'], { type: 'image/png' }),
+    manifest,
+  });
+
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.equal(response.requestId, 'process-nchw');
+  assert.equal(response.width, 2);
+  assert.equal(response.height, 2);
+  assert.equal(response.backend, 'webgl');
+  assert.equal(response.blob.type, 'image/png');
+  assert.deepEqual(Array.from(encoded[0].pixels), [
+    255, 128, 0, 64,
+    255, 128, 0, 64,
+    255, 128, 0, 64,
+    255, 128, 0, 64,
+  ]);
+  assert.equal(decodedCloseCount, 1);
+  assert.equal(inputDisposeCount, 1);
+  assert.equal(outputDisposeCount, 1);
+});
+
+test('replicate-pads NHWC tiles, stitches cropped cores, and scales alpha', async () => {
+  const inputRows = [];
+  let runCount = 0;
+  let encoded;
+  const session = {
+    inputNames: ['image'],
+    outputNames: ['upscaled'],
+    async run(feeds) {
+      runCount += 1;
+      inputRows.push(Array.from(feeds.image.data.slice(0, 9)));
+      const color = runCount === 1 ? [1, 0, 0] : [0, 1, 0];
+      const data = new Float32Array(6 * 6 * 3);
+      for (let index = 0; index < 6 * 6; index += 1) data.set(color, index * 3);
+      return { upscaled: { dims: [1, 6, 6, 3], data } };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 2,
+      height: 1,
+      pixels: new Uint8ClampedArray([
+        255, 0, 0, 10,
+        0, 255, 0, 20,
+      ]),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async (image) => {
+      encoded = image;
+      return new Blob(['nhwc'], { type: 'image/png' });
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = {
+    ...workerManifest,
+    inputLayout: 'nhwc',
+    outputLayout: 'nhwc',
+    tileCore: 1,
+    padding: 1,
+  };
+  await handler.handleMessage({ type: 'init', requestId: 'init-nhwc-tiles', manifest });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-nhwc-tiles',
+    blob: new Blob(['source']),
+    manifest,
+  });
+
+  assert.equal(response.type, 'result');
+  assert.equal(runCount, 2);
+  assert.deepEqual(inputRows[0], [1, 0, 0, 1, 0, 0, 0, 1, 0]);
+  assert.deepEqual(inputRows[1], [1, 0, 0, 0, 1, 0, 0, 1, 0]);
+  assert.deepEqual(Array.from(encoded.pixels), [
+    255, 0, 0, 10,
+    255, 0, 0, 10,
+    0, 255, 0, 20,
+    0, 255, 0, 20,
+    255, 0, 0, 10,
+    255, 0, 0, 10,
+    0, 255, 0, 20,
+    0, 255, 0, 20,
+  ]);
+});
+
+test('rejects invalid model output dimensions and closes decoded resources', async () => {
+  let decodedCloseCount = 0;
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run() {
+      return { output: { dims: [1, 3, 1, 1], data: new Float32Array(3) } };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 1,
+      height: 1,
+      pixels: new Uint8ClampedArray([1, 2, 3, 4]),
+      close() {
+        decodedCloseCount += 1;
+      },
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => new Blob(),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-bad-shape', manifest });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-bad-shape',
+    blob: new Blob(['source']),
+    manifest,
+  });
+
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'TensorShapeError');
+  assert.equal(decodedCloseCount, 1);
+});
+
+test('cancels between tiles and discards a result returned by an active session run', async () => {
+  const runStarted = createDeferred();
+  const runGate = createDeferred();
+  let runCount = 0;
+  let encodeCount = 0;
+  let outputDisposeCount = 0;
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run() {
+      runCount += 1;
+      runStarted.resolve();
+      await runGate.promise;
+      return {
+        output: {
+          dims: [1, 3, 2, 2],
+          data: new Float32Array(12),
+          dispose() {
+            outputDisposeCount += 1;
+          },
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 2,
+      height: 1,
+      pixels: new Uint8ClampedArray(8),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => {
+      encodeCount += 1;
+      return new Blob();
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-active-cancel', manifest });
+
+  const processPromise = handler.handleMessage({
+    type: 'process',
+    requestId: 'active-cancel',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  await runStarted.promise;
+  await handler.handleMessage({ type: 'cancel', requestId: 'active-cancel' });
+  runGate.resolve();
+
+  const response = await processPromise;
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'AbortError');
+  assert.equal(runCount, 1);
+  assert.equal(encodeCount, 0);
+  assert.equal(outputDisposeCount, 1);
+});
+
+test('discards a cancelled result that finishes encoding after the request becomes stale', async () => {
+  const encodeStarted = createDeferred();
+  const encodeGate = createDeferred();
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run() {
+      return {
+        output: {
+          dims: [1, 3, 2, 2],
+          data: new Float32Array(12),
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 1,
+      height: 1,
+      pixels: new Uint8ClampedArray(4),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => {
+      encodeStarted.resolve();
+      await encodeGate.promise;
+      return new Blob(['late']);
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-encode-cancel', manifest });
+  const processPromise = handler.handleMessage({
+    type: 'process',
+    requestId: 'encode-cancel',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  await encodeStarted.promise;
+  await handler.handleMessage({ type: 'cancel', requestId: 'encode-cancel' });
+  encodeGate.resolve();
+
+  const response = await processPromise;
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'AbortError');
+});
+
 test('runtime forwards init, pixel processing, cancellation, and disposal messages', async () => {
   assert.equal(typeof superResolution.createSuperResolutionRuntime, 'function');
   const harness = createWorkerHarness();
@@ -657,6 +954,55 @@ test('runtime forwards init, pixel processing, cancellation, and disposal messag
 
   runtime.dispose();
   assert.equal(harness.terminated, true);
+});
+
+test('runtime forwards blobs and maps AbortSignal to worker cancellation', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+  const blob = new Blob(['source'], { type: 'image/png' });
+
+  const processPromise = runtime.processBlob(blob, {
+    manifest: productionManifest,
+    requestId: 'blob-result',
+  });
+  assert.deepEqual(harness.messages[0].message, {
+    type: 'process',
+    requestId: 'blob-result',
+    blob,
+    manifest: productionManifest,
+  });
+  const resultBlob = new Blob(['result'], { type: 'image/png' });
+  harness.emit({
+    type: 'result',
+    requestId: 'blob-result',
+    blob: resultBlob,
+    width: 2,
+    height: 2,
+    backend: 'wasm',
+  });
+  assert.deepEqual(await processPromise, {
+    requestId: 'blob-result',
+    blob: resultBlob,
+    width: 2,
+    height: 2,
+    backend: 'wasm',
+  });
+
+  const controller = new AbortController();
+  const cancelledPromise = runtime.processBlob(blob, {
+    manifest: productionManifest,
+    requestId: 'blob-cancel',
+    signal: controller.signal,
+  });
+  controller.abort();
+  assert.deepEqual(harness.messages[2].message, {
+    type: 'cancel',
+    requestId: 'blob-cancel',
+  });
+  await assert.rejects(cancelledPromise, (error) => error?.name === 'AbortError');
+  runtime.dispose();
 });
 
 test('dispose rejects all pending requests and terminates the worker', async () => {

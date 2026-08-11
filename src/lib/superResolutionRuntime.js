@@ -53,7 +53,24 @@ function rejectAllPending(pending, error) {
   for (const request of requests) request.reject(error);
 }
 
-export function createSuperResolutionRuntime({ workerFactory, manifestValidator } = {}) {
+function createProductionWorker() {
+  if (typeof globalThis.Worker !== 'function') {
+    throw new TypeError('Worker is unavailable in this browser');
+  }
+  return new globalThis.Worker(new URL('./superResolution.worker.js', import.meta.url), {
+    type: 'module',
+  });
+}
+
+function isBlobLike(value) {
+  return (typeof globalThis.Blob === 'function' && value instanceof globalThis.Blob)
+    || Boolean(value && typeof value.arrayBuffer === 'function');
+}
+
+export function createSuperResolutionRuntime({
+  workerFactory = createProductionWorker,
+  manifestValidator,
+} = {}) {
   if (typeof workerFactory !== 'function') {
     throw new TypeError('workerFactory must be a function');
   }
@@ -152,6 +169,25 @@ export function createSuperResolutionRuntime({ workerFactory, manifestValidator 
     );
   }
 
+  function processBlob(blob, options = {}) {
+    const { manifest, requestId, signal } = options ?? {};
+    if (!isBlobLike(blob)) {
+      return Promise.reject(new TypeError('blob must be a Blob'));
+    }
+    if (!manifestValidator(manifest)) {
+      return Promise.reject(new TypeError('Invalid super-resolution manifest'));
+    }
+    const id = requestId ?? createRequestId();
+    if (signal?.aborted) return Promise.reject(createAbortError());
+
+    const promise = postRequest('process', { requestId: id, blob, manifest });
+    if (!signal || typeof signal.addEventListener !== 'function') return promise;
+
+    const handleAbort = () => cancel(id);
+    signal.addEventListener('abort', handleAbort, { once: true });
+    return promise.finally(() => signal.removeEventListener?.('abort', handleAbort));
+  }
+
   function cancel(requestId) {
     if (disposed) return;
     const request = pending.get(requestId);
@@ -181,6 +217,7 @@ export function createSuperResolutionRuntime({ workerFactory, manifestValidator 
   return {
     init,
     processPixels,
+    processBlob,
     cancel,
     dispose,
   };
