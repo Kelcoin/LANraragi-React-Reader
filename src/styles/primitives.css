@@ -1,0 +1,152 @@
+@layer primitives {
+  .btn {
+    min-height: 38px;
+    border-radius: var(--radius-sm);
+    transition:
+      color var(--motion-base) var(--motion-curve),
+      background-color var(--motion-base) var(--motion-curve),
+      border-color var(--motion-base) var(--motion-curve),
+      box-shadow var(--motion-base) var(--motion-curve),
+      transform var(--motion-fast) var(--motion-curve);
+  }
+
+  .btn-primary {
+    --button-bg: var(--accent);
+    --button-hover-bg: var(--accent-strong);
+    --glass-border: var(--accent);
+    --text-main: var(--accent-contrast);
+  }
+
+  .btn-secondary {
+    --button-bg: var(--surface);
+    --button-hover-bg: var(--surface-subtle);
+    --glass-border: var(--border-strong);
+  }
+
+  .btn-quiet {
+    --button-bg: transparent;
+    --button-hover-bg: var(--surface-subtle);
+    --glass-border: transparent;
+  }
+
+  .btn-danger {
+    --button-bg: var(--danger-soft);
+    --button-hover-bg: var(--danger);
+    --glass-border: var(--danger);
+    --text-main: var(--danger);
+  }
+
+  .btn-icon {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+  }
+
+  .field {
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 11px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-primary);
+    transition:
+      background-color var(--motion-base) var(--motion-curve),
+      border-color var(--motion-base) var(--motion-curve),
+      box-shadow var(--motion-base) var(--motion-curve);
+  }
+
+  .field:hover:not(:disabled) { border-color: var(--border-strong); }
+  .field:focus { border-color: var(--accent); }
+  .field.is-error,
+  .field[aria-invalid="true"] { border-color: var(--danger); }
+
+  .surface {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+
+  .toolbar {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .tag {
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 7px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xs);
+    background: var(--surface-subtle);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .feedback-info,
+  .feedback-success,
+  .feedback-warning,
+  .feedback-error {
+    padding: 10px 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-subtle);
+    color: var(--text-primary);
+  }
+
+  .feedback-success { border-color: var(--positive); background: var(--positive-soft); }
+  .feedback-warning { border-color: var(--warning); background: var(--warning-soft); }
+  .feedback-error { border-color: var(--danger); background: var(--danger-soft); }
+}
+
+/* Compatibility rules remain unlayered until legacy index.css is retired. */
+.btn,
+.input-glass,
+.toggle-switch-track,
+.toast-card,
+.metadata-tag {
+  border-radius: var(--radius-sm);
+  transition-timing-function: cubic-bezier(.32, .72, 0, 1);
+}
+
+.btn { min-height: 38px; }
+.input-glass { min-height: 38px; }
+.glass-panel { border-radius: var(--radius-md); box-shadow: none; }
+
+.toggle-switch-track.is-disabled,
+.toggle-switch-track:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.toggle-switch-track.is-checked .toggle-switch-thumb { box-shadow: none; }
+
+.toast-card { box-shadow: 0 12px 30px rgba(0, 0, 0, .18); }
+.toast-close,
+.metadata-tag-delete { display: inline-grid; place-items: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .field,
+  .surface,
+  .toolbar,
+  .tag,
+  .toggle-switch-track,
+  .toggle-switch-thumb,
+  .toast-card,
+  .toast-progress {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

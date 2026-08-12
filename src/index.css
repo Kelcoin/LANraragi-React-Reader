@@ -1,6 +1,7 @@
 @layer reset, tokens, base, primitives, components, pages, utilities;
 @import url('./styles/tokens.css');
 @import url('./styles/base.css');
+@import url('./styles/primitives.css');
 
 :root,
 :root[data-theme="dark"] {

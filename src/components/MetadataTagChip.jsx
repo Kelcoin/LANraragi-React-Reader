@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { metadataTagFontScale, metadataTagReservedWidth } from '../lib/metadataTagLayout';
+import { ToolbarGlyph } from './AppGlyphs';
 
 const CHIP_CHROME_WIDTH = 57;
 
@@ -74,7 +75,7 @@ export default function MetadataTagChip({ tag, translatedTag, revealed, onMeasur
             <span className="metadata-tag-label metadata-tag-label-original">{tag}</span>
           </span>
         </button>
-        <button type="button" className="metadata-tag-delete" aria-label={`删除 ${tag}`} title="删除标签" onClick={onDelete}>×</button>
+        <button type="button" className="metadata-tag-delete" aria-label={`删除 ${tag}`} title="删除标签" onClick={onDelete}><ToolbarGlyph name="close" size={13} /></button>
         <span ref={translatedMeasureRef} className="metadata-tag-measure" aria-hidden="true">{translatedTag}</span>
         <span ref={originalMeasureRef} className="metadata-tag-measure" aria-hidden="true">{tag}</span>
       </span>

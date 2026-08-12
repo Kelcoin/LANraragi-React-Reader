@@ -52,3 +52,28 @@ test('default and custom dark themes use warm archive atelier semantics', () => 
   assert.equal(tokens['--reader-stage'], '#050505');
   assert.equal(tokens['--reader-stage-bg'], '#050505');
 });
+
+test('shared primitives expose complete compact control and surface states', () => {
+  const css = read('src/styles/primitives.css');
+  for (const variant of ['primary', 'secondary', 'quiet', 'danger', 'icon']) {
+    assert.match(css, new RegExp(`\\.btn-${variant}\\s*\\{`));
+  }
+  assert.match(css, /\.btn\s*\{[^}]*min-height:\s*38px;[^}]*border-radius:\s*var\(--radius-sm\)/s);
+  assert.match(css, /\.btn-icon\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/s);
+  assert.match(css, /\.field\.is-error[^}]*border-color:\s*var\(--danger\)/s);
+  assert.match(css, /\.surface\s*\{[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*none/s);
+  assert.match(css, /cubic-bezier\(\.32,\s*\.72,\s*0,\s*1\)/);
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*animation-duration:\s*0\.01ms/s);
+});
+
+test('shared component visuals use state classes and project close glyphs', () => {
+  const toggle = read('src/components/ToggleSwitch.jsx');
+  const toast = read('src/components/Toast.jsx');
+  const metadataTag = read('src/components/MetadataTagChip.jsx');
+  assert.match(toggle, /is-disabled/);
+  assert.doesNotMatch(toggle, /style=\{\{/);
+  assert.match(toast, /ToolbarGlyph[^\n]*name="close"/);
+  assert.doesNotMatch(toast, />×<\/button>/);
+  assert.match(metadataTag, /ToolbarGlyph[^\n]*name="close"/);
+  assert.doesNotMatch(metadataTag, />×<\/button>/);
+});

@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ToolbarGlyph } from './AppGlyphs';
 
 const TOAST_DURATION_MS = 3600;
 const TOAST_ERROR_DURATION_MS = 7000;
@@ -62,7 +63,7 @@ export function ToastProvider({ children }) {
           >
             <span className="toast-icon" aria-hidden="true">{toast.type === 'success' ? '✓' : toast.type === 'error' ? '!' : 'i'}</span>
             <span className="toast-text">{toast.text}</span>
-            <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => closeToast(toast.id)}>×</button>
+            <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => closeToast(toast.id)}><ToolbarGlyph name="close" size={15} /></button>
             {toast.autoHide && <span className="toast-progress" aria-hidden="true" />}
           </div>
         ))}
