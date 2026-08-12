@@ -226,8 +226,8 @@ test('history and watchlist narrow actions fill wrapped rows and use shared summ
   const css = read('src/index.css');
   const narrowCss = css.slice(css.lastIndexOf('@media (max-width: 600px)'), css.indexOf('@media (hover: none)'));
 
-  assert.match(history, /className="history-page"/);
-  assert.match(watchlist, /className="history-page watchlist-page"/);
+  assert.match(history, /className="history-page page-workspace"/);
+  assert.match(watchlist, /className="history-page watchlist-page page-workspace"/);
   assert.match(narrowCss, /\.history-page-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
   assert.match(narrowCss, /\.history-page-actions\s*\{[\s\S]*?justify-content:\s*flex-start;/);
   assert.match(narrowCss, /\.history-page-actions \.btn\s*\{[\s\S]*?flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);/);
@@ -930,24 +930,24 @@ test('history page header has ordered narrow-screen layout hooks', () => {
   const history = read('src/pages/HistoryPage.jsx');
   const watchlist = read('src/pages/WatchlistPage.jsx');
 
-  assert.match(history, /className="history-page"/);
-  assert.match(history, /className="history-page-header"/);
+  assert.match(history, /className="history-page page-workspace"/);
+  assert.match(history, /className="history-page-header page-header"/);
   assert.match(history, /className="history-page-title-block"/);
   assert.match(history, /className="history-page-title-row"/);
-  assert.match(history, /className="history-section-header"/);
+  assert.match(history, /className="history-section-header archive-toolbar"/);
   assert.match(history, /className="history-section-actions"/);
   assert.match(history, /className="history-section-toolbar"/);
   assert.doesNotMatch(history, /className="history-hide-read-toggle"/);
   assert.doesNotMatch(history, /handleToggleHideRead|setHideRead\(/);
   assert.match(history, /className="history-summary-part"/);
   assert.match(history, /className="history-page-actions"/);
-  assert.ok(history.indexOf('className="history-page-title"') < history.indexOf('className="history-page-summary"'));
+  assert.ok(history.indexOf('className="history-page-title"') < history.indexOf('className="history-page-summary page-summary"'));
   assert.ok(history.indexOf('className="history-section-actions"') < history.indexOf('className="history-section-toolbar"'));
   assert.ok(history.indexOf('className="history-section-toolbar"') < history.indexOf('<ArchiveSearchBox'));
-  assert.match(watchlist, /className="history-page watchlist-page"/);
+  assert.match(watchlist, /className="history-page watchlist-page page-workspace"/);
   assert.match(watchlist, /className="history-page-title-row"/);
   assert.match(watchlist, /className="history-page-actions"/);
-  assert.match(watchlist, /className="history-section-header"/);
+  assert.match(watchlist, /className="history-section-header archive-toolbar"/);
   assert.match(watchlist, /className="history-section-actions"/);
   assert.match(css, /\.history-page-header\s*\{/);
   assert.match(css, /\.history-page-actions\s*\{/);

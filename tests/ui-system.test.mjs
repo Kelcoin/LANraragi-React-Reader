@@ -105,3 +105,36 @@ test('overlay components delegate focus and dismissal behavior to Base UI', () =
   assert.match(components.DedupeArchiveContextMenu, /onViewThumbnails/);
   assert.match(components.SettingHint, /className = 'settings-row-title'/);
 });
+
+test('archive browsing pages share unframed bands and bounded workspaces', () => {
+  const pages = read('src/styles/pages.css');
+  const index = read('src/index.css');
+  const home = read('src/pages/Home.jsx');
+  const history = read('src/pages/HistoryPage.jsx');
+  const watchlist = read('src/pages/WatchlistPage.jsx');
+
+  assert.match(index, /@import url\('\.\/styles\/pages\.css'\);/);
+  assert.match(home, /className="content-band section-reveal/);
+  assert.match(home, /className="glass-panel archive-workspace section-reveal/);
+  assert.match(history, /history-page page-workspace/);
+  assert.match(watchlist, /history-page watchlist-page page-workspace/);
+  for (const source of [history, watchlist]) {
+    assert.match(source, /page-header/);
+    assert.match(source, /page-summary/);
+    assert.match(source, /archive-workspace/);
+    assert.match(source, /archive-toolbar/);
+  }
+  assert.match(pages, /\.content-band\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;[^}]*box-shadow:\s*none/s);
+  assert.match(pages, /\.archive-workspace\s*\{[^}]*background:\s*var\(--surface\);[^}]*border:\s*1px solid var\(--border-subtle\)/s);
+});
+
+test('archive cards use quiet covers and moss progress at every viewport', () => {
+  const pages = read('src/styles/pages.css');
+  assert.match(pages, /\.archive-card-shell\s*\{[^}]*border-radius:\s*var\(--radius-md\);[^}]*box-shadow:\s*none/s);
+  assert.match(pages, /\.archive-cover-frame\s*\{[^}]*border-radius:\s*var\(--radius-md\)/s);
+  assert.match(pages, /\.archive-card-progress\s*\{[^}]*height:\s*[23]px/s);
+  assert.match(pages, /\.archive-card-progress-fill\s*\{[^}]*background:\s*var\(--positive\)/s);
+  assert.match(pages, /\.archive-card-shell:hover\s*\{[^}]*transform:\s*translateY\(-2px\)/s);
+  assert.match(pages, /\.watchlist-card[^}]*\.archive-card-shell\s*\{[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*none/s);
+  assert.match(pages, /@media \(max-width:\s*390px\)[\s\S]*min-width:\s*0;[\s\S]*flex-wrap:\s*wrap/s);
+});

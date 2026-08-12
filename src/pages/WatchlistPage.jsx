@@ -237,15 +237,15 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
 
   return (
     <>
-      <div className="history-page watchlist-page" style={{ padding: isNarrow ? '16px 10px' : '24px 20px' }}>
-        <div className="history-page-header">
+      <div className="history-page watchlist-page page-workspace">
+        <div className="history-page-header page-header">
           <div className="history-page-title-block">
             <div className="history-page-title-row">
               <h1 className="history-page-title">
                 <HeaderGlyph />
                 待看档案
               </h1>
-              <div className="history-page-summary">
+              <div className="history-page-summary page-summary">
                 <span className="history-summary-part">共 {items.length} 个档案</span>
                 {query.trim() && <span className="history-summary-part">当前显示 {filteredItems.length} 个</span>}
               </div>
@@ -266,8 +266,8 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
           </div>
         </div>
 
-        <section className="glass-panel section-reveal section-reveal-delay-1" style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}>
-          <div className="history-section-header">
+        <section className="glass-panel archive-workspace section-reveal section-reveal-delay-1">
+          <div className="history-section-header archive-toolbar">
             <div className="history-section-title">
               <HeaderGlyph />
               <span>全部待看</span>

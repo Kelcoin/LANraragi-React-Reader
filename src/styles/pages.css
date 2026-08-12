@@ -1,0 +1,179 @@
+/* Unlayered compatibility rules intentionally outrank legacy index.css while
+   page styles are migrated out of that file. */
+  .page-workspace {
+    width: min(100%, 1680px);
+    min-width: 0;
+    margin-inline: auto;
+    padding: 24px 20px;
+  }
+
+  .page-header {
+    min-width: 0;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .page-summary {
+    border-radius: var(--radius-xs);
+    background: transparent;
+  }
+
+  .content-band {
+    min-width: 0;
+    margin-bottom: 32px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .content-band .home-carousel-header {
+    padding-inline: 0;
+    border-color: var(--border-subtle);
+  }
+
+  .content-band > :not(.home-carousel-header) {
+    margin-inline: -20px;
+  }
+
+  .archive-workspace {
+    min-width: 0;
+    padding: 22px 24px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+
+  .archive-toolbar {
+    min-width: 0;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .archive-search-input-wrap > .input-glass {
+    width: 100%;
+    padding: 10px 38px 10px 12px;
+    box-sizing: border-box;
+    font-size: 14px;
+  }
+
+  .archive-search-input-wrap > .input-glass[data-has-query="true"] {
+    padding-right: 66px;
+  }
+
+  .archive-search-input-wrap > .input-clear-btn:not(.archive-search-preset-toggle) {
+    position: absolute;
+    top: 0;
+    right: 36px;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  :root .archive-card-shell {
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    border-color: var(--border-subtle);
+    box-shadow: none;
+    transition:
+      transform var(--motion-base) var(--motion-curve),
+      border-color var(--motion-base) var(--motion-curve),
+      background-color var(--motion-base) var(--motion-curve);
+  }
+
+  :root .archive-card-shell:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: none;
+  }
+
+  :root .archive-cover-frame {
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    border-color: var(--border-subtle);
+    box-shadow: none;
+  }
+
+  :root .archive-card-progress {
+    height: 3px;
+    border: 0;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    background: var(--surface-inset);
+  }
+
+  .archive-card-progress-fill {
+    background: var(--positive);
+  }
+
+  .reader-archive-progress-fill {
+    background: var(--positive);
+  }
+
+  :root .watchlist-card .archive-card-shell,
+  :root .watchlist-card:not(.watchlist-card-plain) .archive-card-shell {
+    background: var(--surface);
+    border-color: color-mix(in srgb, var(--positive) 58%, var(--border-subtle));
+    box-shadow: none;
+  }
+
+  :root .watchlist-card:not(.watchlist-card-plain):hover .archive-card-shell {
+    border-color: var(--positive);
+    box-shadow: none;
+  }
+
+  .archive-card-compact {
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    box-shadow: none;
+  }
+
+  .archive-grid,
+  .archive-toolbar-primary,
+  .archive-toolbar-actions,
+  .archive-search-row {
+    min-width: 0;
+  }
+
+  @media (max-width: 720px) {
+    .page-workspace { padding: 16px 10px; }
+    .archive-workspace { padding: 18px 12px; }
+    .content-band > :not(.home-carousel-header) { margin-inline: -10px; }
+  }
+
+  @media (max-width: 390px) {
+    .page-workspace,
+    .page-header,
+    .archive-workspace,
+    .archive-toolbar,
+    .archive-toolbar-primary,
+    .archive-toolbar-actions,
+    .archive-search-row {
+      min-width: 0;
+    }
+
+    .page-header,
+    .archive-toolbar,
+    .archive-toolbar-primary,
+    .archive-toolbar-actions,
+    .archive-search-row {
+      flex-wrap: wrap;
+    }
+
+    .archive-toolbar-actions,
+    .history-page-actions,
+    .history-section-actions {
+      width: 100%;
+    }
+
+    .archive-search-submit { flex: 1 0 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root .archive-card-shell { transition: none; }
+    :root .archive-card-shell:hover { transform: none; }
+  }

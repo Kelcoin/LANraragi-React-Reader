@@ -345,15 +345,15 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
 
   return (
     <>
-      <div className="history-page" style={{ padding: isNarrow ? '16px 10px' : '24px 20px' }}>
-        <div className="history-page-header">
+      <div className="history-page page-workspace">
+        <div className="history-page-header page-header">
           <div className="history-page-title-block">
             <div className="history-page-title-row">
               <h1 className="history-page-title">
                 <HeaderGlyph />
                 阅读历史
               </h1>
-              <div className="history-page-summary">
+              <div className="history-page-summary page-summary">
                 <span className="history-summary-part">共 {history.length} 条记录</span>
                 {hideRead && <span className="history-summary-part">当前显示 {filteredHistory.length} 条</span>}
                 {query.trim() && <span className="history-summary-part">搜索结果 {searchedHistory.length} 条</span>}
@@ -379,12 +379,12 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         </div>
 
         <section
-          className="glass-panel section-reveal section-reveal-delay-1"
+          className="glass-panel archive-workspace section-reveal section-reveal-delay-1"
           inert={checking ? '' : undefined}
           aria-busy={checking}
           style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}
         >
-          <div className="history-section-header">
+          <div className="history-section-header archive-toolbar">
             <div className="history-section-title">
               <HeaderGlyph />
               <span>全部历史记录</span>

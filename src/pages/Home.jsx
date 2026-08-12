@@ -2230,7 +2230,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       </div>
 
       {history.length > 0 && (
-        <section className="glass-panel section-reveal section-reveal-delay-1" style={{ marginBottom: '32px', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <section className="content-band section-reveal section-reveal-delay-1">
           <div className="home-carousel-header">
             <SectionHeading glyph="continue" onClick={handleNavigateHistory} title="查看全部历史记录">继续阅读</SectionHeading>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2301,7 +2301,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       )}
 
       {!pageReady && history.length === 0 && (
-        <section className="glass-panel section-reveal section-reveal-delay-1" style={{ marginBottom: '32px', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <section className="content-band section-reveal section-reveal-delay-1">
           <div className="home-carousel-header">
             <SectionHeading glyph="continue">继续阅读</SectionHeading>
           </div>
@@ -2314,7 +2314,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       )}
 
       {watchlist.length > 0 && (
-        <section className="glass-panel section-reveal section-reveal-delay-1" style={{ marginBottom: '32px', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <section className="content-band section-reveal section-reveal-delay-1">
           <div className="home-carousel-header">
             <SectionHeading glyph="watchlist" onClick={handleNavigateWatchlist} title="查看全部待看档案">待看档案</SectionHeading>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2377,7 +2377,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       )}
 
       {randomsLoading ? (
-        <section className="glass-panel section-reveal section-reveal-delay-2" style={{ marginBottom: '40px', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <section className="content-band section-reveal section-reveal-delay-2">
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
             <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>刷新</button>
@@ -2389,7 +2389,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           </div>
         </section>
       ) : randoms.length > 0 ? (
-        <section className="glass-panel section-reveal section-reveal-delay-2" style={{ marginBottom: '40px', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <section className="content-band section-reveal section-reveal-delay-2">
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -2412,7 +2412,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           </div>
         </section>
       ) : (
-        <section className="glass-panel section-reveal section-reveal-delay-2" style={{ marginBottom: '40px', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <section className="content-band section-reveal section-reveal-delay-2">
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
             <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>{randomsRefreshing ? '刷新中' : '刷新'}</button>
@@ -2423,7 +2423,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         </section>
       )}
 
-      <section ref={archivesSectionRef} className="glass-panel section-reveal section-reveal-delay-3" style={{ padding: isNarrow ? '20px 8px' : '24px' }}>
+      <section ref={archivesSectionRef} className="glass-panel archive-workspace section-reveal section-reveal-delay-3">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
           <div className="archive-toolbar-primary" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
             <div className="archive-toolbar-summary" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>

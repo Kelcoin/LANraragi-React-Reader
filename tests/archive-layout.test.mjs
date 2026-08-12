@@ -151,8 +151,8 @@ test('archive grid animates keyed reflow with reduced-motion protection', () => 
   assert.match(grid, /element\.animate\(/);
   assert.match(grid, /element\.offsetLeft/);
   assert.match(grid, /element\.offsetTop/);
-  assert.match(grid, /duration:\s*150/);
-  assert.match(grid, /cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(grid, /duration:\s*180/);
+  assert.match(grid, /cubic-bezier\(\.32, \.72, 0, 1\)/);
 });
 
 test('archive grid expands wide cards while reflow animations run in parallel', () => {
@@ -196,7 +196,9 @@ test('archive count stays beside the heading on narrow screens', () => {
 
 test('narrow archive panel uses compact horizontal padding', () => {
   const home = read('src/pages/Home.jsx');
-  assert.match(home, /archivesSectionRef[\s\S]*?padding:\s*isNarrow \? '20px 8px' : '24px'/);
+  const pages = read('src/styles/pages.css');
+  assert.match(home, /archivesSectionRef[\s\S]*className="glass-panel archive-workspace/);
+  assert.match(pages, /@media \(max-width:\s*720px\)[\s\S]*\.archive-workspace\s*\{\s*padding:\s*18px 12px;/s);
 });
 
 test('archive grid batches width revisions and measures only stable layout versions', () => {

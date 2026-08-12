@@ -52,14 +52,13 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
               if (event.key === 'Escape') setShowPresets(false);
             }}
             placeholder={placeholder}
-            style={{ padding: `10px ${query ? 66 : 38}px 10px 12px`, fontSize: '14px', width: '100%', boxSizing: 'border-box' }}
+            data-has-query={query ? 'true' : 'false'}
           />
           {query && (
             <button
               type="button"
               className="input-clear-btn"
               onClick={() => setQuery('')}
-              style={{ position: 'absolute', right: '36px', top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}
               aria-label="清空搜索"
             >
               <ToolbarGlyph name="close" size={14} />
