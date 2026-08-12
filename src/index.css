@@ -3,6 +3,7 @@
 @import url('./styles/base.css');
 @import url('./styles/primitives.css');
 @import url('./styles/pages.css');
+@import url('./styles/reader.css');
 
 :root,
 :root[data-theme="dark"] {

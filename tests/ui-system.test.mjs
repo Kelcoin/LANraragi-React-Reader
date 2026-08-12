@@ -168,3 +168,28 @@ test('workbench queues and duplicate candidates use dividers instead of nested c
   assert.match(pages, /@media \(max-width:\s*720px\)[\s\S]*\.workbench-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
   assert.doesNotMatch(pages, /border-radius:\s*(?:[9]|1[0-9]|[2-9][0-9])px/);
 });
+
+test('settings use desktop navigation and mobile top tabs without changing fields', () => {
+  const readerCss = read('src/styles/reader.css');
+  const index = read('src/index.css');
+  const home = read('src/pages/Home.jsx');
+  assert.match(index, /@import url\('\.\/styles\/reader\.css'\);/);
+  assert.match(home, /className="settings-panel-scroll settings-layout"/);
+  assert.match(readerCss, /\.settings-layout\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*180px minmax\(0,\s*1fr\)/s);
+  assert.match(readerCss, /\.settings-layout\s*>\s*\.settings-category-tabs\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1 \/ span 4/s);
+  assert.match(readerCss, /@media \(max-width:\s*768px\)[\s\S]*\.settings-layout\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(readerCss, /@media \(max-width:\s*768px\)[\s\S]*\.settings-layout\s*>\s*\.settings-category-tabs\s*\{[^}]*display:\s*flex/s);
+  assert.match(readerCss, /\.settings-layout \.settings-row\s*\{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none/s);
+});
+
+test('reader exterior is warm, compact, and isolated from image geometry', () => {
+  const readerCss = read('src/styles/reader.css');
+  const tokens = read('src/styles/tokens.css');
+  assert.match(readerCss, /\.reader-toolbar-button\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/s);
+  assert.match(readerCss, /\.reader-panel-surface\s*\{[^}]*background:\s*var\(--surface\)\s*!important/s);
+  assert.match(readerCss, /\.reader-thumbnail-drawer-panel\s*\{[^}]*background:\s*var\(--surface\)\s*!important/s);
+  assert.match(readerCss, /\.eh-comments\s*\{[^}]*border-radius:\s*var\(--radius-md\);[^}]*box-shadow:\s*none/s);
+  assert.match(readerCss, /\.archive-thumbnail-dialog\s*\{[^}]*border-radius:\s*var\(--radius-md\)\s*!important/s);
+  assert.match(tokens, /--reader-stage:\s*#050505/i);
+  assert.doesNotMatch(readerCss, /\.reader-(?:stage|image|page-slot|spread|webtoon-page)/);
+});

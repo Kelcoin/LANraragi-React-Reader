@@ -2737,7 +2737,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             <h2 className="settings-title" id="home-settings-title">设置</h2>
           </div>
 
-          <div className="settings-panel-scroll" ref={settingsPaneRef}>
+          <div className="settings-panel-scroll settings-layout" ref={settingsPaneRef}>
 
           <div className="settings-category-tabs" role="tablist" aria-label="设置分类">
             {[
