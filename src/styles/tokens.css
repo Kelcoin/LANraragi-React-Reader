@@ -6,6 +6,7 @@
     --surface: #1b1c18;
     --surface-subtle: #171815;
     --surface-raised: #23241f;
+    --surface-hover: #292a25;
     --surface-inset: #0d0e0c;
     --text-primary: #eeeae0;
     --text-secondary: #c6c0b4;
@@ -26,6 +27,7 @@
     --focus-ring: #d16a57;
     --overlay: rgba(0, 0, 0, 0.72);
     --reader-stage: #050505;
+    --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.42);
 
     --page-bg: var(--canvas);
     --surface-1: var(--surface);
@@ -49,6 +51,7 @@
     --surface: #fcfaf5;
     --surface-subtle: #f7f4ee;
     --surface-raised: #ffffff;
+    --surface-hover: #f0ece4;
     --surface-inset: #e8e3d9;
     --text-primary: #282724;
     --text-secondary: #756f66;
@@ -68,5 +71,6 @@
     --danger-soft: #f2dfda;
     --focus-ring: #b84a38;
     --overlay: rgba(28, 25, 21, 0.55);
+    --shadow-lg: 0 18px 44px rgba(47, 38, 29, 0.18);
   }
 }

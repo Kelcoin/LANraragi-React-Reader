@@ -13,6 +13,8 @@ test('archive atelier exposes layered semantic theme tokens', () => {
   assert.match(css, /--accent:\s*#d16a57/i);
   assert.match(css, /--positive:\s*#8e9a69/i);
   assert.match(css, /--reader-stage:\s*#050505/i);
+  assert.match(css, /--surface-hover:/);
+  assert.match(css, /--shadow-lg:/);
   assert.match(css, /data-theme="light"[\s\S]*--canvas:\s*#f2efe8/i);
   assert.match(css, /--radius-xs:\s*4px/);
   assert.match(css, /--radius-sm:\s*6px/);
