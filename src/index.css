@@ -1,3 +1,7 @@
+@layer reset, tokens, base, primitives, components, pages, utilities;
+@import url('./styles/tokens.css');
+@import url('./styles/base.css');
+
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -5137,4 +5141,32 @@ textarea:focus-visible,
   [contenteditable="true"] {
     font-size: 16px !important;
   }
+}
+
+/* Archive Atelier compatibility bridge. Legacy component selectors keep their
+   public variables while the staged migration moves them to semantic tokens. */
+:root,
+:root[data-theme="dark"],
+:root[data-theme="light"] {
+  --bg-color: var(--canvas);
+  --page-bg: var(--canvas);
+  --surface-1: var(--surface);
+  --surface-2: var(--surface-subtle);
+  --surface-3: var(--surface-raised);
+  --glass-bg: var(--surface);
+  --glass-border: var(--border-subtle);
+  --glass-border-hover: var(--border-strong);
+  --text-main: var(--text-primary);
+  --text-sub: var(--text-secondary);
+  --olive: var(--positive);
+  --olive-strong: var(--positive-strong);
+  --olive-soft: var(--positive-soft);
+  --good: var(--positive);
+  --good-surface: var(--positive-soft);
+  --overlay-bg: var(--overlay);
+  --reader-stage-bg: var(--reader-stage);
+  --radius-panel: var(--radius-md);
+  --radius-card: var(--radius-md);
+  --radius-control: var(--radius-sm);
+  --radius-chip: var(--radius-xs);
 }

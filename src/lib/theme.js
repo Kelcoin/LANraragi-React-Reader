@@ -9,17 +9,19 @@ export const DEFAULT_THEME_PALETTE = Object.freeze({
 export const DEFAULT_THEME_PALETTES = Object.freeze({
   light: DEFAULT_THEME_PALETTE,
   dark: Object.freeze({
-    accent: '#4a9ff0',
-    secondary: '#79b8ff',
-    background: '#0f1115',
+    accent: '#d16a57',
+    secondary: '#8e9a69',
+    background: '#121310',
   }),
 });
 const THEME_COLORS = {
-  dark: '#0f1115',
-  light: '#f4f0e8',
+  dark: '#121310',
+  light: '#f2efe8',
 };
 
 const CUSTOM_THEME_PROPERTIES = [
+  '--canvas', '--surface', '--surface-subtle', '--surface-raised', '--text-primary', '--text-secondary', '--border-subtle',
+  '--border-strong', '--positive', '--positive-strong', '--positive-soft', '--focus-ring', '--overlay', '--reader-stage',
   '--bg-color', '--page-bg', '--surface-1', '--surface-2', '--surface-3', '--surface-inset', '--glass-bg',
   '--glass-border', '--glass-border-hover', '--accent', '--accent-strong', '--accent-soft', '--accent-contrast', '--olive',
   '--olive-strong', '--olive-soft', '--good', '--good-text', '--good-surface', '--good-border', '--button-hover-bg', '--danger-contrast',
@@ -206,16 +208,16 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
   const secondary = ensureReadable(normalized.secondary, surface1, dark ? 3.2 : 4.5);
   const accentStrong = ensureReadable(dark ? mixHex(accent, '#ffffff', 0.2) : mixHex(accent, '#000000', 0.2), surface1, dark ? 3.2 : 4.5);
   const secondaryStrong = ensureReadable(dark ? mixHex(secondary, '#ffffff', 0.2) : mixHex(secondary, '#000000', 0.2), surface1, dark ? 3.2 : 4.5);
-  const textMain = dark ? '#e8eef7' : '#282522';
-  const textSub = dark ? '#a7b1c2' : '#625c54';
-  const border = dark ? mixHex(canvas, '#8ba6c7', 0.28) : mixHex(canvas, '#6d6254', 0.25);
+  const textMain = dark ? '#eeeae0' : '#282724';
+  const textSub = dark ? '#c6c0b4' : '#756f66';
+  const border = dark ? mixHex(canvas, '#a49b89', 0.24) : mixHex(canvas, '#6d6254', 0.25);
   const borderHover = dark ? mixHex(border, accent, 0.45) : mixHex(border, accent, 0.45);
   const accentSoft = dark ? mixHex(surface1, accent, 0.25) : mixHex(surface1, accent, 0.16);
   const secondarySoft = dark ? mixHex(surface1, secondary, 0.24) : mixHex(surface1, secondary, 0.15);
-  const good = dark ? '#7bd2a0' : '#4f7042';
-  const danger = dark ? '#f08b8b' : '#a83b31';
-  const accentContrast = luminance(accent) > 0.42 ? '#171a20' : '#fffdf8';
-  const dangerContrast = luminance(danger) > 0.42 ? '#171a20' : '#fffdf8';
+  const good = dark ? '#8e9a69' : '#66734a';
+  const danger = dark ? '#d96b62' : '#a93f35';
+  const accentContrast = luminance(accent) > 0.42 ? '#171815' : '#fffaf2';
+  const dangerContrast = luminance(danger) > 0.42 ? '#171815' : '#fffaf2';
   const commentCardBg = dark ? mixHex(surface2, secondary, 0.04) : mixHex(surface1, secondary, 0.08);
   const commentHeaderBg = dark ? mixHex(canvas, secondary, 0.04) : mixHex(surface2, secondary, 0.1);
   const commentBorder = dark ? mixHex(border, secondary, 0.32) : mixHex(border, secondary, 0.42);
@@ -224,6 +226,20 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
   const commentUploaderBg = dark ? mixHex(surface2, secondary, 0.08) : mixHex(surface1, secondary, 0.16);
 
   return {
+    '--canvas': canvas,
+    '--surface': surface1,
+    '--surface-subtle': surface2,
+    '--surface-raised': surface3,
+    '--text-primary': textMain,
+    '--text-secondary': textSub,
+    '--border-subtle': border,
+    '--border-strong': borderHover,
+    '--positive': good,
+    '--positive-strong': secondaryStrong,
+    '--positive-soft': secondarySoft,
+    '--focus-ring': accent,
+    '--overlay': dark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(28, 25, 21, 0.55)',
+    '--reader-stage': '#050505',
     '--bg-color': canvas,
     '--page-bg': canvas,
     '--surface-1': surface1,
@@ -256,9 +272,10 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
     '--tag-panel-bg': surface1,
     '--scrollbar-thumb': borderHover,
     '--scrollbar-thumb-hover': accent,
-    '--reader-control-bg': surface1,
-    '--reader-control-hover-bg': surface2,
-    '--reader-control-border': border,
+    '--reader-control-bg': dark ? surface1 : '#1b1c18',
+    '--reader-control-hover-bg': dark ? surface2 : '#292a25',
+    '--reader-control-border': dark ? border : '#3c3d36',
+    '--reader-stage-bg': '#050505',
     '--reader-panel-bg': surface1,
     '--reader-skeleton-base': surface2,
     '--reader-skeleton-highlight': surface3,
@@ -300,7 +317,7 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
     '--tag-general': textSub,
     '--text-main': textMain,
     '--text-sub': textSub,
-    '--text-muted': dark ? '#8190a6' : '#8a8278',
+    '--text-muted': dark ? '#858176' : '#948d82',
     '--reader-control-text': textMain,
   };
 }

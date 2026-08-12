@@ -1762,15 +1762,17 @@ test('settings dialog keeps initial focus on first control instead of dialog fal
   assert.doesNotMatch(home, /getFocusable\(\)\[0\]\?\.focus\(\)\s*\|\|\s*dialog\?\.focus\(\)/);
 });
 
-test('dark theme restores a calm black-blue palette and uses an independent dark overlay token', () => {
+test('dark theme uses the warm archive atelier palette and an independent overlay token', () => {
+  const tokens = read('src/styles/tokens.css');
   const css = read('src/index.css');
-  const darkTheme = css.match(/:root,\s*:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+  const darkTheme = tokens.match(/:root,\s*:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\s*\}/)?.[1] || '';
 
-  assert.match(darkTheme, /--page-bg:\s*#0f1115/i);
-  assert.match(darkTheme, /--surface-1:\s*#171b23/i);
-  assert.match(darkTheme, /--surface-2:\s*#202633/i);
-  assert.match(darkTheme, /--accent:\s*#4a9ff0/i);
-  assert.match(darkTheme, /--overlay-bg:\s*rgba\(0,\s*0,\s*0,\s*0\.74\)/i);
+  assert.match(darkTheme, /--canvas:\s*#121310/i);
+  assert.match(darkTheme, /--surface:\s*#1b1c18/i);
+  assert.match(darkTheme, /--surface-subtle:\s*#171815/i);
+  assert.match(darkTheme, /--accent:\s*#d16a57/i);
+  assert.match(darkTheme, /--overlay:\s*rgba\(0,\s*0,\s*0,\s*0\.72\)/i);
+  assert.match(darkTheme, /--reader-stage:\s*#050505/i);
   assert.match(css, /\.settings-overlay\s*\{[\s\S]*background:\s*var\(--overlay-bg\)/s);
   assert.doesNotMatch(css, /\.settings-overlay\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--text-main\)/s);
 });
@@ -1816,8 +1818,8 @@ test('custom theme palette normalizes, persists, generates semantic tokens, and 
   assert.notEqual(commentTokens['--comment-card-bg'], commentTokens['--surface-2']);
   assert.notEqual(commentTokens['--comment-card-border'], commentTokens['--glass-border']);
   assert.equal(commentTokens['--comment-card-bg'], '#292c2f');
-  assert.equal(commentTokens['--comment-card-border'], '#415a78');
-  assert.equal(commentTokens['--comment-uploader-border'], '#5c88b9');
+  assert.equal(commentTokens['--comment-card-border'], '#415468');
+  assert.equal(commentTokens['--comment-uploader-border'], '#5c85b1');
   assert.ok(commentTokens['--comment-user']);
   assert.ok(commentTokens['--comment-text']);
   // Custom backgrounds keep their hue; luminance is clamped for readability
@@ -2040,11 +2042,10 @@ test('sync data survives scope switches and failed flushes', () => {
   assert.match(scope, /!localStorage\.getItem\(marker\)/);
 });
 
-test('light theme gives the normal reader stage a light surface', () => {
-  const css = read('src/index.css');
-  const lightTheme = css.match(/:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
-  assert.match(lightTheme, /--reader-stage-bg:\s*#(?:fffdf8|f0ebe2|ebe4d9)/i);
-  assert.match(lightTheme, /--reader-stage-border:\s*#(?:d8cfc2|cfc4b5|bdaf9e)/i);
+test('both themes keep the normal reader stage near-black for image fidelity', () => {
+  const tokens = read('src/styles/tokens.css');
+  assert.match(tokens, /--reader-stage:\s*#050505/i);
+  assert.match(tokens, /--reader-stage-bg:\s*var\(--reader-stage\)/i);
 });
 
 test('reader thumbnail drawer coalesces scroll work and animates backdrop blur', () => {

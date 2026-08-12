@@ -22,4 +22,5 @@ import './worker-behavior.test.mjs';
 import './icon-assets.test.mjs';
 import './app-version.test.mjs';
 import './branding.test.mjs';
+import './ui-system.test.mjs';
 import './image-performance.test.mjs';

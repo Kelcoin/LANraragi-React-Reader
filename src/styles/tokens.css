@@ -1,0 +1,72 @@
+@layer tokens {
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --canvas: #121310;
+    --surface: #1b1c18;
+    --surface-subtle: #171815;
+    --surface-raised: #23241f;
+    --surface-inset: #0d0e0c;
+    --text-primary: #eeeae0;
+    --text-secondary: #c6c0b4;
+    --text-muted: #858176;
+    --border-subtle: #292a25;
+    --border-strong: #3c3d36;
+    --accent: #d16a57;
+    --accent-strong: #e17a65;
+    --accent-soft: #42231d;
+    --accent-contrast: #fffaf2;
+    --positive: #8e9a69;
+    --positive-strong: #a7b37d;
+    --positive-soft: #29301f;
+    --warning: #d4a75d;
+    --warning-soft: #382e1d;
+    --danger: #d96b62;
+    --danger-soft: #3d211f;
+    --focus-ring: #d16a57;
+    --overlay: rgba(0, 0, 0, 0.72);
+    --reader-stage: #050505;
+
+    --page-bg: var(--canvas);
+    --surface-1: var(--surface);
+    --text-main: var(--text-primary);
+    --glass-border: var(--border-subtle);
+    --olive: var(--positive);
+    --reader-stage-bg: var(--reader-stage);
+
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --motion-fast: 160ms;
+    --motion-base: 200ms;
+    --motion-slow: 260ms;
+    --motion-curve: cubic-bezier(.32, .72, 0, 1);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --canvas: #f2efe8;
+    --surface: #fcfaf5;
+    --surface-subtle: #f7f4ee;
+    --surface-raised: #ffffff;
+    --surface-inset: #e8e3d9;
+    --text-primary: #282724;
+    --text-secondary: #756f66;
+    --text-muted: #948d82;
+    --border-subtle: #d8d1c5;
+    --border-strong: #bdb4a6;
+    --accent: #b84a38;
+    --accent-strong: #92372a;
+    --accent-soft: #f1ddd7;
+    --accent-contrast: #fffaf2;
+    --positive: #66734a;
+    --positive-strong: #4f5b37;
+    --positive-soft: #e3e8d7;
+    --warning: #95631f;
+    --warning-soft: #f4ead6;
+    --danger: #a93f35;
+    --danger-soft: #f2dfda;
+    --focus-ring: #b84a38;
+    --overlay: rgba(28, 25, 21, 0.55);
+  }
+}

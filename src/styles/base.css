@@ -1,0 +1,41 @@
+@layer reset, base;
+
+@layer reset {
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  button,
+  input,
+  select,
+  textarea { font: inherit; }
+}
+
+@layer base {
+  body {
+    font-family: 'Noto Sans SC Variable', 'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+    color: var(--text-primary);
+    background: var(--canvas);
+    letter-spacing: 0;
+  }
+
+  :lang(ja) {
+    font-family: 'Noto Sans JP Variable', 'Noto Sans SC Variable', 'Hiragino Sans', system-ui, sans-serif;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
