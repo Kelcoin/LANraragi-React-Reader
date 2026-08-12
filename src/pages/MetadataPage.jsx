@@ -249,9 +249,9 @@ export default function MetadataPage({ archiveId }) {
   };
   const pluginDescription = plugins.find(option => option.value === plugin)?.description || '';
   if (!archive) return <div className="metadata-loading-state">正在载入元数据…</div>;
-  return <main className="metadata-page">
-    <h2 className="metadata-page-title">编辑 {archive.title}</h2>
-    <section className="glass-panel metadata-panel">
+  return <main className="metadata-page workbench-page">
+    <h2 className="metadata-page-title workbench-header">编辑 {archive.title}</h2>
+    <section className="glass-panel metadata-panel workbench-section workbench-grid">
       <label className="metadata-field">当前文件名<input className="input-glass" style={field} readOnly value={archive.filename || archive.filepath || ''} /></label>
       <label className="metadata-field">ID<input className="input-glass" style={field} readOnly value={archiveId} /></label>
       <label className="metadata-field">标题<input className="input-glass" style={field} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label>

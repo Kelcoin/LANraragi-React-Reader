@@ -138,3 +138,33 @@ test('archive cards use quiet covers and moss progress at every viewport', () =>
   assert.match(pages, /\.watchlist-card[^}]*\.archive-card-shell\s*\{[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*none/s);
   assert.match(pages, /@media \(max-width:\s*390px\)[\s\S]*min-width:\s*0;[\s\S]*flex-wrap:\s*wrap/s);
 });
+
+test('login and operational pages share one archive workbench language', () => {
+  const pages = read('src/styles/pages.css');
+  const app = read('src/App.jsx');
+  const upload = read('src/pages/UploadPage.jsx');
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const metadata = read('src/pages/MetadataPage.jsx');
+
+  assert.match(app, /className="btn btn-primary login-submit"/);
+  assert.doesNotMatch(app, /type="submit"[^>]*style=\{\{[^}]*background:\s*'var\(--accent\)'/s);
+  assert.match(upload, /className="upload-page workbench-page"/);
+  assert.match(dedupe, /className="dedupe-page workbench-page"/);
+  assert.match(metadata, /className="metadata-page workbench-page"/);
+  for (const source of [upload, dedupe, metadata]) {
+    assert.match(source, /workbench-header/);
+    assert.match(source, /workbench-section/);
+  }
+  assert.match(pages, /\.workbench-page\s*\{[^}]*width:\s*min\(100% - 40px,\s*1180px\)/s);
+  assert.match(pages, /\.workbench-section\s*\{[^}]*border-top:\s*1px solid var\(--border-subtle\);[^}]*box-shadow:\s*none/s);
+});
+
+test('workbench queues and duplicate candidates use dividers instead of nested cards', () => {
+  const pages = read('src/styles/pages.css');
+  const progress = read('src/components/ExecutionProgressPanel.jsx');
+  assert.match(progress, /workbench-section/);
+  assert.match(pages, /\.upload-task-row\s*\{[^}]*border-radius:\s*0;[^}]*border-width:\s*0 0 1px/s);
+  assert.match(pages, /\.dedupe-card-item\s*\{[^}]*border-radius:\s*0;[^}]*border-bottom:\s*1px solid var\(--border-subtle\)/s);
+  assert.match(pages, /@media \(max-width:\s*720px\)[\s\S]*\.workbench-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.doesNotMatch(pages, /border-radius:\s*(?:[9]|1[0-9]|[2-9][0-9])px/);
+});

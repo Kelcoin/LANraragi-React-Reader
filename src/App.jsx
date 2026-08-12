@@ -366,7 +366,7 @@ export default function App() {
               </div>
             </div>
 
-            <button type="submit" className="btn" style={{ marginTop: '8px', padding: '12px', background: 'var(--accent)', borderColor: 'var(--accent-strong)', color: 'var(--accent-contrast)' }} disabled={loginLoading}>
+            <button type="submit" className="btn btn-primary login-submit" disabled={loginLoading}>
               {loginLoading ? '正在验证连接…' : '开始阅读'}
             </button>
 

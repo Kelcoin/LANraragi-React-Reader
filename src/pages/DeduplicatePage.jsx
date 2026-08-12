@@ -149,7 +149,7 @@ function ProgressPanel({ progress, running }) {
   const showPercent = hasTotal && progress.label !== '检测失败';
   const statusText = progress.label === '检测失败' ? '失败' : (running ? '处理中' : '已完成');
   return (
-    <div className="glass-panel" style={{ padding: '18px', marginBottom: '16px', borderRadius: '12px' }}>
+    <div className="glass-panel workbench-section dedupe-progress-section" style={{ padding: '18px', marginBottom: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '18px', alignItems: 'flex-start', marginBottom: '14px', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 850, fontSize: '16px', lineHeight: 1.35 }}>{progress.label}</div>
@@ -224,7 +224,7 @@ function StatsPanel({
     ] : []),
   ];
   return (
-    <div className="glass-panel" style={{ padding: '14px 16px', marginBottom: '16px', borderRadius: '12px' }}>
+    <div className="glass-panel workbench-section dedupe-scan-section" style={{ padding: '14px 16px', marginBottom: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 800, fontSize: '14px' }}>本次扫描</div>
         {stats.missing > 0 && (
@@ -273,7 +273,7 @@ function StatsPanel({
 
 function DateRangePanel({ range, running, onChange, onReset, onStart }) {
   return (
-    <div className="glass-panel" style={{ padding: '14px 16px', marginBottom: '16px', borderRadius: '12px' }}>
+    <div className="glass-panel workbench-section dedupe-scope-section" style={{ padding: '14px 16px', marginBottom: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
         <h2 style={{ margin: 0, fontWeight: 800, fontSize: '16px', lineHeight: 1.3, textWrap: 'balance' }}>检测范围</h2>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -916,8 +916,8 @@ export default function DeduplicatePage({ onBack }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', padding: '22px', maxWidth: '1800px', margin: '0 auto' }}>
-      <header style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap' }}>
+    <div className="dedupe-page workbench-page">
+      <header className="workbench-header dedupe-page-header">
         <div>
           <h1 style={{ margin: 0, fontSize: '24px', lineHeight: 1.2 }}>重复档案检测</h1>
         </div>

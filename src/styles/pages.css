@@ -139,10 +139,105 @@
     min-width: 0;
   }
 
+  .login-submit {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px;
+  }
+
+  .workbench-page {
+    width: min(100% - 40px, 1180px);
+    min-width: 0;
+    margin-inline: auto;
+    padding-block: 24px 40px;
+  }
+
+  .dedupe-page.workbench-page { width: min(100% - 40px, 1760px); }
+
+  .workbench-header {
+    min-width: 0;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .dedupe-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .workbench-section {
+    min-width: 0;
+    padding: 20px 0;
+    background: transparent;
+    border-width: 1px 0 0;
+    border-style: solid;
+    border-color: var(--border-subtle);
+    border-top: 1px solid var(--border-subtle);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .workbench-grid { min-width: 0; }
+
+  .upload-page.workbench-page,
+  .metadata-page.workbench-page { max-width: none; }
+
+  .upload-panel,
+  .upload-results,
+  .metadata-panel {
+    border-inline: 0;
+    border-bottom: 0;
+  }
+
+  .upload-task-list,
+  .upload-file-list {
+    gap: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .upload-task-row {
+    border-radius: 0;
+    border-width: 0 0 1px;
+    border-color: var(--border-subtle);
+    background: transparent;
+  }
+
+  .upload-file-row {
+    border-width: 0 0 1px;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .dedupe-progress-section,
+  .dedupe-scan-section,
+  .dedupe-scope-section {
+    border-inline: 0;
+    border-bottom: 0;
+  }
+
+  .dedupe-group {
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+
+  .dedupe-card-item {
+    border-radius: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: transparent;
+    box-shadow: none;
+  }
+
   @media (max-width: 720px) {
     .page-workspace { padding: 16px 10px; }
     .archive-workspace { padding: 18px 12px; }
     .content-band > :not(.home-carousel-header) { margin-inline: -10px; }
+    .workbench-page,
+    .dedupe-page.workbench-page { width: min(100% - 24px, 1180px); padding-top: 18px; }
+    .workbench-grid { grid-template-columns: 1fr; }
   }
 
   @media (max-width: 390px) {

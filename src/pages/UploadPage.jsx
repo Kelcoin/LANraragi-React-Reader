@@ -286,8 +286,8 @@ export default function UploadPage() {
   };
 
   return (
-    <main className="upload-page">
-      <header className="upload-page-header">
+    <main className="upload-page workbench-page">
+      <header className="upload-page-header workbench-header">
         <div className="upload-page-title">
           <span className="upload-title-icon"><ToolbarGlyph name="upload" size={25} /></span>
           <div><h1>上传档案</h1><p>从本地文件或互联网添加到 LANraragi</p></div>
@@ -314,7 +314,7 @@ export default function UploadPage() {
         >从互联网添加</button>
       </div>
 
-      <section className="glass-panel upload-panel">
+      <section className="glass-panel upload-panel workbench-section">
         <div className="upload-mode-panel-stack">
           <div
             className={`upload-mode-panel${mode === 'local' ? ' is-active' : ''}`}
@@ -373,7 +373,7 @@ export default function UploadPage() {
         </div>
       </section>
 
-      <section className="glass-panel upload-results" aria-live="polite">
+      <section className="glass-panel upload-results workbench-section" aria-live="polite">
         <div className="upload-results-heading">
           <div><h2>任务列表</h2></div>
           <div className="upload-results-actions">
