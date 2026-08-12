@@ -187,7 +187,7 @@ function ProgressPanel({ progress, running }) {
             minWidth: running ? '36px' : 0,
             height: '100%',
             borderRadius: '999px',
-            background: hasTotal ? 'linear-gradient(90deg, var(--accent), var(--accent-strong))' : undefined,
+            background: hasTotal ? 'var(--positive)' : undefined,
             transition: 'width 160ms ease',
           }}
         />
@@ -871,7 +871,7 @@ export default function DeduplicatePage({ onBack }) {
           border: selected
             ? '1px solid var(--warning-border)'
             : '1px solid var(--glass-border)',
-          borderRadius: '14px',
+          borderRadius: '8px',
           padding: '26px 16px 18px',
           background: selected
             ? 'var(--warning-surface)'

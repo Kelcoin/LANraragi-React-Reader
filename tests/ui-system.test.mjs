@@ -193,3 +193,25 @@ test('reader exterior is warm, compact, and isolated from image geometry', () =>
   assert.match(tokens, /--reader-stage:\s*#050505/i);
   assert.doesNotMatch(readerCss, /\.reader-(?:stage|image|page-slot|spread|webtoon-page)/);
 });
+
+test('final archive atelier cleanup removes decorative legacy chrome', () => {
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const archiveCard = read('src/components/ArchiveCard.jsx');
+  const reader = read('src/pages/Reader.jsx');
+
+  assert.doesNotMatch(dedupe, /linear-gradient\(90deg,\s*var\(--accent\)/);
+  assert.doesNotMatch(archiveCard, /borderRadius:\s*'14px'/);
+  assert.doesNotMatch(archiveCard, /boxShadow:\s*'0 16px 48px/);
+  assert.doesNotMatch(reader, /borderRadius:\s*'14px'/);
+  assert.doesNotMatch(reader, /boxShadow:\s*'0 12px 40px/);
+});
+
+test('theme self-check validates approved semantic colors and browser chrome', () => {
+  const check = read('scripts/theme-self-check.mjs');
+  assert.match(check, /--canvas/);
+  assert.match(check, /--reader-stage/);
+  assert.match(check, /#050505/i);
+  assert.match(check, /THEME_COLORS/);
+  assert.match(check, /theme-color/);
+  assert.match(check, /#121310/i);
+});

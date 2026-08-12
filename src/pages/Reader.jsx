@@ -702,7 +702,6 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
         left: 'max(20px, calc(var(--app-safe-area-left) + 12px))',
         zIndex: 9999,
         padding: 0,
-        borderRadius: '14px',
         width: 'min(360px, calc(100vw - 40px))',
         boxSizing: 'border-box',
         maxHeight: `calc(100dvh - ${top}px - max(12px, calc(var(--app-safe-area-bottom) + 8px)))`,
@@ -711,7 +710,6 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
         overscrollBehavior: 'contain',
         touchAction: 'pan-y',
         WebkitOverflowScrolling: 'touch',
-        boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
         border: '1px solid var(--reader-control-border)',
         transition: 'height 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
       }}
@@ -3869,9 +3867,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               maxHeight: `calc(100dvh - ${settingsPanelTop + 8}px - max(12px, calc(var(--app-safe-area-bottom) + 8px)))`,
               zIndex: 9999,
               padding: '22px',
-              borderRadius: '14px',
               width: 'min(440px, calc(100vw - 32px))',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
               border: '1px solid var(--reader-control-border)',
               display: 'flex', flexDirection: 'column',
             }}
