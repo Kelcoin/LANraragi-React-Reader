@@ -1,29 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { Menu } from '@base-ui/react/menu';
 import { hasArchiveReadingProgress } from '../lib/archiveProgress';
 import { getFavoriteState, setArchiveFavorite } from '../lib/categories';
 import { useToast } from './Toast';
 
-function clampMenuPosition(x, y, height = 214) {
-  const width = 150;
-  const gap = 8;
+function pointAnchor(x, y) {
   return {
-    left: Math.min(Math.max(gap, x), Math.max(gap, window.innerWidth - width - gap)),
-    top: Math.min(Math.max(gap, y), Math.max(gap, window.innerHeight - height - gap)),
+    getBoundingClientRect: () => ({
+      x, y, top: y, right: x, bottom: y, left: x, width: 0, height: 0,
+    }),
   };
 }
 
-function MenuButton({ children, danger = false, disabled = false, onClick }) {
+function MenuButton({ children, danger = false, disabled = false, closeOnClick = true, onClick }) {
   return (
-    <button
-      type="button"
-      role="menuitem"
+    <Menu.Item
+      nativeButton
+      render={<button type="button" />}
       className={`archive-context-menu-item${danger ? ' is-danger' : ''}`}
       disabled={disabled}
+      closeOnClick={closeOnClick}
       onClick={onClick}
     >
       {children}
-    </button>
+    </Menu.Item>
   );
 }
 
@@ -33,29 +33,20 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
   const [favorite, setFavorite] = useState(false);
   const [favoriteKnown, setFavoriteKnown] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const anchor = useMemo(() => pointAnchor(menu?.x || 0, menu?.y || 0), [menu?.x, menu?.y]);
   const showRemoveHistory = !!menu?.showRemoveHistory && !!onRemoveHistory;
   const showRemoveWatchlist = !!menu?.showRemoveWatchlist && !!onRemoveWatchlist;
   const showAddWatchlist = !showRemoveWatchlist && !!onAddWatchlist;
   const showClearProgress = !!onClearProgress && hasArchiveReadingProgress(menu?.archive);
-  const extraRows = (showRemoveHistory ? 1 : 0) + (showRemoveWatchlist || showAddWatchlist ? 1 : 0) + (onDelete ? 1 : 0) + (onEditMetadata ? 1 : 0) + (showClearProgress ? 1 : 0);
-  const menuHeight = 214 + extraRows * 36;
-  const pos = useMemo(() => clampMenuPosition(menu?.x || 0, menu?.y || 0, menuHeight), [menu?.x, menu?.y, menuHeight]);
 
   useEffect(() => {
     if (!menu) return undefined;
     const close = () => onClose?.();
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') close();
-    };
-    window.addEventListener('pointerdown', close);
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
-    window.addEventListener('keydown', onKeyDown);
     return () => {
-      window.removeEventListener('pointerdown', close);
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
-      window.removeEventListener('keydown', onKeyDown);
     };
   }, [menu, onClose]);
 
@@ -84,12 +75,9 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
   if (!menu?.archive) return null;
 
   const run = (action) => (event) => {
-    event.stopPropagation();
     action?.(menu.archive, { newTab: event.ctrlKey });
-    onClose?.();
   };
-  const runClearProgress = async (event) => {
-    event.stopPropagation();
+  const runClearProgress = async () => {
     try {
       const result = await onClearProgress(menu.archive);
       if (result?.fallback) showToast('服务器不支持清零，已回退到第一页。', 'info');
@@ -99,8 +87,7 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
       onClose?.();
     }
   };
-  const toggleFavorite = async (event) => {
-    event.stopPropagation();
+  const toggleFavorite = async () => {
     if (favoriteBusy) return;
     setFavoriteBusy(true);
     try {
@@ -114,35 +101,37 @@ export default function ArchiveContextMenu({ menu, onClose, onRead, onReadIncogn
     }
   };
 
-  return createPortal(
-    <div
-      role="menu"
-      className="archive-context-menu dropdown-animate"
-      onPointerDown={(e) => e.stopPropagation()}
-      onContextMenu={(e) => e.preventDefault()}
-      style={{
-        left: `${pos.left}px`,
-        top: `${pos.top}px`,
-      }}
-    >
-      <MenuButton onClick={run(onRead)}>阅读</MenuButton>
-      <MenuButton onClick={run(onReadIncognito)}>无痕阅读</MenuButton>
-      {showClearProgress && <MenuButton onClick={runClearProgress}>清除阅读进度</MenuButton>}
-      {onEditMetadata && <MenuButton onClick={run(onEditMetadata)}>编辑元数据</MenuButton>}
-      <MenuButton onClick={run(onDownload)}>下载</MenuButton>
-      <MenuButton onClick={run(onCopyLink)}>复制链接</MenuButton>
-      <MenuButton disabled={favoriteBusy} onClick={toggleFavorite}>
-        {favoriteBusy
-          ? (favoriteKnown ? (favorite ? '正在移出收藏夹…' : '正在加入收藏夹…') : '正在读取收藏状态…')
-          : (favorite ? '移出收藏夹' : '加入收藏夹')}
-      </MenuButton>
-      {showAddWatchlist && <MenuButton onClick={run(onAddWatchlist)}>加入待看</MenuButton>}
-      {showRemoveWatchlist && <MenuButton onClick={run(onRemoveWatchlist)}>移出待看</MenuButton>}
-      {showRemoveHistory && <MenuButton danger onClick={run(onRemoveHistory)}>删除历史记录</MenuButton>}
-      {onDelete && <div className="archive-context-menu-divider" />}
-      {onDelete && <MenuButton danger onClick={run(onDelete)}>删除</MenuButton>}
-    </div>,
-    document.body,
+  return (
+    <Menu.Root open onOpenChange={(nextOpen) => { if (!nextOpen) onClose?.(); }} modal={false}>
+      <Menu.Portal>
+        <Menu.Positioner
+          className="archive-context-menu-positioner"
+          anchor={anchor}
+          side="bottom"
+          align="start"
+          positionMethod="fixed"
+          collisionPadding={8}
+        >
+          <Menu.Popup className="archive-context-menu dropdown-animate" finalFocus={false}>
+            <MenuButton onClick={run(onRead)}>阅读</MenuButton>
+            <MenuButton onClick={run(onReadIncognito)}>无痕阅读</MenuButton>
+            {showClearProgress && <MenuButton closeOnClick={false} onClick={runClearProgress}>清除阅读进度</MenuButton>}
+            {onEditMetadata && <MenuButton onClick={run(onEditMetadata)}>编辑元数据</MenuButton>}
+            <MenuButton onClick={run(onDownload)}>下载</MenuButton>
+            <MenuButton onClick={run(onCopyLink)}>复制链接</MenuButton>
+            <MenuButton disabled={favoriteBusy} closeOnClick={false} onClick={toggleFavorite}>
+              {favoriteBusy
+                ? (favoriteKnown ? (favorite ? '正在移出收藏夹…' : '正在加入收藏夹…') : '正在读取收藏状态…')
+                : (favorite ? '移出收藏夹' : '加入收藏夹')}
+            </MenuButton>
+            {showAddWatchlist && <MenuButton onClick={run(onAddWatchlist)}>加入待看</MenuButton>}
+            {showRemoveWatchlist && <MenuButton onClick={run(onRemoveWatchlist)}>移出待看</MenuButton>}
+            {showRemoveHistory && <MenuButton danger onClick={run(onRemoveHistory)}>删除历史记录</MenuButton>}
+            {onDelete && <div className="archive-context-menu-divider" />}
+            {onDelete && <MenuButton danger onClick={run(onDelete)}>删除</MenuButton>}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
-

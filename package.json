@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@base-ui/react": "1.7.0",
     "@fontsource-variable/noto-sans-jp": "^5.2.10",
     "@fontsource-variable/noto-sans-sc": "^5.2.10",
     "@tensorflow/tfjs-backend-wasm": "4.22.0",

@@ -77,3 +77,31 @@ test('shared component visuals use state classes and project close glyphs', () =
   assert.match(metadataTag, /ToolbarGlyph[^\n]*name="close"/);
   assert.doesNotMatch(metadataTag, />×<\/button>/);
 });
+
+test('overlay components delegate focus and dismissal behavior to Base UI', () => {
+  const components = {
+    ConfirmDialog: read('src/components/ConfirmDialog.jsx'),
+    CustomSelect: read('src/components/CustomSelect.jsx'),
+    ArchiveContextMenu: read('src/components/ArchiveContextMenu.jsx'),
+    DedupeArchiveContextMenu: read('src/components/DedupeArchiveContextMenu.jsx'),
+    SettingHint: read('src/components/SettingHint.jsx'),
+  };
+  for (const [name, source] of Object.entries(components)) {
+    assert.match(source, /from '@base-ui\/react\//, `${name} uses a Base UI behavior primitive`);
+    assert.match(source, /export default function/, `${name} keeps its default export`);
+  }
+  assert.doesNotMatch(components.ConfirmDialog, /addEventListener\(['"]keydown/);
+  assert.doesNotMatch(components.CustomSelect, /addEventListener\(['"]mousedown/);
+  assert.doesNotMatch(components.ArchiveContextMenu, /addEventListener\(['"]keydown/);
+  assert.doesNotMatch(components.DedupeArchiveContextMenu, /addEventListener\(['"]keydown/);
+  assert.match(components.ConfirmDialog, /onConfirm/);
+  assert.doesNotMatch(
+    components.ConfirmDialog,
+    /<Dialog\.Close[\s\S]*?onClick=\{onCancel\}/,
+    'Dialog.Close must not duplicate the Root onOpenChange cancel callback',
+  );
+  assert.match(components.CustomSelect, /onChange/);
+  assert.match(components.ArchiveContextMenu, /onReadIncognito/);
+  assert.match(components.DedupeArchiveContextMenu, /onViewThumbnails/);
+  assert.match(components.SettingHint, /className = 'settings-row-title'/);
+});

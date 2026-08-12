@@ -385,7 +385,7 @@ test('reader setting hints escape the scroll container and size to their content
   const hint = read('src/components/SettingHint.jsx');
   const css = read('src/index.css');
   const reader = read('src/pages/Reader.jsx');
-  assert.match(hint, /createPortal/);
+  assert.match(hint, /<Tooltip\.Portal>/);
   assert.match(hint, /settings-hint-bubble-portal/);
   assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed;[^}]*inline-size:\s*max-content;/s);
   assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px, calc\(100vw - 48px\)\)/s);
@@ -616,7 +616,7 @@ test('dedupe bulk group toggle lives below scan stats and its context menu stays
   assert.doesNotMatch(page, /<header[\s\S]*智能选择[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*开始检测[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*选择全部分组标记为不重复[\s\S]*<\/header>/);
-  assert.match(menu, /const width = 150/);
+  assert.match(menu, /<Menu\.Popup className="archive-context-menu dedupe-archive-context-menu/);
   assert.doesNotMatch(css, /\.dedupe-archive-context-menu\s*\{[^}]*width:\s*190px/);
 });
 
@@ -774,7 +774,7 @@ test('Reader model selector explains each super-resolution option', () => {
 
   assert.match(reader, /<span className="settings-row-title">超分模型<\/span>/);
   assert.doesNotMatch(reader, /<SettingHint text=\{srModel\?\.description/);
-  assert.match(select, /opt\.description/);
+  assert.match(select, /option\.description/);
   assert.match(select, /SettingHint/);
 });
 
@@ -1035,6 +1035,7 @@ test('iOS wrapper sends the left-edge gesture through web history', () => {
 test('mobile settings respect safe areas and reveal animations release compositor layers', () => {
   const home = read('src/pages/Home.jsx');
   const css = read('src/index.css');
+  const primitives = read('src/styles/primitives.css');
   const customSelect = read('src/components/CustomSelect.jsx');
 
   assert.match(home, /className="settings-overlay"/);
@@ -1043,8 +1044,9 @@ test('mobile settings respect safe areas and reveal animations release composito
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-top:\s*max\(24px,\s*calc\(var\(--app-safe-area-top\) \+ 16px\)\);/s);
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-bottom:\s*max\(24px,\s*calc\(var\(--app-safe-area-bottom\) \+ 16px\)\);/s);
   assert.match(css, /\.settings-control\s*\{[^}]*flex:\s*0 0 148px;[^}]*width:\s*148px;/s);
-  assert.match(customSelect, /display:\s*'flex'[^}]*gap:\s*'8px'/s);
-  assert.match(customSelect, /<span style=\{\{[^}]*flex:\s*1[^}]*minWidth:\s*0[^}]*textOverflow:\s*'ellipsis'/s);
+  assert.match(customSelect, /className="input-glass custom-select-trigger"/);
+  assert.match(primitives, /\.custom-select-trigger\s*\{[^}]*display:\s*flex;[^}]*gap:\s*8px;/s);
+  assert.match(primitives, /\.custom-select-value\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;[^}]*text-overflow:\s*ellipsis;/s);
   assert.match(css, /@keyframes sectionReveal\s*\{[\s\S]*to\s*\{[^}]*transform:\s*none;/s);
 });
 
@@ -1107,7 +1109,8 @@ test('reader overlays do not mutate background geometry and settings use remaini
   assert.match(reader, /document\.addEventListener\('wheel', containReaderOverlayScroll, \{ capture: true, passive: false \}\)/);
   assert.match(reader, /document\.addEventListener\('touchmove', containReaderOverlayScroll, \{ capture: true, passive: false \}\)/);
   assert.ok((reader.match(/data-reader-overlay-scroll/g) || []).length >= 4);
-  assert.match(select, /data-select-dropdown="true"[\s\S]*overscrollBehavior:\s*'contain'[\s\S]*touchAction:\s*'pan-y'/s);
+  assert.match(select, /data-select-dropdown="true"/);
+  assert.match(read('src/styles/primitives.css'), /\.custom-select-list\s*\{[^}]*overscroll-behavior:\s*contain;[^}]*touch-action:\s*pan-y;/s);
 });
 
 test('configuration transfer warning and settings layers stay concise and isolated', () => {
@@ -1745,13 +1748,13 @@ test('archive cards, custom selects, and overlays expose complete keyboard seman
   assert.match(card, /role=\{selectionMode \? 'checkbox' : 'button'\}/);
   assert.match(card, /tabIndex=\{!disabled \? 0 : -1\}/);
   assert.match(card, /event\.key !== 'Enter' && event\.key !== ' '/);
-  assert.match(select, /role="listbox"/);
-  assert.match(select, /role="option"/);
-  assert.match(select, /e\.key === 'ArrowDown'/);
+  assert.match(select, /<Select\.List/);
+  assert.match(select, /<Select\.Item/);
+  assert.match(select, /<Select\.Trigger/);
   assert.match(home, /role="dialog"[\s\S]*aria-modal="true"/);
   assert.match(reader, /role="dialog"[\s\S]*aria-modal="true"/);
   assert.match(reader, /<button[\s\S]*data-reader-drawer-page/);
-  assert.match(dialog, /event\.key !== 'Tab'/);
+  assert.match(dialog, /<Dialog\.Popup/);
 });
 
 test('settings dialog keeps initial focus on first control instead of dialog fallback', () => {
