@@ -51,6 +51,62 @@
     color: var(--text-primary);
     box-shadow: none;
   }
+  .tag-suggest-panel {
+    position: fixed;
+    z-index: 200000;
+    scrollbar-gutter: auto;
+    overflow-y: auto;
+    overflow-x: clip;
+    contain: layout paint;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 0;
+    padding-right: 0;
+    box-sizing: border-box;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+  .tag-suggest-option {
+    min-width: 0;
+    padding: 7px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color var(--motion-fast) var(--motion-curve);
+    user-select: none;
+  }
+  .tag-suggest-option.is-active { background: var(--accent-soft); }
+  .tag-suggest-option.is-narrow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 8px 14px;
+  }
+  .tag-suggest-option-main { min-width: 0; display: flex; align-items: center; gap: 10px; }
+  .tag-suggest-badge {
+    min-width: 36px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, var(--tag-suggest-ns-color) 40%, transparent);
+    border-radius: var(--radius-xs);
+    background: color-mix(in srgb, var(--tag-suggest-ns-color) 14%, transparent);
+    color: color-mix(in srgb, var(--tag-suggest-ns-color) 40%, var(--text-primary));
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .tag-suggest-badge-label { min-width: 0; }
+  .tag-suggest-label { min-width: 0; flex: 1; overflow: hidden; color: var(--text-primary); white-space: nowrap; text-overflow: ellipsis; }
+  .tag-suggest-tag { min-width: 0; flex-shrink: 0; overflow: hidden; color: var(--text-muted); font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+  .tag-suggest-option.is-narrow .tag-suggest-tag { flex-shrink: 1; padding-left: 46px; }
   .menu, .popover, .dialog, .drawer {
     background: var(--surface);
     border: 1px solid var(--border-subtle);

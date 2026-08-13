@@ -443,12 +443,10 @@ test('upload task rows animate on insert and before list clearing', () => {
 
 test('tag suggestion panel hides scrollbars without reserving a hidden gutter', () => {
   const suggestions = read('src/components/TagSuggest.jsx');
+  const primitives = read('src/styles/primitives.css');
   const css = read('src/index.css');
-  assert.match(suggestions, /className="dropdown-animate no-scrollbar tag-suggest-panel"/);
-  assert.match(suggestions, /scrollbarGutter:\s*'auto'/);
-  assert.match(suggestions, /overflowX:\s*'clip'/);
-  assert.match(suggestions, /contain:\s*'layout paint'/);
-  assert.match(suggestions, /paddingRight:\s*0/);
+  assert.match(suggestions, /className="dropdown-animate no-scrollbar tag-suggest-panel popover"/);
+  assert.match(primitives, /\.tag-suggest-panel\s*\{[^}]*scrollbar-gutter:\s*auto;[^}]*overflow-x:\s*clip;[^}]*contain:\s*layout paint;[^}]*padding-right:\s*0;/s);
   assert.match(css, /\.no-scrollbar\s*\{[^}]*scrollbar-gutter:\s*auto;/s);
 });
 
@@ -1706,7 +1704,8 @@ test('ordinary UI controls use semantic colors in both themes', () => {
   assert.doesNotMatch(dedupe, /rgba\(255,255,255,0\.035\)|rgba\(148,163,184,0\.16\)/);
   assert.doesNotMatch(archiveCard, /rgba\(255,255,255,0\.0[25]\)|transition:\s*'all/);
   assert.match(archiveCard, /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-main\)\)/);
-  assert.match(tagSuggest, /color-mix\(in srgb, \$\{nsColor\} 40%, var\(--text-main\)\)/);
+  assert.match(tagSuggest, /className="tag-suggest-badge" style=\{\{ '--tag-suggest-ns-color': nsColor \}\}/);
+  assert.match(read('src/styles/primitives.css'), /\.tag-suggest-badge\s*\{[\s\S]*color-mix\(in srgb, var\(--tag-suggest-ns-color\) 40%, var\(--text-primary\)\)/);
   assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-secondary\)/s);
   assert.match(css, /\.upload-notice\s*\{[^}]*background:\s*var\(--warning-soft\)[^}]*border:\s*1px solid var\(--warning\)/s);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toggle-switch-track[\s\S]*?\.archive-card-selection-checkbox/);

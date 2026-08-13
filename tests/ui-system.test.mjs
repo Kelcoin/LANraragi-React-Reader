@@ -24,6 +24,7 @@ const RUNTIME_CUSTOM_PROPERTIES = new Set([
   '--metadata-tag-font-scale', '--metadata-tag-visible-width', '--reader-toolbar-height',
   '--reader-toolbar-title-width', '--settings-pane-height', '--tag-ns-color', '--task-progress',
   '--toast-duration',
+  '--tag-suggest-ns-color',
 ]);
 
 function declaredProperties(block) {
@@ -382,4 +383,26 @@ test('tag suggestion namespace colors follow active theme tokens', () => {
     assert.match(suggestions, new RegExp(`${token}: ['"]var\\(--tag-${token}\\)['"]`));
   }
   assert.doesNotMatch(suggestions, /artist:\s*['"]#[0-9a-f]{6}/i);
+});
+
+test('tag suggestion visuals use semantic classes with runtime-only styles', () => {
+  const suggestions = read('src/components/TagSuggest.jsx');
+  const primitives = read('src/styles/primitives.css');
+
+  assert.match(suggestions, /className="dropdown-animate no-scrollbar tag-suggest-panel popover"/);
+  assert.doesNotMatch(suggestions, /const basePanel\s*=/);
+  assert.match(suggestions, /style=\{anchor\}/);
+  assert.doesNotMatch(suggestions, /position:\s*'fixed'|zIndex:\s*200000/);
+
+  const inlineStyleObjects = suggestions.match(/style=\{\{[\s\S]*?\}\}/g) || [];
+  assert.ok(inlineStyleObjects.length > 0, 'namespace color should be passed through a custom property');
+  assert.ok(inlineStyleObjects.every((style) => /--tag-suggest-ns-color/.test(style)));
+  assert.ok(inlineStyleObjects.every((style) => !/(?:padding|background|border|fontSize|display|cursor|gap|color|transition|userSelect)\s*:/.test(style)));
+
+  for (const selector of ['tag-suggest-panel', 'tag-suggest-option', 'tag-suggest-badge', 'tag-suggest-label', 'tag-suggest-tag']) {
+    assert.match(primitives, new RegExp(`\\.${selector}\\s*\\{`), `missing ${selector} primitive styles`);
+  }
+  assert.match(primitives, /\.tag-suggest-option\.is-active\s*\{[^}]*background:\s*var\(--accent-soft\)/s);
+  assert.match(primitives, /\.tag-suggest-badge\s*\{[\s\S]*var\(--tag-suggest-ns-color\)/s);
+  assert.match(primitives, /\.tag-suggest-panel\s*\{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*200000;/s);
 });
