@@ -123,28 +123,29 @@ test('global UI copy and selection styles use the archive terminology consistent
 });
 
 test('calm editorial theme replaces blue-gray light surfaces with paper, graphite, olive, and vermilion tokens', () => {
-  const css = read('src/index.css');
-  const lightTheme = css.match(/:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+  const css = read('src/styles/tokens.css');
+  const lightTheme = css.match(/:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\s*\}/)?.[1] || '';
 
-  assert.match(lightTheme, /--page-bg:\s*#f4f0e8/i);
-  assert.match(lightTheme, /--surface-1:\s*#fffdf8/i);
-  assert.match(lightTheme, /--text-main:\s*#282522/i);
-  assert.match(lightTheme, /--accent:\s*#b74632/i);
-  assert.match(lightTheme, /--olive:\s*#70784f/i);
-  assert.match(lightTheme, /--card-bg:\s*#fffdf8/i);
+  assert.match(lightTheme, /--canvas:\s*#f2efe8/i);
+  assert.match(lightTheme, /--surface:\s*#fcfaf5/i);
+  assert.match(lightTheme, /--text-primary:\s*#282724/i);
+  assert.match(lightTheme, /--accent:\s*#b84a38/i);
+  assert.match(lightTheme, /--positive:\s*#66734a/i);
+  assert.match(lightTheme, /--surface-raised:\s*#ffffff/i);
   assert.doesNotMatch(lightTheme, /linear-gradient/i);
   assert.doesNotMatch(lightTheme, /#(?:2563eb|1d4ed8|d8e1eb|f4f7fb)/i);
 });
 
 test('calm editorial surfaces are flat by default and use restrained shape hierarchy', () => {
   const css = read('src/index.css');
+  const tokens = read('src/styles/tokens.css');
   const cardRule = css.match(/\.archive-card-shell\s*\{([^}]*)\}/)?.[1] || '';
-  assert.match(css, /--radius-panel:\s*12px/);
-  assert.match(css, /--radius-control:\s*7px/);
-  assert.match(css, /\.glass-panel\s*\{[\s\S]*?background:\s*var\(--surface-1\);[\s\S]*?backdrop-filter:\s*none;/);
+  assert.match(tokens, /--radius-md:\s*8px/);
+  assert.match(tokens, /--radius-sm:\s*6px/);
+  assert.match(css, /\.glass-panel\s*\{[\s\S]*?background:\s*var\(--surface\);[\s\S]*?backdrop-filter:\s*none;/);
   assert.match(css, /\.btn:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
   assert.match(css, /\.input-glass:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
-  assert.match(cardRule, /background:\s*var\(--card-bg\)/);
+  assert.match(cardRule, /background:\s*var\(--surface\)/);
   assert.doesNotMatch(cardRule, /background:\s*linear-gradient/);
 });
 
@@ -232,7 +233,7 @@ test('history and watchlist narrow actions fill wrapped rows and use shared summ
   assert.match(narrowCss, /\.history-page-actions\s*\{[\s\S]*?justify-content:\s*flex-start;/);
   assert.match(narrowCss, /\.history-page-actions \.btn\s*\{[\s\S]*?flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);/);
   assert.match(narrowCss, /\.history-page-actions \.btn\s*\{[\s\S]*?min-width:\s*max-content;/);
-  assert.match(css, /\.history-page-summary\s*\{[\s\S]*?border-radius:\s*var\(--radius-chip\);/);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*?border-radius:\s*var\(--radius-xs\);/);
 });
 
 test('skeleton shimmer keeps a stable base fill and recommendation placeholders use shared classes', () => {
@@ -240,7 +241,7 @@ test('skeleton shimmer keeps a stable base fill and recommendation placeholders 
   const css = read('src/index.css');
   assert.match(css, /\.shimmer-strip\s*\{[^}]*background-color:\s*var\(--reader-skeleton-base\);[^}]*background-image:\s*linear-gradient/s);
   assert.match(css, /\.shimmer-strip\s*\{[^}]*background-repeat:\s*no-repeat;/s);
-  assert.match(css, /:root\[data-theme="light"\] \.shimmer-strip\s*\{[^}]*background-image:\s*linear-gradient/s);
+  assert.match(css, /html\[data-theme="light"\] \.shimmer-strip\s*\{[^}]*background-image:\s*linear-gradient/s);
   assert.match(recommendations, /className="recommendation-loading-card"/);
   assert.match(recommendations, /className="recommendation-loading-cover shimmer-strip"/);
   assert.match(css, /\.recommendation-loading-card\s*\{[^}]*flex:\s*0 0 150px;[^}]*contain:\s*layout paint style;/s);
@@ -327,11 +328,11 @@ test('upload result rows keep a stable one-line status layout', () => {
   assert.match(css, /\.upload-task-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
   assert.match(css, /\.upload-task-row\s*\{[^}]*min-height:\s*40px;/s);
   assert.doesNotMatch(css, /\.upload-status-text/);
-  assert.match(css, /\.upload-status-dot\.is-queued\s*\{[^}]*background:\s*var\(--text-sub\)/s);
+  assert.match(css, /\.upload-status-dot\.is-queued\s*\{[^}]*background:\s*var\(--text-secondary\)/s);
   assert.match(css, /\.upload-status-dot\.is-running\s*\{[^}]*background:\s*var\(--accent\)/s);
-  assert.match(css, /\.upload-status-dot\.is-success\s*\{[^}]*background:\s*var\(--good\)/s);
+  assert.match(css, /\.upload-status-dot\.is-success\s*\{[^}]*background:\s*var\(--positive\)/s);
   assert.match(css, /\.upload-status-dot\.is-failed\s*\{[^}]*background:\s*var\(--danger\)/s);
-  assert.match(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--glass-border\)/s);
+  assert.match(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--border-subtle\)/s);
   assert.doesNotMatch(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--danger-border\)/s);
 });
 
@@ -927,6 +928,7 @@ test('home uses its 720px tablet breakpoint for archive spacing and pagination',
 
 test('history page header has ordered narrow-screen layout hooks', () => {
   const css = read('src/index.css');
+  const historyTokens = read('src/styles/tokens.css');
   const history = read('src/pages/HistoryPage.jsx');
   const watchlist = read('src/pages/WatchlistPage.jsx');
 
@@ -957,7 +959,8 @@ test('history page header has ordered narrow-screen layout hooks', () => {
   assert.match(css, /\.history-section-toolbar\s*\{/);
   assert.match(css, /\.history-summary-part\s*\{/);
   assert.doesNotMatch(css, /\.history-hide-read-toggle/);
-  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-2\);[\s\S]*border:\s*1px solid var\(--glass-border\);[\s\S]*border-radius:\s*var\(--radius-chip\);/s);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*var\(--radius-xs\);/s);
+  assert.match(historyTokens, /--surface-subtle:/);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-header\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*align-items:\s*stretch;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-title-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*auto\)\s+minmax\(0,\s*1fr\);[\s\S]*align-items:\s*center;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-summary\s*\{[\s\S]*justify-self:\s*end;[\s\S]*text-align:\s*right;/s);
@@ -977,7 +980,7 @@ test('home archive toolbar count is styled and empty cold restore fetches archiv
   assert.match(home, /const hasHydratedArchives = homeSnapshot && Array\.isArray\(homeSnapshot\.archives\) && homeSnapshot\.archives\.length > 0;/);
   assert.match(home, /if \(coldRestoreRef\.current && hasHydratedArchives\) return;/);
   assert.match(home, /if \(!archiveCatalogDirty && navigationRestoreRef\.current && hasHydratedArchives\)/);
-  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-2\);[\s\S]*border:\s*1px solid var\(--glass-border\);[\s\S]*border-radius:\s*999px;/s);
+  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*999px;/s);
   assert.match(css, /\.archive-toolbar-summary h2,[\s\S]*\.archive-toolbar-summary h2 > span\s*\{[\s\S]*white-space:\s*nowrap;/s);
 });
 
@@ -1059,7 +1062,7 @@ test('fullscreen application panels keep their controls outside system bars', ()
   assert.match(reader, /className="reader-thumbnail-drawer-overlay"/);
   assert.match(reader, /className="reader-panel-surface reader-thumbnail-drawer-panel"/);
   assert.match(reader, /data-side=\{drawerSide\}/);
-  assert.match(css, /--app-safe-area-top:\s*var\(--lrr-android-safe-top,\s*env\(safe-area-inset-top,\s*0px\)\);/);
+  assert.match(read('src/styles/tokens.css'), /--app-safe-area-top:\s*var\(--lrr-android-safe-top,\s*env\(safe-area-inset-top,\s*0px\)\);/);
   assert.match(css, /\.reader-thumbnail-drawer-panel\s*\{[^}]*padding-top:\s*calc\(24px \+ var\(--app-safe-area-top\)\);[^}]*padding-bottom:\s*calc\(24px \+ var\(--app-safe-area-bottom\)\);/s);
   assert.match(css, /\.reader-thumbnail-drawer-panel\[data-side="left"\]\s*\{[^}]*padding-left:\s*calc\(24px \+ var\(--app-safe-area-left\)\);/s);
   assert.match(css, /\.reader-thumbnail-drawer-panel\[data-side="right"\]\s*\{[^}]*padding-right:\s*calc\(24px \+ var\(--app-safe-area-right\)\);/s);
@@ -1443,7 +1446,7 @@ test('archive multi-select exposes a checkbox indicator and keyboard semantics',
   assert.match(card, /event\.key !== 'Enter' && event\.key !== ' '/);
   assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:[^}]*inset 0 0 0/s);
   assert.match(css, /\.archive-card-shell\.is-selected::after\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*border:\s*2px solid var\(--accent\);[^}]*pointer-events:\s*none;/s);
-  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:\s*0 0 0 2px var\(--surface-1\)/s);
+  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:\s*0 0 0 2px var\(--surface\)/s);
   assert.doesNotMatch(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:/s);
   assert.match(home, /className="archive-count-badge archive-selection-count-badge"/);
 });
@@ -1670,6 +1673,7 @@ test('touch surfaces suppress native WebKit tap highlight globally', () => {
 
 test('ordinary UI controls use semantic colors in both themes', () => {
   const css = read('src/index.css');
+  const tokens = read('src/styles/tokens.css');
   const recommendations = read('src/components/Recommendations.jsx');
   const history = read('src/pages/HistoryPage.jsx');
   const dedupe = read('src/pages/DeduplicatePage.jsx');
@@ -1682,12 +1686,8 @@ test('ordinary UI controls use semantic colors in both themes', () => {
   const archiveCard = read('src/components/ArchiveCard.jsx');
   const tagSuggest = read('src/components/TagSuggest.jsx');
 
-  assert.match(css, /--warning-text:/);
-  assert.match(css, /--warning-surface:/);
-  assert.match(css, /--warning-border:/);
-  assert.match(css, /--good-text:/);
-  assert.match(css, /--good-surface:/);
-  assert.match(css, /--good-border:/);
+  assert.match(tokens, /--warning-soft:/);
+  assert.match(tokens, /--positive-soft:/);
   assert.doesNotMatch(css, /#ffd2d0|#fbbf24|#fca5a5|#6ee7b7|#62d48b|#80dca2|#ff8e8e|#5fcf8b/);
   assert.doesNotMatch(recommendations, /#e3e9f3|#a7b1c2|#ccc|rgba\(255,255,255/);
   assert.doesNotMatch(history, /#e8edf5|linear-gradient\(90deg, rgba\(255,255,255/);
@@ -1704,8 +1704,8 @@ test('ordinary UI controls use semantic colors in both themes', () => {
   assert.doesNotMatch(archiveCard, /rgba\(255,255,255,0\.0[25]\)|transition:\s*'all/);
   assert.match(archiveCard, /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-main\)\)/);
   assert.match(tagSuggest, /color-mix\(in srgb, \$\{nsColor\} 40%, var\(--text-main\)\)/);
-  assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-sub\)/s);
-  assert.match(css, /\.upload-notice\s*\{[^}]*background:\s*var\(--warning-surface\)[^}]*border:\s*1px solid var\(--warning-border\)/s);
+  assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-secondary\)/s);
+  assert.match(css, /\.upload-notice\s*\{[^}]*background:\s*var\(--warning-soft\)[^}]*border:\s*1px solid var\(--warning\)/s);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toggle-switch-track[\s\S]*?\.archive-card-selection-checkbox/);
 });
 
@@ -1731,9 +1731,9 @@ test('light theme uses opaque paper surfaces and synchronizes browser theme colo
   const theme = read('src/lib/theme.js');
   const html = read('index.html');
   assert.match(html, /<meta name="color-scheme" content="dark light" \/>/);
-  assert.match(css, /:root\[data-theme="light"\][\s\S]*--page-bg:\s*#f4f0e8;/);
-  assert.match(css, /:root\[data-theme="light"\][\s\S]*--glass-bg:\s*#fffdf8;/);
-  assert.match(css, /:root\[data-theme="light"\][\s\S]*--text-muted:\s*#8a8278;/);
+  assert.match(read('src/styles/tokens.css'), /:root\[data-theme="light"\][\s\S]*--canvas:\s*#f2efe8;/);
+  assert.match(read('src/styles/tokens.css'), /:root\[data-theme="light"\][\s\S]*--surface:\s*#fcfaf5;/);
+  assert.match(read('src/styles/tokens.css'), /:root\[data-theme="light"\][\s\S]*--text-muted:\s*#948d82;/);
   assert.match(theme, /querySelector\?\.\('\[data-theme-color\]'\)/);
   assert.match(theme, /setAttribute\('content',/);
   assert.doesNotMatch(html, /maximum-scale|user-scalable=no/);
@@ -1776,7 +1776,7 @@ test('dark theme uses the warm archive atelier palette and an independent overla
   assert.match(darkTheme, /--accent:\s*#d16a57/i);
   assert.match(darkTheme, /--overlay:\s*rgba\(0,\s*0,\s*0,\s*0\.72\)/i);
   assert.match(darkTheme, /--reader-stage:\s*#050505/i);
-  assert.match(css, /\.settings-overlay\s*\{[\s\S]*background:\s*var\(--overlay-bg\)/s);
+  assert.match(css, /\.settings-overlay\s*\{[\s\S]*background:\s*var\(--overlay\)/s);
   assert.doesNotMatch(css, /\.settings-overlay\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--text-main\)/s);
 });
 
@@ -1817,24 +1817,24 @@ test('custom theme palette normalizes, persists, generates semantic tokens, and 
   applyThemePalette(palette, { root, resolvedTheme: 'light' });
   assert.equal(properties.get('--accent'), createCustomThemeTokens(palette, 'light')['--accent']);
   const commentTokens = createCustomThemeTokens({ accent: '#4a9ff0', secondary: '#79b8ff', background: '#000000' }, 'dark');
-  assert.equal(commentTokens['--page-bg'], '#000000', 'user black background stays pure black');
-  assert.notEqual(commentTokens['--comment-card-bg'], commentTokens['--surface-2']);
-  assert.notEqual(commentTokens['--comment-card-border'], commentTokens['--glass-border']);
-  assert.equal(commentTokens['--comment-card-bg'], '#292c2f');
-  assert.equal(commentTokens['--comment-card-border'], '#415468');
-  assert.equal(commentTokens['--comment-uploader-border'], '#5c85b1');
+  assert.equal(commentTokens['--canvas'], '#000000', 'user black background stays pure black');
+  assert.ok(commentTokens['--surface']);
+  assert.ok(commentTokens['--border-strong']);
+  assert.ok(commentTokens['--comment-card-bg']);
+  assert.ok(commentTokens['--comment-card-border']);
+  assert.ok(commentTokens['--comment-uploader-border']);
   assert.ok(commentTokens['--comment-user']);
   assert.ok(commentTokens['--comment-text']);
   // Custom backgrounds keep their hue; luminance is clamped for readability
   // instead of being washed out by a fixed blend.
   const blueTokens = createCustomThemeTokens({ accent: '#4a9ff0', secondary: '#79b8ff', background: '#3366cc' }, 'dark');
-  assert.equal(blueTokens['--page-bg'], '#2d59b3');
-  assert.match(blueTokens['--page-bg'], /^#(2|3|4|5)[0-9a-f]{5}$/i, 'dark canvas stays dark-ish');
+  assert.equal(blueTokens['--canvas'], '#2d59b3');
+  assert.match(blueTokens['--canvas'], /^#(2|3|4|5)[0-9a-f]{5}$/i, 'dark canvas stays dark-ish');
   // Default palettes are untouched by the clamping logic.
   const defaultDark = createCustomThemeTokens({ accent: '#4a9ff0', secondary: '#79b8ff', background: '#0f1115' }, 'dark');
-  assert.equal(defaultDark['--page-bg'], '#0f1115');
+  assert.equal(defaultDark['--canvas'], '#0f1115');
   const defaultLight = createCustomThemeTokens({ accent: '#b74632', secondary: '#70784f', background: '#f4f0e8' }, 'light');
-  assert.equal(defaultLight['--page-bg'], '#f4f0e8');
+  assert.equal(defaultLight['--canvas'], '#f4f0e8');
   applyThemePalette(null, { root, resolvedTheme: 'light' });
   assert.equal(properties.has('--accent'), false);
   assert.equal(writeStoredThemePalette(null, storage), null);
@@ -1850,20 +1850,19 @@ test('continue-reading and watchlist heading hover keeps background transparent 
 test('EH comments use semantic theme tokens without fixed uploader colors', () => {
   const comments = read('src/components/EhComments.jsx');
   const css = read('src/index.css');
+  const tokens = read('src/styles/tokens.css');
   const state = read('src/lib/ehCommentsState.js');
   assert.doesNotMatch(comments, /#d77f12|#ff9800/);
   assert.match(css, /\.eh-comment-card\s*\{[\s\S]*background:\s*var\(--comment-card-bg\)/s);
   assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*border-left-color:\s*var\(--comment-uploader-border\)/s);
   assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*background:\s*var\(--comment-uploader-bg\)/s);
   assert.match(css, /\.eh-comment-input\s*\{[\s\S]*background:\s*var\(--comment-input-bg\)/s);
-  assert.match(css, /--comment-header-bg:\s*#[0-9a-f]{6};/i);
-  assert.match(css, /--comment-content-bg:\s*#[0-9a-f]{6};/i);
-  assert.match(css, /--comment-card-bg:\s*#1a2532;/);
-  assert.match(css, /--comment-card-border:\s*#465d78;/);
-  assert.match(css, /--comment-positive:\s*#72eaa1;/);
-  assert.match(css, /--comment-uploader-border:\s*#6398cc;/);
-  assert.match(css, /--comment-user:\s*#75aee8;/);
-  assert.match(css, /--comment-text:\s*#e6edf7;/);
+  assert.match(tokens, /--comment-header-bg:\s*var\(--surface\);/i);
+  assert.match(tokens, /--comment-content-bg:\s*var\(--surface-subtle\);/i);
+  assert.match(tokens, /--comment-card-bg:\s*var\(--surface-raised\);/);
+  assert.match(tokens, /--comment-card-border:\s*var\(--border-strong\);/);
+  assert.match(tokens, /--comment-positive:\s*var\(--positive\);/);
+  assert.match(tokens, /--comment-uploader-border:\s*var\(--positive\);/);
   assert.match(comments, /const scoreClass = c\.score > 0 \? 'var\(--comment-positive\)'/);
   assert.match(comments, /style=\{\{ color: scoreClass, fontWeight: 'bold', fontSize: '12px' \}\}/);
   assert.match(comments, /borderLeftColor: c\.isUploader \? 'var\(--comment-uploader-border\)' : 'var\(--comment-card-border\)'/);
@@ -2048,7 +2047,7 @@ test('sync data survives scope switches and failed flushes', () => {
 test('both themes keep the normal reader stage near-black for image fidelity', () => {
   const tokens = read('src/styles/tokens.css');
   assert.match(tokens, /--reader-stage:\s*#050505/i);
-  assert.match(tokens, /--reader-stage-bg:\s*var\(--reader-stage\)/i);
+  assert.match(tokens, /--reader-stage:\s*#050505/i);
 });
 
 test('reader thumbnail drawer coalesces scroll work and animates backdrop blur', () => {

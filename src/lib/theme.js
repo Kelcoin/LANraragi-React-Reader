@@ -25,6 +25,12 @@ const CUSTOM_THEME_PROPERTIES = [
   '--accent', '--accent-strong', '--accent-soft', '--accent-contrast',
   '--positive', '--positive-strong', '--positive-soft', '--warning', '--warning-soft',
   '--danger', '--danger-soft', '--focus-ring', '--overlay', '--reader-stage',
+  '--reader-toolbar-bg', '--reader-control-bg', '--reader-control-hover-bg', '--reader-control-border', '--reader-control-text',
+  '--reader-overlay-text', '--reader-stage-border', '--reader-panel-bg', '--reader-skeleton-base', '--reader-skeleton-highlight',
+  '--comment-header-bg', '--comment-content-bg', '--comment-card-bg', '--comment-card-border', '--comment-positive', '--comment-negative',
+  '--comment-uploader-bg', '--comment-uploader-border', '--comment-user', '--comment-user-self', '--comment-text', '--comment-meta', '--comment-input-bg',
+  '--tag-panel-bg', '--tag-artist', '--tag-parody', '--tag-category', '--tag-character', '--tag-female', '--tag-male', '--tag-mixed', '--tag-other',
+  '--tag-group', '--tag-series', '--tag-language', '--tag-uploader', '--tag-date-added', '--tag-timestamp', '--tag-source', '--tag-general',
 ];
 
 function normalizeHex(value, fallback) {
@@ -233,6 +239,46 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
     '--accent-strong': accentStrong,
     '--accent-soft': accentSoft,
     '--accent-contrast': accentContrast,
+    '--reader-toolbar-bg': surface1,
+    '--reader-control-bg': surface3,
+    '--reader-control-hover-bg': dark ? mixHex(surface3, '#ffffff', 0.1) : mixHex(surface3, '#000000', 0.04),
+    '--reader-control-border': borderHover,
+    '--reader-control-text': textMain,
+    '--reader-overlay-text': textMain,
+    '--reader-stage-border': border,
+    '--reader-panel-bg': surface1,
+    '--reader-skeleton-base': surface2,
+    '--reader-skeleton-highlight': surface3,
+    '--comment-header-bg': surface1,
+    '--comment-content-bg': surface2,
+    '--comment-card-bg': surface3,
+    '--comment-card-border': borderHover,
+    '--comment-positive': good,
+    '--comment-negative': danger,
+    '--comment-uploader-bg': secondarySoft,
+    '--comment-uploader-border': secondaryStrong,
+    '--comment-user': accentStrong,
+    '--comment-user-self': secondaryStrong,
+    '--comment-text': textMain,
+    '--comment-meta': textSub,
+    '--comment-input-bg': surface1,
+    '--tag-panel-bg': surface1,
+    '--tag-artist': accentStrong,
+    '--tag-parody': accent,
+    '--tag-category': secondary,
+    '--tag-character': secondaryStrong,
+    '--tag-female': danger,
+    '--tag-male': accentStrong,
+    '--tag-mixed': secondaryStrong,
+    '--tag-other': textSub,
+    '--tag-group': secondaryStrong,
+    '--tag-series': accent,
+    '--tag-language': secondary,
+    '--tag-uploader': secondary,
+    '--tag-date-added': textSub,
+    '--tag-timestamp': textSub,
+    '--tag-source': secondary,
+    '--tag-general': textSub,
   };
 }
 
@@ -295,7 +341,7 @@ export function applyThemeMode(mode, options = {}) {
   const customTokens = applyThemePalette(palette, { root, resolvedTheme: resolved });
   const document = root?.ownerDocument || globalThis.document;
   const themeColor = document?.querySelector?.('[data-theme-color]');
-  themeColor?.setAttribute('content', customTokens?.['--page-bg'] || THEME_COLORS[resolved] || THEME_COLORS.dark);
+  themeColor?.setAttribute('content', customTokens?.['--canvas'] || THEME_COLORS[resolved] || THEME_COLORS.dark);
   return resolved;
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { createCustomThemeTokens, DEFAULT_THEME_PALETTES } from '../src/lib/theme.js';
+import { applyThemeMode, createCustomThemeTokens, DEFAULT_THEME_PALETTES } from '../src/lib/theme.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
@@ -18,6 +18,12 @@ const REQUIRED_SEMANTIC_TOKENS = [
 const LEGACY_THEME_TOKENS = [
   '--page-bg', '--surface-1', '--text-main', '--text-sub', '--glass-border', '--olive', '--reader-stage-bg',
 ];
+
+const RUNTIME_CUSTOM_PROPERTIES = new Set([
+  '--anchor-width', '--archive-wide-card-width', '--available-height', '--lrr-android-safe-top',
+  '--metadata-tag-font-scale', '--metadata-tag-visible-width', '--settings-pane-height', '--tag-ns-color',
+  '--shadow-lg-lg', '--task-progress', '--toast-duration',
+]);
 
 function declaredProperties(block) {
   return new Set([...block.matchAll(/(^|[;{]\s*)(--[\w-]+)\s*:/gm)].map((match) => match[2]));
@@ -65,6 +71,16 @@ test('semantic tokens are the only visual token authority', () => {
   assert.doesNotMatch(primitives, /Compatibility rules remain unlayered/);
   assert.doesNotMatch(index, /Archive Atelier compatibility/i);
   assert.match(productionJsx, /className=/);
+
+  const productionCss = fs.readdirSync(new URL('../src', import.meta.url), { recursive: true })
+    .filter((name) => name.endsWith('.css'))
+    .map((name) => read(`src/${name.replaceAll('\\', '/')}`))
+    .join('\n');
+  const definitions = new Set([...productionCss.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1]));
+  const references = new Set([...productionCss.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]));
+  const unresolved = [...references].filter((name) => !definitions.has(name) && !RUNTIME_CUSTOM_PROPERTIES.has(name));
+  assert.deepEqual(unresolved.sort(), [], `unresolved production custom properties: ${unresolved.sort().join(', ')}`);
+  for (const legacy of LEGACY_THEME_TOKENS) assert.doesNotMatch(productionCss, new RegExp(`var\\(${legacy}\\b`));
 });
 
 test('built-in and custom themes expose the complete semantic token contract', () => {
@@ -114,7 +130,29 @@ test('shared primitives expose complete compact control and surface states', () 
   assert.match(css, /\.field\.is-error[^}]*border-color:\s*var\(--danger\)/s);
   assert.match(css, /\.surface\s*\{[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*none/s);
   assert.match(css, /var\(--motion-curve\)/);
+  assert.match(css, /\.is-loading[^}]*pointer-events:\s*none/s);
+  assert.match(css, /\[aria-busy="true"\][^}]*cursor:\s*wait/s);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*animation-duration:\s*0\.01ms/s);
+});
+
+test('custom palette canvas drives browser theme color', () => {
+  const attributes = new Map();
+  const themeColor = { setAttribute: (name, value) => attributes.set(name, value) };
+  const styleValues = new Map();
+  const root = {
+    dataset: {},
+    style: {
+      removeProperty: (name) => styleValues.delete(name),
+      setProperty: (name, value) => styleValues.set(name, value),
+    },
+    ownerDocument: { querySelector: () => themeColor },
+  };
+  const palette = { accent: '#b74632', secondary: '#70784f', background: '#e6ded2' };
+
+  applyThemeMode('light', { root, palette });
+
+  assert.equal(attributes.get('content'), styleValues.get('--canvas'));
+  assert.notEqual(attributes.get('content'), '#f2efe8');
 });
 
 test('shared component visuals use state classes and project close glyphs', () => {

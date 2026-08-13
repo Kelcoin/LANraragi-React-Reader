@@ -37,6 +37,8 @@
   .field:focus { border-color: var(--accent); }
   .field.is-error, .field[aria-invalid="true"] { border-color: var(--danger); }
   .field:disabled, .btn:disabled, [aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
+  .is-loading, [aria-busy="true"] { pointer-events: none; }
+  [aria-busy="true"] { cursor: wait; }
 
   .surface {
     background: var(--surface);
@@ -89,7 +91,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .btn, .field, .surface, .toolbar, .tag, .toggle-switch-track, .toggle-switch-thumb, .toast-card, .toast-progress {
+    .btn, .field, .surface, .toolbar, .tag, .toggle-switch-track, .toggle-switch-thumb, .toast-card, .toast-progress, .is-loading, [aria-busy="true"] {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
