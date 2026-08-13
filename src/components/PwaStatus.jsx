@@ -110,48 +110,23 @@ export default function PwaStatus() {
     <div
       role="status"
       aria-live="polite"
-      style={{
-        position: 'fixed',
-        left: 'max(14px, env(safe-area-inset-left, 0px))',
-        right: 'max(14px, env(safe-area-inset-right, 0px))',
-        bottom: 'max(14px, env(safe-area-inset-bottom, 0px))',
-        zIndex: 100000,
-        display: 'flex',
-        justifyContent: 'center',
-        pointerEvents: 'none',
-      }}
+      className="pwa-status"
     >
       <div
-        style={{
-          width: 'min(420px, 100%)',
-          minHeight: '44px',
-          padding: '8px 14px',
-          borderRadius: '8px',
-          border: '1px solid var(--glass-border-hover)',
-          background: 'var(--toolbar-bg)',
-          color: 'var(--text-main)',
-          boxShadow: 'var(--shadow-soft)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          pointerEvents: 'auto',
-        }}
+        className="surface pwa-status-card"
       >
-        <span style={{ flex: 1, minWidth: 0, fontSize: '13px', fontWeight: 600, textAlign: 'center' }}>
+        <span className="pwa-status-message">
           {primary?.message || '安装 Readoshi，获得独立应用体验。'}
         </span>
         {showInstall && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <button type="button" className="btn" onClick={handleInstall} style={{ padding: '6px 10px', fontSize: '12px' }}>安装应用</button>
+          <div className="pwa-status-actions">
+            <button type="button" className="btn btn-primary pwa-status-install" onClick={handleInstall}>安装应用</button>
             <button
               type="button"
-              className="btn"
+              className="btn btn-icon btn-quiet pwa-status-dismiss"
               onClick={handleDismissInstall}
               aria-label="关闭安装提示"
               title="关闭"
-              style={{ width: '30px', height: '30px', padding: 0, display: 'grid', placeItems: 'center' }}
             >
               <ToolbarGlyph name="close" size={16} />
             </button>

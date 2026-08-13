@@ -30,7 +30,7 @@ export default function ConfirmDialog({
         <Dialog.Backdrop className="confirm-dialog-overlay" data-dialog-overlay />
         <Dialog.Popup
           ref={dialogRef}
-          className="glass-panel dropdown-animate confirm-dialog"
+          className="dialog dropdown-animate confirm-dialog"
           data-dialog-root
           role={destructive ? 'alertdialog' : 'dialog'}
           aria-labelledby={titleId}
@@ -45,7 +45,7 @@ export default function ConfirmDialog({
             {actionsBefore}
             {showCancel && (
               <Dialog.Close
-                className="btn"
+                className="btn btn-secondary"
                 data-dialog-cancel
               >
                 {cancelLabel}
@@ -53,7 +53,7 @@ export default function ConfirmDialog({
             )}
             <button
               type="button"
-              className={`btn confirm-dialog-confirm${destructive ? ' is-destructive' : ''}`}
+              className={`btn ${destructive ? 'btn-danger' : 'btn-primary'} confirm-dialog-confirm${destructive ? ' is-destructive' : ''}`}
               data-dialog-confirm
               onClick={onConfirm}
               disabled={confirmDisabled}

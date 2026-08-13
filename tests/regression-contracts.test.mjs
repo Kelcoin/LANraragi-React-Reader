@@ -1047,7 +1047,7 @@ test('mobile settings respect safe areas and reveal animations release composito
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-top:\s*max\(24px,\s*calc\(var\(--app-safe-area-top\) \+ 16px\)\);/s);
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-bottom:\s*max\(24px,\s*calc\(var\(--app-safe-area-bottom\) \+ 16px\)\);/s);
   assert.match(css, /\.settings-control\s*\{[^}]*flex:\s*0 0 148px;[^}]*width:\s*148px;/s);
-  assert.match(customSelect, /className="input-glass custom-select-trigger"/);
+  assert.match(customSelect, /className="field custom-select-trigger"/);
   assert.match(primitives, /\.custom-select-trigger\s*\{[^}]*display:\s*flex;[^}]*gap:\s*8px;/s);
   assert.match(primitives, /\.custom-select-value\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;[^}]*text-overflow:\s*ellipsis;/s);
   assert.match(css, /@keyframes sectionReveal\s*\{[\s\S]*to\s*\{[^}]*transform:\s*none;/s);

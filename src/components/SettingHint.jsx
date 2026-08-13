@@ -22,7 +22,7 @@ export default function SettingHint({ text, children, className = 'settings-row-
           positionMethod="fixed"
           collisionPadding={16}
         >
-          <Tooltip.Popup className="settings-hint-bubble settings-hint-bubble-portal is-visible">
+          <Tooltip.Popup className="popover settings-hint-bubble settings-hint-bubble-portal is-visible">
             {text}
           </Tooltip.Popup>
         </Tooltip.Positioner>

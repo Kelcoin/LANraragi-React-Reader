@@ -80,6 +80,35 @@
   .custom-select-option[data-selected] { color: var(--accent-strong); font-weight: 650; }
   .custom-select-option-text { min-width: 0; }
   .custom-select-check { flex: 0 0 auto; color: var(--accent-strong); }
+  .secret-input { padding: 8px 12px; font-size: 13px; }
+  .date-picker-jump .custom-select-trigger { min-height: 34px; padding: 6px 8px; font-size: 12px; }
+  .settings-control.is-busy { pointer-events: none; opacity: .6; }
+  .pwa-status {
+    position: fixed;
+    left: max(14px, env(safe-area-inset-left, 0px));
+    right: max(14px, env(safe-area-inset-right, 0px));
+    bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    z-index: var(--z-popover);
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .pwa-status-card {
+    width: min(420px, 100%);
+    min-height: 44px;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    pointer-events: auto;
+  }
+  .pwa-status-message { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; text-align: center; }
+  .pwa-status-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .pwa-status-install { padding: 6px 10px; font-size: 12px; }
+  .pwa-status-dismiss { width: 30px; height: 30px; min-width: 30px; min-height: 30px; }
+  .eh-favorite-delete-switch { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; font-size: 13px; }
   .settings-hint-positioner { z-index: var(--z-tooltip); }
   .settings-hint-bubble-portal { position: relative; }
   .archive-context-menu-positioner { z-index: var(--z-popover); }

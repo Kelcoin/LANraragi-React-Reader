@@ -112,7 +112,7 @@ export default function DatePicker({ value, disabled = false, onChange, ariaLabe
       <button
         ref={triggerRef}
         type="button"
-        className="date-picker-trigger"
+        className="btn btn-secondary date-picker-trigger"
         disabled={disabled}
         aria-label={ariaLabel}
         aria-expanded={open}
@@ -122,7 +122,7 @@ export default function DatePicker({ value, disabled = false, onChange, ariaLabe
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v3M17 2v3M3.5 8.5h17M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>
       </button>
       {open && createPortal(
-        <div ref={panelRef} className="date-picker-popover glass-panel dropdown-animate" style={{ left: position.left, top: position.top }}>
+        <div ref={panelRef} className="popover date-picker-popover dropdown-animate" style={{ left: position.left, top: position.top }}>
           <div className="date-picker-header">
             <button type="button" className="date-picker-nav" aria-label="上个月" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>‹</button>
             <div className="date-picker-jump">

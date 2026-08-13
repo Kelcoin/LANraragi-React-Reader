@@ -23,7 +23,7 @@ export default function CacheSettings() {
   return <div className="settings-subgroup-content">
     <label className="settings-row">
       <SettingHint text={'自动：按浏览器可用空间计算安全上限。\n手动：使用你指定的容量。\n达到上限后会优先清理较旧图片。'}>最大缓存容量</SettingHint>
-      <div className="settings-control" style={{ pointerEvents: busy ? 'none' : 'auto', opacity: busy ? 0.6 : 1 }}>
+      <div className={`settings-control${busy ? ' is-busy' : ''}`}>
         <CustomSelect value={stats?.mode || 'auto'} options={options} onChange={(value) => run(() => setImageCacheLimit(value))} compact />
       </div>
     </label>
@@ -32,7 +32,7 @@ export default function CacheSettings() {
         <div className="cache-usage-text">{stats ? `已用 ${formatBytes(stats.bytes)} / ${formatBytes(stats.limit)} · ${stats.entries} 项` : '暂时无法读取缓存用量'}</div>
         <div className="cache-usage-track" aria-hidden="true"><span style={{ width: `${usagePercent}%` }} /></div>
       </div>
-      <button type="button" className="btn" disabled={busy} onClick={() => run(async () => clearImageCache({ disk: true }))}>清空缓存</button>
+      <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => run(async () => clearImageCache({ disk: true }))}>清空缓存</button>
     </div>
   </div>;
 }

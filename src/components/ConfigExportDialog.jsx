@@ -134,18 +134,18 @@ export default function ConfigExportDialog({ open, onClose }) {
       dismissOnBackdrop={false}
       onConfirm={result ? onClose : generate}
       actionsBefore={result ? (
-        <button type="button" className="btn" data-config-export-copy onClick={copy}>
+        <button type="button" className="btn btn-secondary" data-config-export-copy onClick={copy}>
           {copied ? '已复制' : '复制'}
         </button>
       ) : (
-        <button type="button" className="btn" onClick={toggleAll}>
+        <button type="button" className="btn btn-secondary" onClick={toggleAll}>
           {allSelected ? '全不选' : '全选'}
         </button>
       )}
     >
       {result ? (
         <textarea
-          className="input-glass config-export-text"
+          className="field config-export-text"
           readOnly
           value={result}
           rows={8}

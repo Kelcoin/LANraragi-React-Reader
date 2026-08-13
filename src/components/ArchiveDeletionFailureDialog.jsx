@@ -36,7 +36,7 @@ export default function ArchiveDeletionFailureDialog({
           <div className="dedupe-failure-heading">
             <strong>E-Hentai 收藏夹删除失败</strong>
             {report.ehFailures.some((item) => item.url) && (
-              <button type="button" className="btn" onClick={copyEhFailureUrls}>一键复制</button>
+              <button type="button" className="btn btn-secondary" onClick={copyEhFailureUrls}>一键复制</button>
             )}
           </div>
           <ul className="dedupe-failure-list">

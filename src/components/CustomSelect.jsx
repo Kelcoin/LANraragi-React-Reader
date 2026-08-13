@@ -17,7 +17,7 @@ export default function CustomSelect({ value, options, onChange, style, compact,
         disabled={disabled}
         onValueChange={(nextValue) => { if (nextValue !== null) onChange(nextValue); }}
       >
-        <Select.Trigger className="input-glass custom-select-trigger" aria-label={ariaLabel}>
+        <Select.Trigger className="field custom-select-trigger" aria-label={ariaLabel}>
           <Select.Value className="custom-select-value" placeholder="请选择…">
             {selectedOption?.label || '请选择…'}
           </Select.Value>
@@ -32,7 +32,7 @@ export default function CustomSelect({ value, options, onChange, style, compact,
             positionMethod="fixed"
             collisionPadding={12}
           >
-            <Select.Popup className="glass-panel dropdown-animate custom-select-popup" data-select-dropdown="true">
+            <Select.Popup className="menu dropdown-animate custom-select-popup" data-select-dropdown="true">
               <Select.List className="custom-select-list">
                 {options.map((option) => (
                   <Select.Item key={option.value} value={option.value} className="custom-select-option">

@@ -83,6 +83,47 @@ test('semantic tokens are the only visual token authority', () => {
   for (const legacy of LEGACY_THEME_TOKENS) assert.doesNotMatch(productionCss, new RegExp(`var\\(${legacy}\\b`));
 });
 
+test('shared controls use semantic primitives and class-driven visuals', () => {
+  const sharedControlFiles = [
+    'src/components/CustomSelect.jsx',
+    'src/components/SecretInput.jsx',
+    'src/components/ConfirmDialog.jsx',
+    'src/components/TextInputDialog.jsx',
+    'src/components/ConfigTransferDialog.jsx',
+    'src/components/ConfigExportDialog.jsx',
+    'src/components/ArchiveThumbnailDialog.jsx',
+    'src/components/ArchiveDeletionFailureDialog.jsx',
+    'src/components/DatePicker.jsx',
+    'src/components/Toast.jsx',
+    'src/components/PwaStatus.jsx',
+    'src/components/CacheSettings.jsx',
+    'src/components/EhFavoriteDeleteSwitch.jsx',
+    'src/components/SettingHint.jsx',
+  ];
+  const sources = sharedControlFiles.map((file) => [file, read(file)]);
+
+  for (const [file, source] of sources) {
+    assert.doesNotMatch(source, /className="(?:input-glass|glass-panel)\b/, `${file} still consumes a legacy surface class`);
+    assert.doesNotMatch(source, /className=(?:"btn"|\{`btn`\})/, `${file} still uses a bare button class`);
+  }
+
+  for (const [file, source] of sources.filter(([name]) => !['src/components/CustomSelect.jsx', 'src/components/DatePicker.jsx', 'src/components/Toast.jsx', 'src/components/CacheSettings.jsx'].includes(name))) {
+    assert.doesNotMatch(source, /style=\{\{/, `${file} keeps a static inline style object`);
+  }
+
+  assert.match(read('src/components/CustomSelect.jsx'), /style=\{style\}/);
+  assert.match(read('src/components/DatePicker.jsx'), /style=\{\{ left: position\.left, top: position\.top \}\}/);
+  assert.match(read('src/components/Toast.jsx'), /style=\{\{ '--toast-duration':/);
+  assert.match(read('src/components/CacheSettings.jsx'), /style=\{\{ width:/);
+  assert.doesNotMatch(read('src/components/CacheSettings.jsx'), /style=\{\{ pointerEvents:/);
+  assert.doesNotMatch(read('src/components/EhFavoriteDeleteSwitch.jsx'), /style=\{\{/);
+
+  const primitives = read('src/styles/primitives.css');
+  for (const selector of ['secret-input', 'date-picker-jump .custom-select-trigger', 'pwa-status', 'eh-favorite-delete-switch']) {
+    assert.match(primitives, new RegExp(`\\.${selector}\\s*\\{`), `missing ${selector} primitive styles`);
+  }
+});
+
 test('built-in and custom themes expose the complete semantic token contract', () => {
   const css = read('src/styles/tokens.css');
   for (const [label, block] of [
