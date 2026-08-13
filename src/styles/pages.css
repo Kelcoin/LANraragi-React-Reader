@@ -55,15 +55,20 @@
     border-bottom: 1px solid var(--border-subtle);
   }
 
-  .archive-search-input-wrap > .input-glass {
+  .archive-search-input-wrap > .archive-search-field {
     width: 100%;
     padding: 10px 38px 10px 12px;
     box-sizing: border-box;
     font-size: 14px;
   }
 
-  .archive-search-input-wrap > .input-glass[data-has-query="true"] {
+  .archive-search-input-wrap > .archive-search-field[data-has-query="true"] {
     padding-right: 66px;
+  }
+
+  .archive-search-save {
+    padding: 5px 10px;
+    font-size: 11px;
   }
 
   .archive-search-input-wrap > .input-clear-btn:not(.archive-search-preset-toggle) {
@@ -143,6 +148,125 @@
     width: 100%;
     margin-top: 8px;
     padding: 12px;
+  }
+
+  .login-field,
+  .login-secret-input .secret-input {
+    padding: 11px 15px;
+    font-size: 16px;
+  }
+
+  .recommendation-section {
+    width: 100%;
+    margin-top: 20px;
+    box-sizing: border-box;
+  }
+
+  .recommendation-panel {
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 380px;
+  }
+
+  .recommendation-panel.is-collapsed { max-height: 46px; }
+
+  .recommendation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    height: 46px;
+    min-height: 46px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    font-size: 14px;
+    user-select: none;
+  }
+
+  .recommendation-header.is-collapsed { border-bottom-color: transparent; }
+
+  .recommendation-tabs,
+  .recommendation-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  .recommendation-tabs { gap: 10px; }
+  .recommendation-actions { gap: 2px; }
+
+  .recommendation-tab {
+    padding: 5px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 650;
+    transition: color var(--motion-base) var(--motion-curve), background-color var(--motion-base) var(--motion-curve), border-color var(--motion-base) var(--motion-curve);
+  }
+
+  .recommendation-tab.is-active {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .recommendation-refresh {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .recommendation-refresh.is-loading { opacity: 0.72; }
+
+  .recommendation-collapse-button {
+    color: var(--text-secondary);
+    opacity: 0.8;
+  }
+
+  .recommendation-collapse-icon {
+    transition: transform 0.3s ease;
+  }
+
+  .recommendation-collapse-button.is-collapsed .recommendation-collapse-icon {
+    transform: rotate(180deg);
+  }
+
+  .recommendation-scroller {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 10px;
+    padding: 14px 20px 16px;
+    scrollbar-width: none;
+    overscroll-behavior-y: contain;
+    cursor: grab;
+    touch-action: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
+  }
+
+  .recommendation-content {
+    display: flex;
+    gap: 10px;
+    padding: 0;
+    flex: 0 0 auto;
+    width: max-content;
+  }
+
+  .recommendation-content.is-loading { padding: 4px 0; }
+
+  .recommendation-empty {
+    padding: 24px 8px;
+    color: var(--text-secondary);
+    font-style: italic;
+    font-size: 13px;
   }
 
   .workbench-page {
@@ -238,6 +362,11 @@
     .workbench-page,
     .dedupe-page.workbench-page { width: min(100% - 24px, 1180px); padding-top: 18px; }
     .workbench-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .recommendation-header { padding-inline: 14px; }
+    .recommendation-scroller { padding: 10px 14px 16px; }
   }
 
   @media (max-width: 390px) {

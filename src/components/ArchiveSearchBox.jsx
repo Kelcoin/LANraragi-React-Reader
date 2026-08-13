@@ -38,7 +38,7 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
       <div className="archive-search-row">
         <div className="archive-search-input-wrap">
           <input
-            className="input-glass"
+            className="field archive-search-field"
             name="archive-search"
             autoComplete="off"
             aria-label={placeholder}
@@ -84,7 +84,7 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
             <div className="archive-search-presets dropdown-animate" id={presetMenuId}>
               <div className="archive-search-preset-heading">
                 <span>已保存的筛选方案</span>
-                <button type="button" className="btn" onClick={savePreset}>+ 保存当前筛选</button>
+                <button type="button" className="btn btn-secondary archive-search-save" onClick={savePreset}>+ 保存当前筛选</button>
               </div>
               {presets.length > 0 ? <div className="archive-search-preset-list">{presets.map(preset => (
                 <div key={preset.name} className="archive-search-preset-row">
@@ -107,7 +107,7 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
             </div>
           )}
         </div>
-        <button type="button" className="btn archive-search-submit" onClick={() => searchBoxRef.current?.querySelector('input')?.blur()}>
+        <button type="button" className="btn btn-secondary archive-search-submit" onClick={() => searchBoxRef.current?.querySelector('input')?.blur()}>
           筛选
         </button>
       </div>

@@ -301,8 +301,8 @@ export default function App() {
         <div className="login-shell">
           <div className="login-stack">
 
-          <form onSubmit={handleConnect} className={`glass-panel login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
-            <button type="button" className="login-import-button" onClick={handleImportConfig} aria-label="导入配置" title="导入配置">
+          <form onSubmit={handleConnect} className={`surface login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
+            <button type="button" className="btn btn-quiet login-import-button" onClick={handleImportConfig} aria-label="导入配置" title="导入配置">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 3v12" />
                 <path d="m8 11 4 4 4-4" />
@@ -316,7 +316,7 @@ export default function App() {
             
             <div>
               <label className="field-label" htmlFor="server-url">LANraragi 地址 *</label>
-              <input id="server-url" name="server-url" type="url" inputMode="url" autoComplete="url" spellCheck={false} className="input-glass" value={tempConfig.url} onChange={e => setTempConfig({...tempConfig, url: e.target.value})} required />
+              <input id="server-url" name="server-url" type="url" inputMode="url" autoComplete="url" spellCheck={false} className="field login-field" value={tempConfig.url} onChange={e => setTempConfig({...tempConfig, url: e.target.value})} required />
             </div>
             
             <div>
@@ -328,7 +328,7 @@ export default function App() {
                     value={tempConfig.key}
                     onChange={e => setTempConfig({...tempConfig, key: e.target.value})}
                     required
-                    style={{ padding: '11px 15px', fontSize: '16px' }}
+                    className="login-secret-input"
                   />
             </div>
 
@@ -337,7 +337,7 @@ export default function App() {
                 <span>Worker 设置</span>
                 <button
                   type="button"
-                  className="login-collapse-button"
+                  className="btn btn-quiet login-collapse-button"
                   onClick={() => setWorkerCollapsed(value => !value)}
                   aria-expanded={!workerCollapsed}
                   aria-controls="login-worker-fields"
@@ -351,7 +351,7 @@ export default function App() {
               <div id="login-worker-fields" className={`login-worker-fields${workerCollapsed ? ' is-collapsed' : ''}`}>
                 <div>
                   <label className="field-label" htmlFor="worker-url">Cloudflare Worker 端点</label>
-                  <input id="worker-url" name="worker-url" type="url" inputMode="url" autoComplete="off" spellCheck={false} className="input-glass" value={tempConfig.workerUrl} onChange={e => setTempConfig({...tempConfig, workerUrl: e.target.value})} />
+                  <input id="worker-url" name="worker-url" type="url" inputMode="url" autoComplete="off" spellCheck={false} className="field login-field" value={tempConfig.workerUrl} onChange={e => setTempConfig({...tempConfig, workerUrl: e.target.value})} />
                 </div>
                 <div>
                   <label className="field-label" htmlFor="sync-token">访问 Token</label>
@@ -361,6 +361,7 @@ export default function App() {
                     ariaLabel="访问 Token"
                     value={tempConfig.syncToken}
                     onChange={e => setTempConfig({...tempConfig, syncToken: e.target.value})}
+                    className="login-secret-input"
                   />
                 </div>
               </div>

@@ -137,6 +137,34 @@ test('shared controls use semantic primitives and class-driven visuals', () => {
   assert.match(primitives, /\.custom-select-root\.is-compact\.date-picker-month-select\s*\{[^}]*width:\s*100px;[^}]*min-width:\s*100px;/s);
 });
 
+test('task4 owned surfaces use semantic controls and class-driven presentation', () => {
+  const owned = [
+    'src/App.jsx',
+    'src/components/ArchiveSearchBox.jsx',
+    'src/components/Recommendations.jsx',
+  ];
+  for (const file of owned) {
+    const source = read(file);
+    assert.doesNotMatch(source, /className="(?:input-glass|glass-panel)\b/, `${file} still consumes a legacy surface class`);
+    assert.doesNotMatch(source, /className="btn"(?:\s|>)/, `${file} still uses a bare button class`);
+    assert.doesNotMatch(source, /style=\{\{/, `${file} keeps a static inline style object`);
+  }
+
+  const app = read('src/App.jsx');
+  const search = read('src/components/ArchiveSearchBox.jsx');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const pages = read('src/styles/pages.css');
+  assert.match(app, /className=\{`surface login-card\$\{workerCollapsed/);
+  assert.match(search, /className="field archive-search-field"/);
+  assert.match(search, /className="btn btn-secondary archive-search-submit"/);
+  assert.match(recommendations, /className=\{`surface recommendation-panel\$\{collapsed/);
+  assert.match(recommendations, /recommendation-tab.*is-active/);
+  assert.match(recommendations, /recommendation-collapse-button.*is-collapsed/);
+  assert.match(pages, /\.recommendation-panel\s*\{/);
+  assert.match(pages, /\.recommendation-panel\.is-collapsed\s*\{/);
+  assert.match(pages, /\.recommendation-content\.is-loading\s*\{/);
+});
+
 test('built-in and custom themes expose the complete semantic token contract', () => {
   const css = read('src/styles/tokens.css');
   for (const [label, block] of [

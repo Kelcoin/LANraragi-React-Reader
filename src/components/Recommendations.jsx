@@ -449,59 +449,33 @@ export default function Recommendations({ currentArchive }) {
 
   return (
     <>
-    <div ref={sectionRef} data-lrr-recommendations className="section-reveal section-reveal-delay-2" style={{ width: '100%', marginTop: '20px', boxSizing: 'border-box' }}>
-      <div className="glass-panel" style={{
-        width: '100%', maxWidth: '1400px', margin: '0 auto', boxSizing: 'border-box',
-        padding: 0,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)',
-        maxHeight: collapsed ? '46px' : '380px',
-      }}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: isNarrow ? '0 14px' : '0 20px', height: '46px', minHeight: '46px',
-          borderBottom: collapsed ? '1px solid transparent' : '1px solid var(--glass-border)',
-          fontSize: '14px', color: 'var(--text-main)', userSelect: 'none',
-        }}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+    <div ref={sectionRef} data-lrr-recommendations className="section-reveal section-reveal-delay-2 recommendation-section">
+      <div className={`surface recommendation-panel${collapsed ? ' is-collapsed' : ''}`}>
+        <div className={`recommendation-header${collapsed ? ' is-collapsed' : ''}`}>
+          <div className="recommendation-tabs">
             <button
               onClick={() => { if (collapsed) toggleCollapse(); setTab('sim'); }}
-              className="btn"
-              style={{
-                background: tab === 'sim' ? 'var(--accent)' : 'transparent',
-                border: tab === 'sim' ? '1px solid var(--accent)' : '1px solid var(--glass-border)',
-                color: tab === 'sim' ? 'var(--accent-contrast)' : 'var(--text-sub)',
-                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                padding: '5px 12px', borderRadius: '6px', transition: 'background-color 0.2s, border-color 0.2s, color 0.2s',
-              }}
+              className={`btn btn-secondary recommendation-tab${tab === 'sim' ? ' is-active' : ''}`}
             >猜你喜欢</button>
             {hasArtist && (
               <button
                 onClick={() => { if (collapsed) toggleCollapse(); setTab('artist'); }}
-                className="btn"
-                style={{
-                  background: tab === 'artist' ? 'var(--accent)' : 'transparent',
-                  border: tab === 'artist' ? '1px solid var(--accent)' : '1px solid var(--glass-border)',
-                  color: tab === 'artist' ? 'var(--accent-contrast)' : 'var(--text-sub)',
-                  fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                  padding: '5px 12px', borderRadius: '6px', transition: 'background-color 0.2s, border-color 0.2s, color 0.2s',
-                }}
+                className={`btn btn-secondary recommendation-tab${tab === 'artist' ? ' is-active' : ''}`}
               >{sameCreatorLabel}</button>
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+          <div className="recommendation-actions">
             <button
-              className="btn"
+              className={`btn btn-secondary recommendation-refresh${loading ? ' is-loading' : ''}`}
               onClick={refreshCache}
               disabled={loading}
-              style={{ padding: '6px 12px', fontSize: '12px', opacity: loading ? 0.72 : 1 }}
               title="清理缓存并刷新"
             >
               {loading ? '刷新中' : '刷新'}
             </button>
-            <button aria-label={collapsed ? '展开推荐' : '收起推荐'} onClick={toggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-sub)', opacity: 0.8, padding: '4px', borderRadius: '4px', display: 'flex' }}>
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style={{ transition: 'transform 0.3s', transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}><path d="M6 15l6-6 6 6z"/></svg>
+            <button aria-label={collapsed ? '展开推荐' : '收起推荐'} onClick={toggleCollapse} className={`btn btn-icon btn-quiet recommendation-collapse-button${collapsed ? ' is-collapsed' : ''}`}>
+              <svg className="recommendation-collapse-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M6 15l6-6 6 6z"/></svg>
             </button>
           </div>
         </div>
@@ -513,17 +487,9 @@ export default function Recommendations({ currentArchive }) {
           onMouseDown={scroller.onMouseDown}
           onClickCapture={scroller.onClickCapture}
           onDragStart={scroller.onDragStart}
-          style={{
-            display: 'flex', flexDirection: 'row', overflowX: 'auto', overflowY: 'hidden',
-            gap: '10px', padding: isNarrow ? '10px 14px 16px' : '14px 20px 16px',
-            scrollbarWidth: 'none',
-            overscrollBehaviorY: 'contain',
-            ...scroller.getTouchScrollStyle(),
-            ...scroller.getMouseScrollStyle(),
-          }}
-          className="no-scrollbar"
+          className="no-scrollbar recommendation-scroller"
         >
-          <div key={contentKey} className="component-content-fade" style={{ display: 'flex', gap: '10px', padding: loading ? '4px 0' : 0, flex: '0 0 auto', width: 'max-content' }}>
+          <div key={contentKey} className={`component-content-fade recommendation-content${loading ? ' is-loading' : ''}`}>
             {loading ? (
               <>
               {Array.from({ length: skeletonCount }).map((_, i) => (
@@ -541,7 +507,7 @@ export default function Recommendations({ currentArchive }) {
               ))}
               </>
             ) : data.length === 0 ? (
-              <div style={{ padding: '24px 8px', color: 'var(--text-sub)', fontStyle: 'italic', fontSize: '13px' }}>暂无推荐结果。</div>
+              <div className="recommendation-empty">暂无推荐结果。</div>
             ) : (
               data.map(arc => (
                 <ArchiveCard key={arc.arcid || arc.id} archive={arc} onClick={() => handleCardClick(arc)} onArchiveContextMenu={handleOpenArchiveMenu} showProgressBar={showGlobalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={noCrop} />

@@ -265,6 +265,23 @@ test('metadata error statuses dismiss automatically', () => {
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toast-stack[\s\S]*?\.toast-progress[\s\S]*?animation:\s*none\s*!important/);
 });
 
+test('task4 recommendations keep stateful presentation in semantic classes', () => {
+  const app = read('src/App.jsx');
+  const search = read('src/components/ArchiveSearchBox.jsx');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const pages = read('src/styles/pages.css');
+
+  for (const source of [app, search, recommendations]) {
+    assert.doesNotMatch(source, /className="(?:input-glass|glass-panel)\b/);
+    assert.doesNotMatch(source, /className="btn"(?:\s|>)/);
+    assert.doesNotMatch(source, /style=\{\{/);
+  }
+  assert.match(recommendations, /recommendation-panel\$\{collapsed \? ' is-collapsed' : ''\}/);
+  assert.match(recommendations, /recommendation-content\$\{loading \? ' is-loading' : ''\}/);
+  assert.match(pages, /\.recommendation-panel\.is-collapsed\s*\{[^}]*max-height:\s*46px/);
+  assert.match(pages, /\.recommendation-content\.is-loading\s*\{[^}]*padding:\s*4px 0/);
+});
+
 test('metadata status cards contain long plugin messages', () => {
   const css = read('src/index.css');
   assert.match(css, /\.toast-card\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow-wrap:\s*anywhere;/s);
