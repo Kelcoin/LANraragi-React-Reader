@@ -5,6 +5,30 @@ import { createCustomThemeTokens, DEFAULT_THEME_PALETTES } from '../src/lib/them
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
+const REQUIRED_SEMANTIC_TOKENS = [
+  '--canvas', '--surface', '--surface-subtle', '--surface-raised', '--surface-hover', '--surface-inset',
+  '--text-primary', '--text-secondary', '--text-muted', '--border-subtle', '--border-strong',
+  '--accent', '--accent-strong', '--accent-soft', '--accent-contrast',
+  '--positive', '--positive-strong', '--positive-soft', '--warning', '--warning-soft',
+  '--danger', '--danger-soft', '--focus-ring', '--overlay', '--reader-stage',
+  '--radius-xs', '--radius-sm', '--radius-md', '--shadow-control', '--shadow-lg',
+  '--motion-fast', '--motion-base', '--motion-slow', '--motion-curve',
+];
+
+const LEGACY_THEME_TOKENS = [
+  '--page-bg', '--surface-1', '--text-main', '--text-sub', '--glass-border', '--olive', '--reader-stage-bg',
+];
+
+function declaredProperties(block) {
+  return new Set([...block.matchAll(/(^|[;{]\s*)(--[\w-]+)\s*:/gm)].map((match) => match[2]));
+}
+
+function themeBlock(css, selector) {
+  const match = css.match(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`));
+  assert.ok(match, `missing ${selector} token block`);
+  return match[1];
+}
+
 test('archive atelier exposes layered semantic theme tokens', () => {
   const css = read('src/styles/tokens.css');
   assert.match(css, /@layer tokens/);
@@ -29,17 +53,32 @@ test('index css imports archive atelier layers in stable order', () => {
   assert.doesNotMatch(css, /@import\s+url\([^)]*base\.css[^)]*\)\s+layer\(/);
 });
 
-test('archive atelier keeps legacy tokens mapped to semantic variables', () => {
-  const css = read('src/styles/tokens.css');
-  assert.match(css, /--page-bg:\s*var\(--canvas\)/);
-  assert.match(css, /--surface-1:\s*var\(--surface\)/);
-  assert.match(css, /--text-main:\s*var\(--text-primary\)/);
-  assert.match(css, /--glass-border:\s*var\(--border-subtle\)/);
-  assert.match(css, /--olive:\s*var\(--positive\)/);
-  assert.match(css, /--reader-stage-bg:\s*var\(--reader-stage\)/);
+test('semantic tokens are the only visual token authority', () => {
+  const index = read('src/index.css');
+  const primitives = read('src/styles/primitives.css');
+  const productionJsx = fs.readdirSync(new URL('../src', import.meta.url), { recursive: true })
+    .filter((name) => name.endsWith('.jsx'))
+    .map((name) => read(`src/${name.replaceAll('\\', '/')}`))
+    .join('\n');
+
+  assert.doesNotMatch(index, /:root(?:\[data-theme[^\]]+\])?\s*\{/);
+  assert.doesNotMatch(primitives, /Compatibility rules remain unlayered/);
+  assert.doesNotMatch(index, /Archive Atelier compatibility/i);
+  assert.match(productionJsx, /className=/);
 });
 
-test('default and custom dark themes use warm archive atelier semantics', () => {
+test('built-in and custom themes expose the complete semantic token contract', () => {
+  const css = read('src/styles/tokens.css');
+  for (const [label, block] of [
+    ['dark', themeBlock(css, ':root,\\s*:root\\[data-theme="dark"\\]')],
+    ['light', themeBlock(css, ':root\\[data-theme="light"\\]')],
+  ]) {
+    const declarations = declaredProperties(block);
+    for (const property of REQUIRED_SEMANTIC_TOKENS) {
+      assert.ok(declarations.has(property), `${label} theme is missing ${property}`);
+    }
+  }
+
   assert.deepEqual(DEFAULT_THEME_PALETTES.dark, {
     accent: '#d16a57',
     secondary: '#8e9a69',
@@ -47,12 +86,22 @@ test('default and custom dark themes use warm archive atelier semantics', () => 
   });
 
   const tokens = createCustomThemeTokens(DEFAULT_THEME_PALETTES.dark, 'dark');
-  assert.equal(tokens['--canvas'], tokens['--page-bg']);
-  assert.equal(tokens['--surface'], tokens['--surface-1']);
-  assert.equal(tokens['--text-primary'], '#eeeae0');
-  assert.equal(tokens['--text-secondary'], '#c6c0b4');
-  assert.equal(tokens['--reader-stage'], '#050505');
-  assert.equal(tokens['--reader-stage-bg'], '#050505');
+  for (const property of REQUIRED_SEMANTIC_TOKENS.filter((name) => !name.startsWith('--radius-') && !name.startsWith('--motion-') && !name.startsWith('--shadow-'))) {
+    assert.ok(tokens[property], `custom theme is missing ${property}`);
+  }
+  for (const property of LEGACY_THEME_TOKENS) {
+    assert.ok(!(property in tokens), `custom theme must not generate legacy alias ${property}`);
+  }
+});
+
+test('reader migration retains runtime geometry and incognito contracts', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /incognito/);
+  assert.match(reader, /resolvePageImageSource/);
+  assert.match(reader, /visibleSourceRef/);
+  assert.match(reader, /transform:/);
+  assert.match(reader, /width:/);
+  assert.match(reader, /height:/);
 });
 
 test('shared primitives expose complete compact control and surface states', () => {
@@ -64,7 +113,7 @@ test('shared primitives expose complete compact control and surface states', () 
   assert.match(css, /\.btn-icon\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/s);
   assert.match(css, /\.field\.is-error[^}]*border-color:\s*var\(--danger\)/s);
   assert.match(css, /\.surface\s*\{[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*none/s);
-  assert.match(css, /cubic-bezier\(\.32,\s*\.72,\s*0,\s*1\)/);
+  assert.match(css, /var\(--motion-curve\)/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*animation-duration:\s*0\.01ms/s);
 });
 
@@ -216,4 +265,30 @@ test('theme self-check validates approved semantic colors and browser chrome', (
   assert.match(check, /THEME_COLORS/);
   assert.match(check, /theme-color/);
   assert.match(check, /#121310/i);
+});
+
+test('settings layout uses intrinsic active content without legacy height feedback', () => {
+  const home = read('src/pages/Home.jsx');
+  const readerCss = read('src/styles/reader.css');
+  assert.doesNotMatch(home, /--settings-pane-height/);
+  assert.doesNotMatch(home, /active\.scrollHeight/);
+  assert.match(readerCss, /\.settings-layout\s*>\s*\.settings-section\s*\{[^}]*display:\s*none;[^}]*max-height:\s*none/s);
+  assert.match(readerCss, /\.settings-layout\s*>\s*\.settings-section\.is-active\s*\{[^}]*display:\s*block/s);
+});
+
+test('expanded EH settings do not clip real configuration fields', () => {
+  const home = read('src/pages/Home.jsx');
+  const readerCss = read('src/styles/reader.css');
+  assert.match(home, /settings-eh-details/);
+  assert.doesNotMatch(home, /maxHeight:\s*readerSettings\.ehEnabled\s*\?\s*'320px'/);
+  assert.match(readerCss, /\.settings-eh-details\s*\{[^}]*grid-template-rows:\s*0fr/s);
+  assert.match(readerCss, /\.settings-eh-details\.is-expanded\s*\{[^}]*grid-template-rows:\s*1fr/s);
+});
+
+test('tag suggestion namespace colors follow active theme tokens', () => {
+  const suggestions = read('src/components/TagSuggest.jsx');
+  for (const token of ['artist', 'parody', 'category', 'character', 'female', 'male', 'mixed', 'other']) {
+    assert.match(suggestions, new RegExp(`${token}: ['"]var\\(--tag-${token}\\)['"]`));
+  }
+  assert.doesNotMatch(suggestions, /artist:\s*['"]#[0-9a-f]{6}/i);
 });
