@@ -113,6 +113,9 @@ test('shared controls use semantic primitives and class-driven visuals', () => {
 
   assert.match(read('src/components/CustomSelect.jsx'), /style=\{style\}/);
   assert.match(read('src/components/DatePicker.jsx'), /style=\{\{ left: position\.left, top: position\.top \}\}/);
+  assert.match(read('src/components/DatePicker.jsx'), /className="date-picker-year-select"/);
+  assert.match(read('src/components/DatePicker.jsx'), /className="date-picker-month-select"/);
+  assert.doesNotMatch(read('src/components/DatePicker.jsx'), /style=\{\{ width:/);
   assert.match(read('src/components/Toast.jsx'), /style=\{\{ '--toast-duration':/);
   assert.match(read('src/components/CacheSettings.jsx'), /style=\{\{ width:/);
   assert.doesNotMatch(read('src/components/CacheSettings.jsx'), /style=\{\{ pointerEvents:/);
@@ -122,6 +125,8 @@ test('shared controls use semantic primitives and class-driven visuals', () => {
   for (const selector of ['secret-input', 'date-picker-jump .custom-select-trigger', 'pwa-status', 'eh-favorite-delete-switch']) {
     assert.match(primitives, new RegExp(`\\.${selector}\\s*\\{`), `missing ${selector} primitive styles`);
   }
+  assert.match(primitives, /\.custom-select-root\.is-compact\.date-picker-year-select\s*\{[^}]*width:\s*126px;[^}]*min-width:\s*126px;/s);
+  assert.match(primitives, /\.custom-select-root\.is-compact\.date-picker-month-select\s*\{[^}]*width:\s*100px;[^}]*min-width:\s*100px;/s);
 });
 
 test('built-in and custom themes expose the complete semantic token contract', () => {

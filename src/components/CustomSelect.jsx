@@ -3,12 +3,12 @@ import { Select } from '@base-ui/react/select';
 import { ToolbarGlyph } from './AppGlyphs';
 import SettingHint from './SettingHint';
 
-export default function CustomSelect({ value, options, onChange, style, compact, ariaLabel, disabled = false }) {
+export default function CustomSelect({ value, options, onChange, style, className = '', compact, ariaLabel, disabled = false }) {
   const selectedOption = options.find((option) => option.value === value);
 
   return (
     <div
-      className={`custom-select-root${compact ? ' is-compact' : ''}${disabled ? ' is-disabled' : ''}`}
+      className={`custom-select-root${compact ? ' is-compact' : ''}${disabled ? ' is-disabled' : ''}${className ? ` ${className}` : ''}`}
       style={style}
     >
       <Select.Root

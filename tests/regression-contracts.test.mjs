@@ -592,12 +592,14 @@ test('dedupe date range uses an adaptive styled calendar instead of the native p
   assert.doesNotMatch(picker, /<select/);
   assert.match(picker, /2000 \+ index/);
   assert.doesNotMatch(picker, /1900 \+ index/);
-  assert.match(picker, /width: '126px', minWidth: '126px'/);
-  assert.match(picker, /width: '100px', minWidth: '100px'/);
+  assert.match(picker, /className="date-picker-year-select"/);
+  assert.match(picker, /className="date-picker-month-select"/);
   assert.match(picker, /event\?\.target\?\.closest\?\.\('\[data-select-dropdown="true"\]'\)/);
   assert.match(picker, /data-select-dropdown/);
   assert.match(css, /\.date-picker-trigger/);
   assert.match(css, /\.date-picker-popover/);
+  assert.match(read('src/styles/primitives.css'), /\.custom-select-root\.is-compact\.date-picker-year-select\s*\{[^}]*width:\s*126px;[^}]*min-width:\s*126px;/s);
+  assert.match(read('src/styles/primitives.css'), /\.custom-select-root\.is-compact\.date-picker-month-select\s*\{[^}]*width:\s*100px;[^}]*min-width:\s*100px;/s);
 });
 
 test('dedupe bulk group toggle lives below scan stats and its context menu stays compact', () => {

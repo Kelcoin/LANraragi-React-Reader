@@ -132,7 +132,7 @@ export default function DatePicker({ value, disabled = false, onChange, ariaLabe
                 options={yearOptions}
                 onChange={(year) => setMonth((current) => new Date(year, current.getMonth(), 1))}
                 compact
-                style={{ width: '126px', minWidth: '126px' }}
+                className="date-picker-year-select"
               />
               <CustomSelect
                 ariaLabel="月份"
@@ -140,7 +140,7 @@ export default function DatePicker({ value, disabled = false, onChange, ariaLabe
                 options={monthOptions}
                 onChange={(nextMonth) => setMonth((current) => new Date(current.getFullYear(), nextMonth, 1))}
                 compact
-                style={{ width: '100px', minWidth: '100px' }}
+                className="date-picker-month-select"
               />
             </div>
             <button type="button" className="date-picker-nav" aria-label="下个月" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>›</button>
