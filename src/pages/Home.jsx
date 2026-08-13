@@ -248,54 +248,30 @@ const bootState = getBootState();
 
 function SkeletonCard({ showProgress = false }) {
   return (
-    <div style={{
+    <div className="home-skeleton-card" style={{
       flex: `0 0 ${ARCHIVE_CARD_WIDTH}px`,
-      minWidth: `${ARCHIVE_CARD_WIDTH}px`, width: `${ARCHIVE_CARD_WIDTH}px`,
-      boxSizing: 'border-box',
-      background: 'var(--surface-1)',
-      borderRadius: 'var(--radius-card)',
-      border: '1px solid var(--glass-border)',
-      display: 'flex', flexDirection: 'column', padding: '12px',
-      overflow: 'hidden',
+      minWidth: `${ARCHIVE_CARD_WIDTH}px`,
+      width: `${ARCHIVE_CARD_WIDTH}px`,
     }}>
-      <div style={{
-        width: '100%', height: `${ARCHIVE_CARD_COVER_HEIGHT}px`,
-        borderRadius: '8px',
-        background: 'var(--reader-skeleton-base)',
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
-        <div className="shimmer-strip" style={{ position: 'absolute', inset: 0 }} />
+      <div className="home-skeleton-cover" style={{ height: `${ARCHIVE_CARD_COVER_HEIGHT}px` }}>
+        <div className="shimmer-strip home-skeleton-shimmer" />
       </div>
       {showProgress && (
-        <div style={{ width: '100%', height: '3px', marginTop: '2px', borderRadius: 'var(--radius-chip)', background: 'var(--accent-soft)' }} />
+        <div className="home-skeleton-progress" />
       )}
-      <div style={{ marginTop: `${ARCHIVE_CARD_TITLE_GAP}px`, height: `${ARCHIVE_CARD_TITLE_SLOT_HEIGHT}px`, overflow: 'hidden' }}>
-        <div style={{
-          height: '12px', borderRadius: '4px',
-          background: 'var(--reader-skeleton-base)',
-          width: '84%',
-        }} />
-        <div style={{
-          height: '12px', borderRadius: '4px',
-          background: 'var(--reader-skeleton-base)',
-          width: '66%', marginTop: '8px',
-        }} />
-      </div>
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        height: `${ARCHIVE_CARD_META_ROW_HEIGHT}px`, marginTop: `${ARCHIVE_CARD_META_GAP}px`,
+      <div className="home-skeleton-title" style={{
+        marginTop: `${ARCHIVE_CARD_TITLE_GAP}px`,
+        height: `${ARCHIVE_CARD_TITLE_SLOT_HEIGHT}px`,
       }}>
-        <div style={{
-          height: '8px', borderRadius: '4px',
-          background: 'var(--reader-skeleton-base)',
-          width: '36%',
-        }} />
-        <div style={{
-          height: '8px', borderRadius: '4px',
-          background: 'var(--reader-skeleton-base)',
-          width: '30%',
-        }} />
+        <div className="home-skeleton-line home-skeleton-line-wide" />
+        <div className="home-skeleton-line home-skeleton-line-short" />
+      </div>
+      <div className="home-skeleton-meta" style={{
+        height: `${ARCHIVE_CARD_META_ROW_HEIGHT}px`,
+        marginTop: `${ARCHIVE_CARD_META_GAP}px`,
+      }}>
+        <div className="home-skeleton-meta-line home-skeleton-meta-line-left" />
+        <div className="home-skeleton-meta-line home-skeleton-meta-line-right" />
       </div>
     </div>
   );
@@ -310,11 +286,11 @@ function SectionHeading({ glyph, children, onClick, title, style }) {
   );
 
   return (
-    <h2 className="section-heading" style={{ fontSize: '18px', lineHeight: 1.2, margin: 0, display: 'flex', alignItems: 'center', gap: '10px', ...style }}>
+    <h2 className="section-heading" style={style}>
       {onClick ? (
         <button
           type="button"
-          className="section-heading-link"
+          className="btn btn-quiet section-heading-link"
           onClick={onClick}
           title={title}
         >
@@ -332,10 +308,9 @@ function CollapseButton({ collapsed, onClick, title }) {
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="collapse-button"
-      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-sub)', opacity: 0.8, padding: '4px', borderRadius: '4px', display: 'flex' }}
+      className="btn btn-quiet btn-icon collapse-button"
     >
-      <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true" style={{ transition: 'transform 0.3s', transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+      <svg className="collapse-button-icon" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true" style={{ transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}>
         <path d="M6 15l6-6 6 6z" />
       </svg>
     </button>
@@ -966,22 +941,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
   }, [showConfig]);
-
-  // Keep the settings pane transition target equal to the active section's real height.
-  useLayoutEffect(() => {
-    if (!showConfig || !settingsPaneRef.current) return undefined;
-    const pane = settingsPaneRef.current;
-    const syncPaneHeight = () => {
-      const active = pane.querySelector('.settings-section.is-active');
-      const height = active ? active.scrollHeight : 0;
-      pane.style.setProperty('--settings-pane-height', `${height}px`);
-    };
-    syncPaneHeight();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(syncPaneHeight);
-    observer.observe(pane);
-    return () => observer.disconnect();
-  }, [settingsCategory, showConfig, readerSettings.ehEnabled, workerReady]);
 
   const probeServerStatus = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!force && serverProbePromiseRef.current) return serverProbePromiseRef.current;
@@ -2106,47 +2065,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   return (
     <>
-    <style>{`
-      @keyframes serverProbeRipple {
-        0% { transform: scale(0.9); opacity: 0; }
-        20% { opacity: 0.5; }
-        100% { transform: scale(1.95); opacity: 0; }
-      }
-      .history-view-all-arrow {
-        color: var(--text-muted);
-        transform: translateY(0);
-        transition: color 0.18s ease, transform 0.18s ease;
-      }
-      .history-view-all-btn:hover .history-view-all-arrow {
-        color: var(--accent);
-        transform: translateX(4px);
-      }
-      .section-heading-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        color: inherit;
-        font: inherit;
-        cursor: pointer;
-        transform-origin: left center;
-        transition: transform 0.16s ease;
-      }
-      .section-heading-link:hover {
-        transform: scale(1.04);
-      }
-      .section-heading-link:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 4px;
-        border-radius: 4px;
-      }
-    `}</style>
-    <div className="home-shell" style={{ padding: isNarrow ? '16px 10px' : '24px 20px', maxWidth: `${HOME_MAX_WIDTH}px`, margin: '0 auto' }}>
-      <div className="home-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '18px', marginBottom: '32px', flexWrap: 'wrap' }}>
+    <div className="home-shell">
+      <div className="home-topbar">
         <div className="home-brand">
-          <h1 className="home-brand-title" translate="no" aria-label="Readoshi" style={{ fontWeight: 600, margin: '0 0 8px 0', fontSize: '28px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h1 className="home-brand-title" translate="no" aria-label="Readoshi">
             <span className="home-brand-logo" aria-hidden="true" />
             <span className="home-project-name" aria-hidden="true">Readoshi</span>
             {serverOnline !== null && (
@@ -2155,77 +2077,41 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 onClick={() => probeServerStatus({ force: true })}
                 aria-label="探测 LRR 服务器状态"
                 title={serverProbeRunning ? '正在探测 LRR 服务器' : '点击重新探测 LRR 服务器'}
-                style={{
-                  position: 'relative',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '18px',
-                  height: '18px',
-                  padding: 0,
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: serverProbeRunning ? 'wait' : 'pointer',
-                  flexShrink: 0,
-                }}
+                className={`btn btn-quiet btn-icon server-status-button${serverProbeRunning ? ' is-probing' : ''}${serverOnline ? ' is-online' : ' is-offline'}`}
               >
                 {serverProbeRunning && (
                   <>
-                    <span style={{
-                      position: 'absolute',
-                      inset: '1px',
-                      borderRadius: '50%',
-                      border: `1px solid ${serverOnline ? 'color-mix(in srgb, var(--good) 30%, transparent)' : 'color-mix(in srgb, var(--danger) 30%, transparent)'}`,
-                      animation: 'serverProbeRipple 1.4s ease-out infinite',
-                    }} />
-                    <span style={{
-                      position: 'absolute',
-                      inset: '1px',
-                      borderRadius: '50%',
-                      border: `1px solid ${serverOnline ? 'color-mix(in srgb, var(--good) 22%, transparent)' : 'color-mix(in srgb, var(--danger) 22%, transparent)'}`,
-                      animation: 'serverProbeRipple 1.4s ease-out 0.42s infinite',
-                    }} />
+                    <span className="server-status-ripple server-status-ripple-primary" />
+                    <span className="server-status-ripple server-status-ripple-secondary" />
                   </>
                 )}
-                <span style={{
-                  display: 'inline-block',
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: serverOnline ? 'var(--good)' : 'var(--danger)',
-                  boxShadow: serverOnline
-                    ? '0 0 8px color-mix(in srgb, var(--good) 72%, transparent)'
-                    : '0 0 8px color-mix(in srgb, var(--danger) 72%, transparent)',
-                  transition: 'background 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease',
-                  transform: serverProbeRunning ? 'scale(1.08)' : 'scale(1)',
-                }} />
+                <span className="server-status-dot" />
               </button>
             )}
           </h1>
-          <div className="home-welcome" style={{ color: 'var(--text-sub)', fontSize: '14px' }}>
+          <div className="home-welcome">
             <span>欢迎回来</span><span className="home-welcome-detail">，继续你的探索之旅</span>
           </div>
         </div>
-        <div className="home-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div className="home-actions">
           <button
-            className="btn theme-mode-btn"
+            className="btn btn-secondary btn-icon theme-mode-btn"
             type="button"
             onClick={onThemeModeChange}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
             title={`切换主题，当前为${THEME_MODE_LABELS[themeMode] || THEME_MODE_LABELS.auto}`}
             aria-label={`当前主题：${THEME_MODE_LABELS[themeMode] || THEME_MODE_LABELS.auto}`}
           >
             <ThemeModeGlyph mode={themeMode} size={18} />
           </button>
-          <button className="btn" onClick={() => {
+          <button className="btn btn-secondary home-action-button" onClick={() => {
             setCfgWorkerUrl(getWorkerUrl());
             setCfgSyncToken(getSyncToken());
             setThemePalettesDraft(themePalettes);
             setThemePaletteMode(document.documentElement.dataset.theme || 'light');
             setReaderSettings(readReaderSettings());
             setShowConfig(true);
-          }} ref={settingsTriggerRef} style={{ fontSize: '13px' }}>设置</button>
-          <button className="btn" onClick={onLogout} style={{ fontSize: '13px' }}>退出</button>
+          }} ref={settingsTriggerRef}>设置</button>
+          <button className="btn btn-secondary home-action-button" onClick={onLogout}>退出</button>
         </div>
       </div>
 
@@ -2233,14 +2119,13 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         <section className="content-band section-reveal section-reveal-delay-1">
           <div className="home-carousel-header">
             <SectionHeading glyph="continue" onClick={handleNavigateHistory} title="查看全部历史记录">继续阅读</SectionHeading>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="home-carousel-actions">
               {workerReady && (
               <button
                 type="button"
-                className="btn"
+                className={`btn btn-secondary home-compact-action${historySyncing ? ' is-loading' : ''}`}
                 onClick={handleSyncHistory}
                 disabled={historySyncing}
-                style={{ padding: '6px 12px', fontSize: '12px' }}
                 title="从 Worker 刷新阅读历史"
               >
                 {historySyncing ? '刷新中' : '刷新'}
@@ -2253,8 +2138,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               />
             </div>
           </div>
-          <div style={{ overflow: 'hidden', transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)', maxHeight: historyCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
-            <div ref={historyScroller.ref} onWheelCapture={historyScroller.onWheelCapture} onScroll={historyScroller.onScroll} onMouseDown={historyScroller.onMouseDown} onClickCapture={historyScroller.onClickCapture} onDragStart={historyScroller.onDragStart} style={{ display: 'flex', gap: isNarrow ? '10px' : '16px', overflowX: 'auto', overflowY: 'hidden', padding: getHomeCarouselPadding(isNarrow), position: 'relative', zIndex: 1, ...historyScroller.getTouchScrollStyle(), ...historyScroller.getMouseScrollStyle() }} className="no-scrollbar">
+          <div className="home-carousel-collapse" style={{ maxHeight: historyCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
+            <div ref={historyScroller.ref} onWheelCapture={historyScroller.onWheelCapture} onScroll={historyScroller.onScroll} onMouseDown={historyScroller.onMouseDown} onClickCapture={historyScroller.onClickCapture} onDragStart={historyScroller.onDragStart} style={{ gap: isNarrow ? '10px' : '16px', padding: getHomeCarouselPadding(isNarrow), ...historyScroller.getTouchScrollStyle(), ...historyScroller.getMouseScrollStyle() }} className="no-scrollbar home-carousel-scroller">
               {filteredHistory.length > 0 ? (
                 <>
                   {filteredHistory.slice(0, 10).map(h => (
@@ -2264,26 +2149,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                     <button
                       type="button"
                       onClick={handleNavigateHistory}
-                      className="history-view-all-btn"
-                      style={{
-                        flexShrink: 0,
-                        width: isNarrow ? '54px' : '68px',
-                        minWidth: isNarrow ? '54px' : '68px',
-                        height: '286px',
-                        alignSelf: 'stretch',
-                        padding: 0,
-                        border: 'none',
-                        background: 'transparent',
-                        boxShadow: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                      }}
+                      className="btn btn-quiet history-view-all-btn"
+                      style={{ width: isNarrow ? '54px' : '68px', minWidth: isNarrow ? '54px' : '68px' }}
                       title="查看全部阅读历史"
                       aria-label="查看全部阅读历史"
                     >
-                      <span className="history-view-all-arrow" aria-hidden="true" style={{ display: 'flex', alignItems: 'center' }}>
+                      <span className="history-view-all-arrow" aria-hidden="true">
                         <svg viewBox="0 0 36 48" width="36" height="48" fill="none" stroke="currentColor" strokeWidth="4.2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M8 8l14 16L8 40" />
                           <path d="M18 8l14 16-14 16" />
@@ -2293,7 +2164,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   )}
                 </>
               ) : (
-                <div style={{ fontSize: '12px', color: 'var(--text-sub)', padding: '4px 0', whiteSpace: 'nowrap' }}>所有档案均已读完</div>
+                <div className="home-empty-history">所有档案均已读完</div>
               )}
             </div>
           </div>
@@ -2305,7 +2176,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="home-carousel-header">
             <SectionHeading glyph="continue">继续阅读</SectionHeading>
           </div>
-          <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'contain', padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px', position: 'relative', zIndex: 1 }} className="no-scrollbar">
+          <div className="no-scrollbar home-carousel-scroller" style={{ padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px' }}>
             {Array.from({ length: 4 }).map((_, i) => (
               <SkeletonCard key={`hsk-${i}`} showProgress={showHistoricalArchiveProgress} />
             ))}
@@ -2317,13 +2188,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         <section className="content-band section-reveal section-reveal-delay-1">
           <div className="home-carousel-header">
             <SectionHeading glyph="watchlist" onClick={handleNavigateWatchlist} title="查看全部待看档案">待看档案</SectionHeading>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="home-carousel-actions">
               <button
                 type="button"
-                className="btn"
+                className={`btn btn-secondary home-compact-action${watchlistChecking ? ' is-loading' : ''}`}
                 onClick={handleCheckWatchlist}
                 disabled={watchlistChecking}
-                style={{ padding: '6px 12px', fontSize: '12px', opacity: watchlistChecking ? 0.72 : 1 }}
                 title="检查待看档案是否仍存在于 LANraragi"
               >
                 {watchlistChecking ? '检查中' : '刷新'}
@@ -2335,8 +2205,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               />
             </div>
           </div>
-          <div style={{ overflow: 'hidden', transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)', maxHeight: watchlistCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
-            <div ref={watchlistScroller.ref} onWheelCapture={watchlistScroller.onWheelCapture} onScroll={watchlistScroller.onScroll} onMouseDown={watchlistScroller.onMouseDown} onClickCapture={watchlistScroller.onClickCapture} onDragStart={watchlistScroller.onDragStart} style={{ display: 'flex', gap: isNarrow ? '10px' : '16px', overflowX: 'auto', overflowY: 'hidden', padding: getHomeCarouselPadding(isNarrow), position: 'relative', zIndex: 1, ...watchlistScroller.getTouchScrollStyle(), ...watchlistScroller.getMouseScrollStyle() }} className="no-scrollbar">
+          <div className="home-carousel-collapse" style={{ maxHeight: watchlistCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
+            <div ref={watchlistScroller.ref} onWheelCapture={watchlistScroller.onWheelCapture} onScroll={watchlistScroller.onScroll} onMouseDown={watchlistScroller.onMouseDown} onClickCapture={watchlistScroller.onClickCapture} onDragStart={watchlistScroller.onDragStart} style={{ gap: isNarrow ? '10px' : '16px', padding: getHomeCarouselPadding(isNarrow), ...watchlistScroller.getTouchScrollStyle(), ...watchlistScroller.getMouseScrollStyle() }} className="no-scrollbar home-carousel-scroller">
               {watchlistWithProgress.map(item => (
                 <ArchiveCard key={`watch-${item.id || item.arcid}`} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
@@ -2344,26 +2214,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 <button
                   type="button"
                   onClick={handleNavigateWatchlist}
-                  className="history-view-all-btn"
-                  style={{
-                    flexShrink: 0,
-                    width: isNarrow ? '54px' : '68px',
-                    minWidth: isNarrow ? '54px' : '68px',
-                    height: '286px',
-                    alignSelf: 'stretch',
-                    padding: 0,
-                    border: 'none',
-                    background: 'transparent',
-                    boxShadow: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
+                  className="btn btn-quiet history-view-all-btn"
+                  style={{ width: isNarrow ? '54px' : '68px', minWidth: isNarrow ? '54px' : '68px' }}
                   title="查看全部待看档案"
                   aria-label="查看全部待看档案"
                 >
-                  <span className="history-view-all-arrow" aria-hidden="true" style={{ display: 'flex', alignItems: 'center' }}>
+                  <span className="history-view-all-arrow" aria-hidden="true">
                     <svg viewBox="0 0 36 48" width="36" height="48" fill="none" stroke="currentColor" strokeWidth="4.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M8 8l14 16L8 40" />
                       <path d="M18 8l14 16-14 16" />
@@ -2380,9 +2236,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         <section className="content-band section-reveal section-reveal-delay-2">
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
-            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>刷新</button>
+            <button className="btn btn-secondary home-compact-action" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing}>刷新</button>
           </div>
-          <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain', overscrollBehaviorY: 'contain', padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px', position: 'relative', zIndex: 1 }} className="no-scrollbar">
+          <div className="no-scrollbar home-carousel-scroller" style={{ padding: isNarrow ? '8px 14px 16px' : '8px 20px 16px' }}>
             {Array.from({ length: randomSkeletonCount }).map((_, i) => (
               <SkeletonCard key={`rsk-${i}`} showProgress={showGlobalArchiveProgress} />
             ))}
@@ -2392,8 +2248,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         <section className="content-band section-reveal section-reveal-delay-2">
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>刷新</button>
+            <div className="home-carousel-actions home-random-actions">
+            <button className="btn btn-secondary home-compact-action" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing}>刷新</button>
               <CollapseButton
                 collapsed={randomCollapsed}
                 onClick={() => setRandomCollapsed(v => !v)}
@@ -2401,8 +2257,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               />
             </div>
           </div>
-          <div style={{ overflow: 'hidden', transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)', maxHeight: randomCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
-            <div ref={randomScroller.ref} onWheelCapture={randomScroller.onWheelCapture} onScroll={randomScroller.onScroll} onMouseDown={randomScroller.onMouseDown} onClickCapture={randomScroller.onClickCapture} onDragStart={randomScroller.onDragStart} style={{ display: 'flex', gap: isNarrow ? '10px' : '16px', overflowX: 'auto', overflowY: 'hidden', padding: getHomeCarouselPadding(isNarrow), position: 'relative', zIndex: 1, ...randomScroller.getTouchScrollStyle(), ...randomScroller.getMouseScrollStyle() }} className="no-scrollbar">
+          <div className="home-carousel-collapse" style={{ maxHeight: randomCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
+            <div ref={randomScroller.ref} onWheelCapture={randomScroller.onWheelCapture} onScroll={randomScroller.onScroll} onMouseDown={randomScroller.onMouseDown} onClickCapture={randomScroller.onClickCapture} onDragStart={randomScroller.onDragStart} style={{ gap: isNarrow ? '10px' : '16px', padding: getHomeCarouselPadding(isNarrow), ...randomScroller.getTouchScrollStyle(), ...randomScroller.getMouseScrollStyle() }} className="no-scrollbar home-carousel-scroller">
               {randomsRefreshing ? Array.from({ length: randomSkeletonCount }).map((_, i) => (
                 <SkeletonCard key={`rrsk-${i}`} showProgress={showGlobalArchiveProgress} />
               )) : randoms.map(arc => (
@@ -2415,35 +2271,33 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         <section className="content-band section-reveal section-reveal-delay-2">
           <div className="home-carousel-header">
             <SectionHeading glyph="random">随机漫游</SectionHeading>
-            <button className="btn" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing} style={{ padding: '6px 14px', fontSize: '12px', opacity: randomsLoading || randomsRefreshing ? 0.72 : 1 }}>{randomsRefreshing ? '刷新中' : '刷新'}</button>
+            <button className="btn btn-secondary home-compact-action" onClick={() => fetchRandoms({ preferFresh: true })} disabled={randomsLoading || randomsRefreshing}>{randomsRefreshing ? '刷新中' : '刷新'}</button>
           </div>
-          <div style={{ padding: isNarrow ? '10px 14px 18px' : '10px 20px 20px', color: 'var(--text-sub)', fontSize: '13px' }}>
+          <div className="home-random-empty">
             暂无随机漫游结果
           </div>
         </section>
       )}
 
-      <section ref={archivesSectionRef} className="glass-panel archive-workspace section-reveal section-reveal-delay-3">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
-          <div className="archive-toolbar-primary" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-            <div className="archive-toolbar-summary" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+      <section ref={archivesSectionRef} className="surface archive-workspace section-reveal section-reveal-delay-3">
+        <div className="archive-toolbar">
+          <div className="archive-toolbar-primary">
+            <div className="archive-toolbar-summary">
               <SectionHeading glyph="archives" style={{ lineHeight: 1 }}>全部档案</SectionHeading>
               <span className="archive-count-badge">
                 {archiveCountLabel}
               </span>
             </div>
-            <div className="archive-toolbar-actions" style={{ display: 'flex', gap: isNarrow ? '4px' : '8px', flexShrink: 0, alignItems: 'center', justifyContent: 'flex-end' }}>
+            <div className="archive-toolbar-actions">
               <button
-                className="btn"
-                style={{ padding: '6px 12px', fontSize: '12px' }}
+                className="btn btn-secondary home-compact-action"
                 onClick={toggleArchiveSelectionMode}
                 disabled={archiveDeleting}
               >
                 {archiveSelectionMode ? '取消多选' : '多选'}
               </button>
               <button
-                className="btn"
-                style={{ padding: '6px 12px', fontSize: '12px', opacity: archivesRefreshing ? 0.72 : 1 }}
+                className={`btn btn-secondary home-compact-action${archivesRefreshing ? ' is-loading' : ''}`}
                 onClick={handleManualRefreshArchives}
                 disabled={loading || archivesRefreshing || archiveDeleting}
                 title="清理 LANraragi 搜索缓存并重新获取档案列表"
@@ -2456,13 +2310,13 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="archive-selection-actions" data-open={archiveSelectionMode ? 'true' : 'false'} aria-hidden={!archiveSelectionMode}>
             <div className="archive-selection-actions-inner">
               <span className="archive-count-badge archive-selection-count-badge" aria-live="polite">已选 {selectedArchiveIds.size} 个</span>
-              <button className="btn archive-selection-primary" tabIndex={archiveSelectionMode ? 0 : -1} style={{ padding: '6px 12px', fontSize: '12px' }} onClick={toggleSelectAllVisibleArchives} disabled={visibleArchiveIds.length === 0 || archiveDeleting}>
+              <button className="btn btn-primary home-compact-action archive-selection-primary" tabIndex={archiveSelectionMode ? 0 : -1} onClick={toggleSelectAllVisibleArchives} disabled={visibleArchiveIds.length === 0 || archiveDeleting}>
                 {allVisibleSelected ? '取消全选' : '全选当前'}
               </button>
-              <button className="btn" tabIndex={archiveSelectionMode ? 0 : -1} style={{ padding: '6px 12px', fontSize: '12px' }} onClick={handleBulkArchiveFavorite} disabled={selectedArchiveIds.size === 0 || archiveDeleting || bulkFavoriteRunning}>
+              <button className="btn btn-secondary home-compact-action" tabIndex={archiveSelectionMode ? 0 : -1} onClick={handleBulkArchiveFavorite} disabled={selectedArchiveIds.size === 0 || archiveDeleting || bulkFavoriteRunning}>
                 {bulkFavoriteRunning ? '收藏中…' : '收藏所选'}
               </button>
-              <button className="btn archive-selection-delete" tabIndex={archiveSelectionMode ? 0 : -1} onClick={requestBulkArchiveDelete} disabled={selectedArchiveIds.size === 0 || archiveDeleting}>
+              <button className="btn btn-danger archive-selection-delete" tabIndex={archiveSelectionMode ? 0 : -1} onClick={requestBulkArchiveDelete} disabled={selectedArchiveIds.size === 0 || archiveDeleting}>
                 {archiveDeleting ? '删除中…' : '删除所选'}
               </button>
             </div>
@@ -2485,7 +2339,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 name="archive-search"
                 autoComplete="off"
                 aria-label="搜索标签或标题"
-                className="input-glass"
+                className="field archive-search-field"
                 style={{ width: '100%', boxSizing: 'border-box', paddingRight: filter.query ? '66px' : '38px' }}
                 placeholder={filter.active ? `筛选: ${filter.query}` : '搜索标签或标题… 按回车筛选'}
                 value={filter.query}
@@ -2502,31 +2356,22 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               />
               {filter.query && (
                 <button
-                  className="input-clear-btn"
+                  className="btn btn-quiet btn-icon input-clear-btn archive-search-clear"
                   onClick={() => clearFilter()}
-                  style={{
-                    position: 'absolute', right: '36px', top: '0', bottom: '0',
-                    display: 'flex', alignItems: 'center',
-                  }}
                   title="清除筛选"
                 ><ToolbarGlyph name="close" size={14} /></button>
               )}
               <button
                 type="button"
-                className="input-clear-btn"
+                className="btn btn-quiet btn-icon input-clear-btn archive-search-preset-toggle"
                 onClick={() => {
                   suggestActiveRef.current = false;
                   setShowPresets(v => !v);
                 }}
-                style={{
-                  position: 'absolute', right: '8px', top: '0', bottom: '0',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '24px',
-                }}
                 title={showPresets ? '关闭筛选预设' : '打开筛选预设'}
                 aria-label="筛选预设"
               >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style={{ transition: 'transform 0.2s ease', transform: showPresets ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                <svg className="archive-search-preset-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style={{ transform: showPresets ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                   <path d="M6 9l6 6 6-6z" />
                 </svg>
               </button>
@@ -2542,7 +2387,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 <div className="archive-search-presets dropdown-animate">
                   <div className="archive-search-preset-heading">
                     <span>已保存的筛选方案</span>
-                    <button className="btn" onClick={savePreset}>
+                    <button className="btn btn-secondary" onClick={savePreset}>
                       + 保存当前筛选
                     </button>
                   </div>
@@ -2555,7 +2400,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                       {presets.map(p => (
                         <div key={p.name} className="archive-search-preset-row">
                           <button
-                            className="archive-search-preset-apply"
+                            className="btn btn-quiet archive-search-preset-apply"
                             onClick={() => loadPreset(p)}
                             title={`${p.query} / ${p.sortBy} / ${p.order}`}
                           >
@@ -2563,7 +2408,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                           </button>
                           <button
                             type="button"
-                            className="archive-search-preset-edit"
+                            className="btn btn-quiet btn-icon archive-search-preset-edit"
                             onClick={() => setEditingPreset(current => current === p.name ? '' : p.name)}
                             aria-label={`编辑 ${p.name}`}
                             aria-expanded={editingPreset === p.name}
@@ -2571,8 +2416,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                             <ToolbarGlyph name="edit" size={16} />
                           </button>
                           {editingPreset === p.name && <div className="archive-search-preset-actions dropdown-animate">
-                            <button type="button" onClick={() => { setPresetNameDialog({ mode: 'rename', value: p.name }); setEditingPreset(''); }}>重命名</button>
-                            <button type="button" className="is-danger" onClick={() => { setPresetDeleteTarget(p.name); setEditingPreset(''); }}>删除</button>
+                            <button type="button" className="btn btn-quiet archive-search-preset-action" onClick={() => { setPresetNameDialog({ mode: 'rename', value: p.name }); setEditingPreset(''); }}>重命名</button>
+                            <button type="button" className="btn btn-danger archive-search-preset-action" onClick={() => { setPresetDeleteTarget(p.name); setEditingPreset(''); }}>删除</button>
                           </div>}
                         </div>
                       ))}
@@ -2596,14 +2441,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 onChange={(v) => setFilter(prev => ({ ...prev, order: v }))}
                 options={[{ label: '倒序', value: 'desc' }, { label: '正序', value: 'asc' }]}
               />
-              <button className="btn" style={{ padding: '8px 18px', fontSize: '13px', whiteSpace: 'nowrap', flexShrink: 0 }} onClick={handleSearch}>
+              <button className="btn btn-primary archive-search-submit" onClick={handleSearch}>
                 筛选
               </button>
             </div>
           </div>
         </div>
 
-        <div className="archive-category-list" style={{ display: 'flex', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="archive-category-list">
           {displayCategories.map(cat => {
             const isActive = selectedCategory?.id === cat.id;
             const label = getCategoryDisplayName(cat);
@@ -2611,18 +2456,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             return (
               <button
                 key={cat.id}
-                className="btn archive-category-button"
+                className={`btn btn-secondary archive-category-button${isActive ? ' is-active' : ''}`}
                 onClick={() => handleCategoryClick(cat)}
-                style={{
-                  fontWeight: isActive ? 700 : 500,
-                  borderRadius: 'var(--radius-chip)',
-                  ...(isActive ? {
-                    background: 'var(--accent)',
-                    borderColor: 'var(--accent)',
-                    color: 'white',
-                    transform: 'translateY(-2px)',
-                  } : {}),
-                }}
                 title={label}
               >
                 {isFavorites && <ToolbarGlyph name="favorite" size={15} color="currentColor" />}
@@ -2635,18 +2470,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             return (
               <button
                 key={UNTAGGED_CATEGORY_ID}
-                className="btn archive-category-button"
+                className={`btn btn-secondary archive-category-button${isActive ? ' is-active' : ''}`}
               onClick={() => handleCategoryClick(UNTAGGED_CATEGORY)}
-                style={{
-                  fontWeight: isActive ? 700 : 500,
-                  borderRadius: 'var(--radius-chip)',
-                  ...(isActive ? {
-                    background: 'var(--accent)',
-                    borderColor: 'var(--accent)',
-                    color: 'white',
-                    transform: 'translateY(-2px)',
-                  } : {}),
-                }}
                 title="无标签"
               >
                 无标签
@@ -2666,27 +2491,27 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         </ArchiveGrid>
 
         {archives.length === 0 && !loading && (
-          <div role={archiveLoadError ? 'alert' : 'status'} aria-live="polite" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-sub)', fontSize: '14px' }}>
+          <div className="archive-feedback-empty" role={archiveLoadError ? 'alert' : 'status'} aria-live="polite">
             {archiveLoadError || (selectedCategory?.id === UNTAGGED_CATEGORY_ID ? '没有无标签档案' : (filter.active ? '没有匹配的档案，请尝试其他筛选条件' : '仓库为空，请先在 LANraragi 中添加档案'))}
           </div>
         )}
 
         {archiveLoadError && archives.length > 0 && (
-          <div role="alert" aria-live="polite" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-sub)', fontSize: '14px' }}>
+          <div className="archive-feedback-error" role="alert" aria-live="polite">
             {archiveLoadError}
           </div>
         )}
 
-        <div ref={sentinelRef} style={{ height: '1px' }} />
+        <div className="archive-sentinel" ref={sentinelRef} />
 
-        <div style={{ textAlign: 'center', marginTop: '36px', paddingBottom: '12px' }}>
+        <div className="archive-pagination-shell">
           {archiveBrowseMode === ARCHIVE_BROWSE_MODES.paged ? (
             <div className="archive-pagination-controls">
-              <button className="btn" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => goArchivePage(archivePage - 1)} disabled={!canGoPrevArchivePage}>上一页</button>
+              <button className="btn btn-secondary archive-pagination-button" onClick={() => goArchivePage(archivePage - 1)} disabled={!canGoPrevArchivePage}>上一页</button>
               <span className="archive-pagination-jump">
                 第
                 <input
-                  className="input-glass no-spinner"
+                  className="field no-spinner"
                   type="text"
                   inputMode="numeric"
                   aria-label="跳转到档案页码"
@@ -2698,42 +2523,35 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 页
                 {Number.isFinite(archiveTotal) && <span className="archive-pagination-total">/ {archivePageCount}</span>}
               </span>
-              <button className="btn" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={submitArchivePageInput} disabled={archiveRequestBusy}>跳转</button>
-              <button className="btn" style={{ padding: '8px 16px', fontSize: '13px' }} onClick={() => goArchivePage(archivePage + 1)} disabled={!canGoNextArchivePage}>下一页</button>
+              <button className="btn btn-secondary archive-pagination-button" onClick={submitArchivePageInput} disabled={archiveRequestBusy}>跳转</button>
+              <button className="btn btn-secondary archive-pagination-button" onClick={() => goArchivePage(archivePage + 1)} disabled={!canGoNextArchivePage}>下一页</button>
             </div>
           ) : hasMore ? (
             supportsAutomaticArchiveLoading ? (
               loading || archivesRefreshing ? (
-                <div style={{ color: 'var(--text-sub)' }}>加载中…</div>
+                <div className="archive-loading-status">加载中…</div>
               ) : null
             ) : (
-              <button className="btn" style={{ padding: '10px 40px' }} onClick={() => doFetch(false)} disabled={loading || archivesRefreshing}>
+              <button className="btn btn-primary archive-load-more" onClick={() => doFetch(false)} disabled={loading || archivesRefreshing}>
                 {loading ? '加载中…' : '加载更多'}
               </button>
             )
           ) : (archives.length > 0 && (
-            <div style={{ color: 'var(--text-sub)' }}>— 已经到底啦 —</div>
+            <div className="archive-end-status">— 已经到底啦 —</div>
           ))}
         </div>
       </section>
     </div>
     {showConfig && createPortal(
-      <div className="settings-overlay" role="presentation" onClick={() => setShowConfig(false)} style={{
-        position: 'fixed', inset: 0, zIndex: 100000,
-        background: 'var(--overlay-bg)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <form ref={settingsDialogRef} className="glass-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {
+      <div className="settings-overlay" role="presentation" onClick={() => setShowConfig(false)}>
+        <form ref={settingsDialogRef} className="surface settings-panel settings-panel-form" role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {
           e.preventDefault();
           setWorkerUrl(cfgWorkerUrl);
           setSyncToken(cfgSyncToken);
           onThemePalettesChange?.(themePalettesDraft);
           setShowConfig(false);
-        }} style={{
-          padding: 0, display: 'flex', flexDirection: 'column', gap: 0,
-          overflow: 'hidden',
         }}>
-          <div className="settings-panel-header" style={{ textAlign: 'center', padding: '28px 28px 12px' }}>
+          <div className="settings-panel-header">
             <h2 className="settings-title" id="home-settings-title">设置</h2>
           </div>
 
@@ -2751,7 +2569,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 type="button"
                 role="tab"
                 aria-selected={settingsCategory === key}
-                className={`btn settings-category-tab${settingsCategory === key ? ' is-active' : ''}`}
+                className={`btn btn-quiet settings-category-tab${settingsCategory === key ? ' is-active' : ''}`}
                 onClick={() => setSettingsCategory(key)}
               >
                 {label}
@@ -2841,19 +2659,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   <ToggleSwitch checked={readerSettings.ehEnabled} onChange={() => updateReaderSettings((s) => ({ ...s, ehEnabled: !s.ehEnabled }))} label="启用 E-Hentai 评论区" />
                 </div>
                 <div
-                  style={{
-                    display: 'grid',
-                    gap: '12px',
-                    maxHeight: readerSettings.ehEnabled ? '320px' : '0px',
-                    opacity: readerSettings.ehEnabled ? 1 : 0,
-                    overflow: readerSettings.ehEnabled ? 'visible' : 'hidden',
-                    transform: readerSettings.ehEnabled ? 'none' : 'translateY(-6px)',
-                    transition: 'max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, transform 0.28s cubic-bezier(0.4,0,0.2,1)',
-                    pointerEvents: readerSettings.ehEnabled ? 'auto' : 'none',
-                  }}
+                  className={`settings-eh-details${readerSettings.ehEnabled ? ' is-expanded' : ''}`}
+                  style={{ transform: readerSettings.ehEnabled ? 'none' : 'translateY(-6px)' }}
                   aria-hidden={!readerSettings.ehEnabled}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div className="settings-eh-details-inner">
+                  <div className="settings-eh-cookie-field">
                     <SettingHint className="settings-field-label" text={'作用：访问 E-Hentai 画廊和评论。\n条件：同步删除收藏还需要 ipb_member_id 与 ipb_pass_hash。'}>E-Hentai Cookie</SettingHint>
                     <div className="eh-cookie-input-row">
                       <SecretInput
@@ -2862,34 +2673,32 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                         value={readerSettings.ehCookie || ''}
                         onChange={(e) => updateReaderSettings((s) => ({ ...s, ehCookie: e.target.value }))}
                         placeholder="igneous=…; ipb_member_id=…; ipb_pass_hash=…"
-                        style={{ fontSize: '12px' }}
+                         className="settings-eh-cookie-input"
                       />
-                      <button type="button" className="btn eh-cookie-check-btn" onClick={handleCheckEhCookie} disabled={ehCookieChecking}>
+                  <button type="button" className="btn btn-secondary eh-cookie-check-btn" onClick={handleCheckEhCookie} disabled={ehCookieChecking}>
                         {ehCookieChecking ? '检测中' : '检测'}
                       </button>
                     </div>
                   </div>
                   <label className="settings-row">
                     <SettingHint text={'作用：隐藏低于此分数的评论。\n填 0：显示全部评论，不按分数过滤。'}>最低展示分数</SettingHint>
-                    <input type="text" inputMode="numeric" pattern="-?[0-9]*" className="input-glass no-spinner"
+                    <input type="text" inputMode="numeric" pattern="-?[0-9]*" className="field no-spinner eh-settings-number-field"
                       value={String(readerSettings.ehMinScore)}
                       onChange={(e) => { const v = e.target.value; const n = parseInt(v, 10); if (!isNaN(n) && n >= -999) updateReaderSettings((s) => ({ ...s, ehMinScore: n })); else if (v === '' || v === '-') updateReaderSettings((s) => ({ ...s, ehMinScore: 0 })); }}
                       onBlur={() => { const n = parseInt(readerSettings.ehMinScore, 10); if (isNaN(n)) updateReaderSettings((s) => ({ ...s, ehMinScore: 0 })); }}
-                      style={{ width: '52px', padding: '5px 6px', fontSize: '12px', textAlign: 'center' }}
                     />
                   </label>
                   <label className="settings-row">
                     <SettingHint text={'作用：限制每个档案加载的评论数量。\n范围：1–200 条。'}>最多展示数量</SettingHint>
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="field no-spinner eh-settings-number-field"
                       value={String(readerSettings.ehMaxComments)}
                       onChange={(e) => { const v = sanitizeUnsignedIntegerInput(e.target.value); const n = parseInt(v, 10); if (!isNaN(n) && n >= 1 && n <= 200) updateReaderSettings((s) => ({ ...s, ehMaxComments: n })); }}
                       onBlur={() => { const n = parseInt(readerSettings.ehMaxComments, 10); if (isNaN(n) || n < 1) updateReaderSettings((s) => ({ ...s, ehMaxComments: 45 })); else if (n > 200) updateReaderSettings((s) => ({ ...s, ehMaxComments: 200 })); }}
-                      style={{ width: '52px', padding: '5px 6px', fontSize: '12px', textAlign: 'center' }}
                     />
                   </label>
                   <label className="settings-row">
                     <SettingHint text={'按分数：根据评论评分排序。\n按时间：根据评论发布时间排序。'}>排序方式</SettingHint>
-                    <div style={{ width: '110px', flexShrink: 0 }}>
+                    <div className="eh-settings-select-wrap">
                       <CustomSelect
                         value={readerSettings.ehSortMethod}
                         options={[{ label: '分数', value: 'score' }, { label: '时间', value: 'time' }]}
@@ -2900,7 +2709,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   </label>
                   <label className="settings-row">
                     <SettingHint text={'倒序：最高分或最新评论优先。\n正序：最低分或最早评论优先。'}>排序方向</SettingHint>
-                    <div style={{ width: '110px', flexShrink: 0 }}>
+                    <div className="eh-settings-select-wrap">
                       <CustomSelect
                         value={readerSettings.ehSortOrder}
                         options={[{ label: '倒序', value: 'desc' }, { label: '正序', value: 'asc' }]}
@@ -2909,6 +2718,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                       />
                     </div>
                   </label>
+                  </div>
                 </div>
               </div>
               <div className="settings-group">
@@ -2918,11 +2728,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 </div>}
                 <div>
                   <SettingHint className="settings-field-label" text={'作用：启用多设备阅读历史、待看列表和收藏删除同步。\n条件：Worker 端点必须是可访问的 HTTPS 地址。'}>Cloudflare Worker 端点</SettingHint>
-                  <input type="url" inputMode="url" name="worker-url" autoComplete="off" spellCheck={false} aria-label="Cloudflare Worker 端点" className="input-glass"
+                  <input type="url" inputMode="url" name="worker-url" autoComplete="off" spellCheck={false} aria-label="Cloudflare Worker 端点" className="field settings-worker-url"
                     value={cfgWorkerUrl}
                     onChange={(e) => setCfgWorkerUrl(e.target.value)}
                     placeholder="https://lrr-sync.example.workers.dev"
-                    style={{ padding: '8px 12px', fontSize: '13px' }}
                   />
                 </div>
 
@@ -2950,7 +2759,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                     type="button"
                     role="tab"
                     aria-selected={themePaletteMode === mode}
-                    className={`btn theme-palette-mode-tab${themePaletteMode === mode ? ' is-active' : ''}`}
+                    className={`btn btn-quiet theme-palette-mode-tab${themePaletteMode === mode ? ' is-active' : ''}`}
                     onClick={() => setThemePaletteMode(mode)}
                   >
                     {mode === 'light' ? '浅色模式' : '深色模式'}
@@ -2981,7 +2790,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 <span className="theme-palette-status" aria-live="polite">
                   {themePalettesDraft?.[themePaletteMode] ? `${themePaletteMode === 'light' ? '浅色' : '深色'}模式已启用自定义色彩语言` : `当前使用${themePaletteMode === 'light' ? '浅色' : '深色'}内置主题配色`}
                 </span>
-                <button type="button" className="btn theme-palette-reset" onClick={() => setThemePalettesDraft((current) => {
+                <button type="button" className="btn btn-quiet theme-palette-reset" onClick={() => setThemePalettesDraft((current) => {
                   if (!current?.[themePaletteMode]) return current;
                   const next = { ...current };
                   delete next[themePaletteMode];
@@ -2998,10 +2807,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             <div className="settings-section-inner">
               <div className="settings-group">
                 <div className="settings-tool-grid">
-                <button type="button" className="btn" onClick={handleNavigateUpload} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>上传档案</button>
-                <button type="button" className="btn" onClick={handleNavigateDeduplicate} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>重复档案检测</button>
-                <button type="button" className="btn" onClick={handleExportConfig} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>导出配置</button>
-                <button type="button" className="btn" onClick={handleImportConfig} style={{ width: '100%', padding: '10px', fontSize: '13px' }}>导入配置</button>
+                <button type="button" className="btn btn-secondary settings-tool-button" onClick={handleNavigateUpload}>上传档案</button>
+                <button type="button" className="btn btn-secondary settings-tool-button" onClick={handleNavigateDeduplicate}>重复档案检测</button>
+                <button type="button" className="btn btn-secondary settings-tool-button" onClick={handleExportConfig}>导出配置</button>
+                <button type="button" className="btn btn-secondary settings-tool-button" onClick={handleImportConfig}>导入配置</button>
               </div>
               </div>
             </div>
@@ -3011,10 +2820,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
           <div className="settings-panel-footer">
             <div className="settings-panel-actions">
-              <button type="button" className="btn" onClick={() => setShowConfig(false)} style={{ padding: '10px' }}>
+              <button type="button" className="btn btn-quiet" onClick={() => setShowConfig(false)}>
                 取消
               </button>
-              <button type="submit" className="btn" style={{ padding: '10px' }}>
+              <button type="submit" className="btn btn-primary">
                 保存
               </button>
             </div>

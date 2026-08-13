@@ -165,6 +165,86 @@ test('task4 owned surfaces use semantic controls and class-driven presentation',
   assert.match(pages, /\.recommendation-content\.is-loading\s*\{/);
 });
 
+test('task4 Home surfaces use semantic controls and page-owned settings styles', () => {
+  const home = read('src/pages/Home.jsx');
+  const pages = read('src/styles/pages.css');
+  const readerCss = read('src/styles/reader.css');
+
+  assert.doesNotMatch(home, /className="(?:input-glass|glass-panel)\b/, 'Home still consumes a legacy surface class');
+  const nativeButtons = [];
+  for (let start = home.indexOf('<button'); start >= 0; start = home.indexOf('<button', start + 7)) {
+    let depth = 0;
+    let quote = '';
+    let end = start + 7;
+    for (; end < home.length; end += 1) {
+      const char = home[end];
+      if (quote) {
+        if (char === quote && home[end - 1] !== '\\') quote = '';
+        continue;
+      }
+      if (char === '"' || char === "'") { quote = char; continue; }
+      if (char === '{') { depth += 1; continue; }
+      if (char === '}') { depth = Math.max(0, depth - 1); continue; }
+      if (char === '>' && depth === 0) break;
+    }
+    nativeButtons.push(home.slice(start, end + 1));
+  }
+  assert.ok(nativeButtons.length > 0, 'Home should expose native button controls');
+  for (const button of nativeButtons) {
+    const className = button.match(/\bclassName\s*=\s*"([^"]*)"/)?.[1]
+      || button.match(/\bclassName\s*=\s*\{`([^`]*)`\}/)?.[1]
+      || '';
+    assert.notEqual(className, '', `Home button lacks an extractable className: ${button}`);
+    assert.match(className, /(?:^|\s)btn(?:\s|$)/, `Home button lacks btn base class: ${button}`);
+    assert.match(className, /(?:^|\s)btn-(?:primary|secondary|quiet|danger)(?:\s|$)/, `Home button lacks semantic variant: ${button}`);
+  }
+  assert.match(home, /server-status-button\$\{serverProbeRunning/);
+  assert.match(home, /history-view-all-btn/);
+  assert.match(home, /archive-search-clear/);
+  assert.match(home, /archive-search-preset-toggle/);
+  assert.match(home, /className="surface archive-workspace section-reveal/);
+  assert.match(home, /className="field archive-search-field/);
+  assert.match(home, /className="surface settings-panel/);
+  assert.doesNotMatch(home, /className="archive-toolbar-actions"\s+style=/, 'archive toolbar action gap must be page-owned');
+  assert.match(home, /className="archive-search-preset-icon"[^>]*style=\{\{\s*transform:/, 'preset toggle should expose a named icon class with state transform');
+  assert.doesNotMatch(home, /className="archive-search-preset-icon"[^>]*style=\{\{[^}]*transition:/, 'preset icon transition must be page-owned');
+  assert.match(pages, /\.archive-toolbar-actions\s*\{[\s\S]*gap:\s*8px;/);
+  assert.match(pages, /@media \(max-width:\s*720px\)[\s\S]*\.archive-toolbar-actions\s*\{[\s\S]*gap:\s*4px;/);
+  assert.match(pages, /\.archive-search-preset-icon\s*\{[\s\S]*transition:\s*transform\s+0\.2s\s+ease;/);
+  for (const className of [
+    'home-carousel-actions', 'home-empty-history', 'home-random-empty', 'home-carousel-scroller',
+    'archive-toolbar', 'archive-toolbar-primary', 'archive-toolbar-summary', 'archive-toolbar-actions',
+    'archive-category-list', 'archive-feedback-empty', 'archive-feedback-error', 'archive-sentinel',
+    'archive-pagination-shell', 'archive-loading-status', 'archive-end-status', 'settings-overlay',
+    'settings-panel', 'settings-panel-header', 'eh-settings-number-field', 'eh-settings-select-wrap',
+    'settings-worker-url',
+  ]) {
+    assert.match(home, new RegExp(`className="[^"}]*\\b${className}\\b`), `Home is missing ${className}`);
+    assert.match(pages, new RegExp(`\\.${className}\\s*\\{`), `pages.css is missing ${className}`);
+  }
+  for (const fragment of [
+    "<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>",
+    "<div style={{ fontSize: '12px', color: 'var(--text-sub)'",
+    "<div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>",
+    'className="archive-toolbar-primary" style=',
+    'className="archive-toolbar-summary" style=',
+    'className="archive-category-list" style=',
+    "style={{ textAlign: 'center', padding: '40px'",
+    "style={{ textAlign: 'center', padding: '12px'",
+    "style={{ height: '1px' }}",
+    "style={{ textAlign: 'center', marginTop: '36px'",
+    "style={{ color: 'var(--text-sub)' }}",
+    "style={{ width: '52px', padding: '5px 6px', fontSize: '12px'",
+    "style={{ width: '110px', flexShrink: 0 }}",
+    "style={{ padding: '8px 12px', fontSize: '13px' }}",
+  ]) {
+    assert.doesNotMatch(home, new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Home keeps static inline fragment: ${fragment}`);
+  }
+  assert.match(readerCss, /\.settings-layout\s*\{/);
+  assert.match(pages, /\.settings-eh-details\s*\{/);
+  assert.match(readerCss, /\.settings-layout\s*\{[^}]*display:\s*grid;/);
+});
+
 test('built-in and custom themes expose the complete semantic token contract', () => {
   const css = read('src/styles/tokens.css');
   for (const [label, block] of [
@@ -278,15 +358,15 @@ test('overlay components delegate focus and dismissal behavior to Base UI', () =
 });
 
 test('archive browsing pages share unframed bands and bounded workspaces', () => {
-  const pages = read('src/styles/pages.css');
   const index = read('src/index.css');
   const home = read('src/pages/Home.jsx');
   const history = read('src/pages/HistoryPage.jsx');
   const watchlist = read('src/pages/WatchlistPage.jsx');
+  const pages = read('src/styles/pages.css');
 
   assert.match(index, /@import url\('\.\/styles\/pages\.css'\);/);
   assert.match(home, /className="content-band section-reveal/);
-  assert.match(home, /className="glass-panel archive-workspace section-reveal/);
+  assert.match(home, /className="surface archive-workspace section-reveal/);
   assert.match(history, /history-page page-workspace/);
   assert.match(watchlist, /history-page watchlist-page page-workspace/);
   for (const source of [history, watchlist]) {
@@ -389,20 +469,20 @@ test('theme self-check validates approved semantic colors and browser chrome', (
 
 test('settings layout uses intrinsic active content without legacy height feedback', () => {
   const home = read('src/pages/Home.jsx');
-  const readerCss = read('src/styles/reader.css');
+  const pages = read('src/styles/pages.css');
   assert.doesNotMatch(home, /--settings-pane-height/);
   assert.doesNotMatch(home, /active\.scrollHeight/);
-  assert.match(readerCss, /\.settings-layout\s*>\s*\.settings-section\s*\{[^}]*display:\s*none;[^}]*max-height:\s*none/s);
-  assert.match(readerCss, /\.settings-layout\s*>\s*\.settings-section\.is-active\s*\{[^}]*display:\s*block/s);
+  assert.match(pages, /\.settings-layout\s*>\s*\.settings-section\s*\{[^}]*display:\s*none;[^}]*max-height:\s*none/s);
+  assert.match(pages, /\.settings-layout\s*>\s*\.settings-section\.is-active\s*\{[^}]*display:\s*block/s);
 });
 
 test('expanded EH settings do not clip real configuration fields', () => {
   const home = read('src/pages/Home.jsx');
-  const readerCss = read('src/styles/reader.css');
+  const pages = read('src/styles/pages.css');
   assert.match(home, /settings-eh-details/);
   assert.doesNotMatch(home, /maxHeight:\s*readerSettings\.ehEnabled\s*\?\s*'320px'/);
-  assert.match(readerCss, /\.settings-eh-details\s*\{[^}]*grid-template-rows:\s*0fr/s);
-  assert.match(readerCss, /\.settings-eh-details\.is-expanded\s*\{[^}]*grid-template-rows:\s*1fr/s);
+  assert.match(pages, /\.settings-eh-details\s*\{[^}]*grid-template-rows:\s*0fr/s);
+  assert.match(pages, /\.settings-eh-details\.is-expanded\s*\{[^}]*grid-template-rows:\s*1fr/s);
 });
 
 test('tag suggestion namespace colors follow active theme tokens', () => {

@@ -197,7 +197,7 @@ test('archive count stays beside the heading on narrow screens', () => {
 test('narrow archive panel uses compact horizontal padding', () => {
   const home = read('src/pages/Home.jsx');
   const pages = read('src/styles/pages.css');
-  assert.match(home, /archivesSectionRef[\s\S]*className="glass-panel archive-workspace/);
+  assert.match(home, /archivesSectionRef[\s\S]*className="surface archive-workspace/);
   assert.match(pages, /@media \(max-width:\s*720px\)[\s\S]*\.archive-workspace\s*\{\s*padding:\s*18px 12px;/s);
 });
 

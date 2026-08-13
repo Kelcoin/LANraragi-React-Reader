@@ -72,10 +72,10 @@ test('random roam skeletons fill the carousel and match archive card geometry', 
   assert.match(home, /flex: `0 0 \$\{ARCHIVE_CARD_WIDTH\}px`/);
   assert.match(home, /width: `\$\{ARCHIVE_CARD_WIDTH\}px`/);
   assert.match(home, /minWidth: `\$\{ARCHIVE_CARD_WIDTH\}px`/);
-  assert.match(home, /boxSizing: 'border-box'/);
+  assert.match(home, /className="home-skeleton-card"/);
   assert.match(home, /height: `\$\{ARCHIVE_CARD_COVER_HEIGHT\}px`/);
-  assert.match(home, /marginTop: `\$\{ARCHIVE_CARD_TITLE_GAP\}px`, height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
-  assert.match(home, /height: `\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`, marginTop: `\$\{ARCHIVE_CARD_META_GAP\}px`/);
+  assert.match(home, /className="home-skeleton-title" style=\{\{[\s\S]*marginTop: `\$\{ARCHIVE_CARD_TITLE_GAP\}px`[\s\S]*height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.match(home, /className="home-skeleton-meta" style=\{\{[\s\S]*height: `\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`[\s\S]*marginTop: `\$\{ARCHIVE_CARD_META_GAP\}px`/);
   assert.equal((home.match(/Array\.from\(\{ length: randomSkeletonCount \}\)/g) || []).length, 2);
   assert.doesNotMatch(home, /fillWidth/);
   assert.doesNotMatch(home, /Array\.from\(\{ length: 5 \}\)/);
@@ -991,14 +991,16 @@ test('history page header has ordered narrow-screen layout hooks', () => {
 test('home archive toolbar count is styled and empty cold restore fetches archives', () => {
   const home = read('src/pages/Home.jsx');
   const css = read('src/index.css');
+  const pages = read('src/styles/pages.css');
 
   assert.match(home, /className="archive-count-badge"/);
   assert.match(home, /className="archive-toolbar-actions"/);
-  assert.match(home, /className="archive-toolbar-summary"[\s\S]*alignItems:\s*'center'/);
+  assert.match(home, /className="archive-toolbar-summary"/);
   assert.match(home, /const hasHydratedArchives = homeSnapshot && Array\.isArray\(homeSnapshot\.archives\) && homeSnapshot\.archives\.length > 0;/);
   assert.match(home, /if \(coldRestoreRef\.current && hasHydratedArchives\) return;/);
   assert.match(home, /if \(!archiveCatalogDirty && navigationRestoreRef\.current && hasHydratedArchives\)/);
   assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*999px;/s);
+  assert.match(pages, /\.archive-toolbar-summary\s*\{[\s\S]*align-items:\s*center;/s);
   assert.match(css, /\.archive-toolbar-summary h2,[\s\S]*\.archive-toolbar-summary h2 > span\s*\{[\s\S]*white-space:\s*nowrap;/s);
 });
 
@@ -1060,7 +1062,7 @@ test('mobile settings respect safe areas and reveal animations release composito
   const customSelect = read('src/components/CustomSelect.jsx');
 
   assert.match(home, /className="settings-overlay"/);
-  assert.match(home, /className="glass-panel settings-panel"/);
+  assert.match(home, /className="surface settings-panel\b/);
   assert.match(css, /\.settings-panel\s*\{[^}]*max-height:\s*100%;/s);
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-top:\s*max\(24px,\s*calc\(var\(--app-safe-area-top\) \+ 16px\)\);/s);
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-bottom:\s*max\(24px,\s*calc\(var\(--app-safe-area-bottom\) \+ 16px\)\);/s);
@@ -1902,14 +1904,14 @@ test('EH comments use semantic theme tokens without fixed uploader colors', () =
 });
 
 test('home sections clip their own collapsed carousel edges instead of leaking borders', () => {
-  const css = read('src/index.css');
-  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\s*\{[\s\S]*overflow:\s*hidden;/s);
-  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\s*\{[\s\S]*min-width:\s*0;/s);
+  const css = read('src/styles/pages.css');
+  assert.match(css, /\.home-shell\s*>\s*\.surface\s*\{[\s\S]*overflow:\s*hidden;/s);
+  assert.match(css, /\.home-shell\s*>\s*\.surface\s*\{[\s\S]*min-width:\s*0;/s);
 });
 
-test('home glass panels do not keep transform reveal layers after resize', () => {
-  const css = read('src/index.css');
-  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\.section-reveal\s*\{[\s\S]*animation:\s*none;[\s\S]*opacity:\s*1;[\s\S]*transform:\s*none;/s);
+test('home surfaces do not keep transform reveal layers after resize', () => {
+  const css = read('src/styles/pages.css');
+  assert.match(css, /\.home-shell\s*>\s*\.surface\.section-reveal\s*\{[\s\S]*animation:\s*none;[\s\S]*opacity:\s*1;[\s\S]*transform:\s*none;/s);
 });
 test('custom themes keep independent light and dark palettes and migrate the legacy single palette', () => {
   const theme = read('src/lib/theme.js');
