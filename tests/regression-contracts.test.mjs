@@ -2041,6 +2041,30 @@ test('custom palette picker escapes settings clipping, stays above the modal, an
   assert.match(css, /\.theme-color-picker-trigger:hover,[\s\S]*background:\s*var\(--surface-inset\)/s);
 });
 
+test('catalog edge controls expose semantic picker controls and class-driven version sizing', () => {
+  const picker = read('src/components/ThemeColorPicker.jsx');
+  const version = read('src/components/AppVersion.jsx');
+  const pages = read('src/styles/pages.css');
+  assert.match(picker, /className="btn btn-secondary btn-icon theme-color-picker-trigger"/);
+  assert.match(picker, /className="btn btn-quiet btn-icon theme-color-picker-eyedropper"/);
+  assert.match(picker, /className=\{`field theme-color-picker-input\$\{invalid \? ' is-error' : ''\}`\}/);
+  assert.match(picker, /className="field theme-color-picker-input"/);
+  const buttonOpenings = [...picker.matchAll(/<button\b[^>]*>/g)].map(([opening]) => opening);
+  assert.equal(buttonOpenings.length, 2);
+  buttonOpenings.forEach((opening) => assert.match(opening, /className="btn /));
+  assert.equal((picker.match(/className=(?:"field |\{`field )/g) || []).length, 2);
+  assert.match(picker, /style=\{\{ backgroundColor: hexDraft \}\}/);
+  assert.match(picker, /top: `\$\{popoverPosition\?\.top \|\| 0\}px`,[\s\S]*left: `\$\{popoverPosition\?\.left \|\| 0\}px`,[\s\S]*visibility: popoverPosition \? 'visible' : 'hidden'/);
+  assert.match(picker, /style=\{\{ backgroundImage: saturationBackground \}\}/);
+  assert.match(picker, /style=\{\{ background: hueBackground \}\}/);
+  assert.match(picker, /style=\{\{ left: `\$\{hsl\.s\}%`, top: `\$\{100 - hsl\.l\}%`, background: hexDraft \}\}/);
+  assert.match(picker, /style=\{\{ left: `\$\{\(hsl\.h \/ 359\) \* 100\}%` \}\}/);
+  assert.doesNotMatch(version, /style=\{\{ fontSize:/);
+  assert.match(version, /className=\{`app-version-link\$\{compact \? ' is-compact' : ''\}`\}/);
+  assert.match(pages, /\.app-version-link\s*\{[^}]*font-size:\s*12px;/s);
+  assert.match(pages, /\.app-version-link\.is-compact\s*\{[^}]*font-size:\s*11px;/s);
+});
+
 test('release version is 1.6.0 across package manifests', () => {
   const packageJson = read('package.json');
   const packageLock = read('package-lock.json');

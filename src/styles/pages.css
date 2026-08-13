@@ -401,6 +401,19 @@
 
 /* ArchiveCard semantic presentation. Geometry that comes from archive/grid
    measurement remains inline; fixed visual structure lives here. */
+.app-version-link { font-size: 12px; }
+.app-version-link.is-compact { font-size: 11px; }
+
+.theme-color-picker-trigger,
+.theme-color-picker-eyedropper {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.theme-color-picker-input {
+  min-height: 30px;
+}
+
 .archive-card-wrap {
   position: relative;
   display: inline-block;
