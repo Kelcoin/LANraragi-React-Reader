@@ -177,4 +177,33 @@
     --app-safe-area-bottom: env(safe-area-inset-bottom, 0px);
     --app-safe-area-left: env(safe-area-inset-left, 0px);
   }
+
+  /* Migration aliases: remove after every JSX consumer uses semantic names. */
+  :root {
+    --cover-bg: var(--surface-raised);
+    --danger-text: var(--danger);
+    --dropdown-bg: var(--surface);
+    --glass-border: var(--border-subtle);
+    --glass-border-hover: var(--border-strong);
+    --good: var(--positive);
+    --immersive-bg: var(--reader-stage);
+    --immersive-text: var(--reader-overlay-text);
+    --olive: var(--positive);
+    --olive-strong: var(--positive-strong);
+    --overlay-bg: var(--overlay);
+    --radius-card: var(--radius-md);
+    --radius-chip: var(--radius-xs);
+    --reader-stage-bg: var(--reader-stage);
+    --shadow: var(--shadow-lg);
+    --shadow-lg-lg: var(--shadow-lg);
+    --shadow-soft: var(--shadow-lg-control);
+    --surface-1: var(--surface);
+    --surface-2: var(--surface-subtle);
+    --surface-3: var(--surface-raised);
+    --text-main: var(--text-primary);
+    --text-sub: var(--text-secondary);
+    --warning-border: var(--warning);
+    --warning-surface: var(--warning-soft);
+    --warning-text: var(--warning);
+  }
 }

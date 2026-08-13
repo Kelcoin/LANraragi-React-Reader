@@ -139,11 +139,12 @@ test('calm editorial theme replaces blue-gray light surfaces with paper, graphit
 test('calm editorial surfaces are flat by default and use restrained shape hierarchy', () => {
   const css = read('src/index.css');
   const tokens = read('src/styles/tokens.css');
+  const primitives = read('src/styles/primitives.css');
   const cardRule = css.match(/\.archive-card-shell\s*\{([^}]*)\}/)?.[1] || '';
   assert.match(tokens, /--radius-md:\s*8px/);
   assert.match(tokens, /--radius-sm:\s*6px/);
   assert.match(css, /\.glass-panel\s*\{[\s\S]*?background:\s*var\(--surface\);[\s\S]*?backdrop-filter:\s*none;/);
-  assert.match(css, /\.btn:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
+  assert.match(primitives, /\.btn:focus-visible[^}]*outline:\s*2px solid var\(--accent\)/);
   assert.match(css, /\.input-glass:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
   assert.match(cardRule, /background:\s*var\(--surface\)/);
   assert.doesNotMatch(cardRule, /background:\s*linear-gradient/);

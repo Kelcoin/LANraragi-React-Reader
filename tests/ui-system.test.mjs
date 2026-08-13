@@ -21,8 +21,9 @@ const LEGACY_THEME_TOKENS = [
 
 const RUNTIME_CUSTOM_PROPERTIES = new Set([
   '--anchor-width', '--archive-wide-card-width', '--available-height', '--lrr-android-safe-top',
-  '--metadata-tag-font-scale', '--metadata-tag-visible-width', '--settings-pane-height', '--tag-ns-color',
-  '--shadow-lg-lg', '--task-progress', '--toast-duration',
+  '--metadata-tag-font-scale', '--metadata-tag-visible-width', '--reader-toolbar-height',
+  '--reader-toolbar-title-width', '--settings-pane-height', '--tag-ns-color', '--task-progress',
+  '--toast-duration',
 ]);
 
 function declaredProperties(block) {
@@ -62,7 +63,9 @@ test('index css imports archive atelier layers in stable order', () => {
 test('semantic tokens are the only visual token authority', () => {
   const index = read('src/index.css');
   const primitives = read('src/styles/primitives.css');
-  const productionJsx = fs.readdirSync(new URL('../src', import.meta.url), { recursive: true })
+  const productionSourceFiles = fs.readdirSync(new URL('../src', import.meta.url), { recursive: true })
+    .filter((name) => /\.(?:css|js|jsx)$/.test(name));
+  const productionJsx = productionSourceFiles
     .filter((name) => name.endsWith('.jsx'))
     .map((name) => read(`src/${name.replaceAll('\\', '/')}`))
     .join('\n');
@@ -72,15 +75,19 @@ test('semantic tokens are the only visual token authority', () => {
   assert.doesNotMatch(index, /Archive Atelier compatibility/i);
   assert.match(productionJsx, /className=/);
 
-  const productionCss = fs.readdirSync(new URL('../src', import.meta.url), { recursive: true })
+  const productionCss = productionSourceFiles
     .filter((name) => name.endsWith('.css'))
     .map((name) => read(`src/${name.replaceAll('\\', '/')}`))
     .join('\n');
+  const productionSource = productionSourceFiles
+    .map((name) => read(`src/${name.replaceAll('\\', '/')}`))
+    .join('\n');
   const definitions = new Set([...productionCss.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1]));
-  const references = new Set([...productionCss.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]));
+  const references = new Set([...productionSource.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]));
   const unresolved = [...references].filter((name) => !definitions.has(name) && !RUNTIME_CUSTOM_PROPERTIES.has(name));
   assert.deepEqual(unresolved.sort(), [], `unresolved production custom properties: ${unresolved.sort().join(', ')}`);
   for (const legacy of LEGACY_THEME_TOKENS) assert.doesNotMatch(productionCss, new RegExp(`var\\(${legacy}\\b`));
+  assert.doesNotMatch(index, /(?:^|\n)\.btn(?:[\s:{.#[])/, 'legacy unlayered .btn rules override semantic variants');
 });
 
 test('shared controls use semantic primitives and class-driven visuals', () => {
