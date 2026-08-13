@@ -81,7 +81,7 @@ test('random roam skeletons fill the carousel and match archive card geometry', 
   assert.doesNotMatch(home, /Array\.from\(\{ length: 5 \}\)/);
   assert.doesNotMatch(home, /Math\.max\(5, Math\.min\(8, randoms\.length \|\| 5\)\)/);
   assert.match(card, /height: `\$\{ARCHIVE_CARD_COVER_HEIGHT\}px`/);
-  assert.match(card, /height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.doesNotMatch(card, /height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
   assert.match(card, /minWidth: isWide \? `\$\{wideCardWidth\}px` : `\$\{ARCHIVE_CARD_WIDTH\}px`/);
   assert.match(card, /width: isWide \? `\$\{wideCardWidth\}px` : `\$\{ARCHIVE_CARD_WIDTH\}px`/);
 });
@@ -478,8 +478,13 @@ test('mobile settings panel clips horizontal overflow and keeps consistent scrol
 
 test('archive tag hover panels clip hidden scroll gutters and isolate scroll layout', () => {
   const card = read('src/components/ArchiveCard.jsx');
-  assert.match(card, /className="no-scrollbar archive-tag-panel archive-compact-tag-panel"[\s\S]*overflowY:\s*'auto',[\s\S]*overflowX:\s*'clip',[\s\S]*scrollbarGutter:\s*'auto',[\s\S]*contain:\s*'layout paint'/);
-  assert.match(card, /className="no-scrollbar archive-tag-panel"[\s\S]*overflowY:\s*'auto',[\s\S]*overflowX:\s*'clip',[\s\S]*scrollbarGutter:\s*'auto',[\s\S]*contain:\s*'layout paint'/);
+  const pages = read('src/styles/pages.css');
+  assert.match(card, /archive-tag-panel archive-compact-tag-panel/);
+  assert.match(card, /className=\{`no-scrollbar archive-tag-panel\$\{closing/);
+  for (const selector of ['.archive-tag-panel', '.archive-tag-group', '.archive-tag-group-row']) {
+    assert.match(pages, new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`));
+  }
+  assert.match(pages, /\.archive-tag-panel\s*\{[^}]*overflow-y:\s*auto;[^}]*overflow-x:\s*clip;[^}]*scrollbar-gutter:\s*auto;[^}]*contain:\s*layout paint;/s);
 });
 
 test('archive card grid avoids re-render churn for unchanged large result sets', () => {
@@ -1010,14 +1015,19 @@ test('archive title uses one cross-platform two-line geometry contract', () => {
   const workflow = read('.github/workflows/mobile-build.yml');
   assert.match(layout, /export const ARCHIVE_CARD_TITLE_GAP = 8;/);
   assert.match(layout, /export const ARCHIVE_CARD_TITLE_SLOT_HEIGHT = 43\.7;/);
-  assert.match(card, /const ARCHIVE_TITLE_FONT_SIZE = 13;/);
-  assert.match(card, /const ARCHIVE_TITLE_LINE_HEIGHT = 1\.5;/);
-  assert.match(card, /const ARCHIVE_TITLE_GLYPH_SAFETY_PX = 3;/);
-  assert.match(card, /height:\s*`\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
-  assert.match(card, /WebkitLineClamp:\s*2/);
-  assert.match(card, /height:\s*'3em'/);
-  assert.match(card, /paddingBottom:\s*`\$\{ARCHIVE_TITLE_GLYPH_SAFETY_PX\}px`/);
-  assert.match(card, /boxSizing:\s*'content-box'/);
+  assert.doesNotMatch(card, /height:\s*`\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.doesNotMatch(card, /'--archive-title-font-size'|--archive-title-font-size/);
+  assert.doesNotMatch(card, /'--archive-title-line-height'|--archive-title-line-height/);
+  assert.doesNotMatch(card, /'--archive-title-glyph-safety'|--archive-title-glyph-safety/);
+  assert.doesNotMatch(card, /height:\s*`\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`/);
+  assert.match(read('src/styles/pages.css'), /\.archive-title-slot\s*\{[^}]*height:\s*43\.7px;/s);
+  const pages = read('src/styles/pages.css');
+  assert.match(pages, /\.archive-title\s*\{[^}]*font-size:\s*13px;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*line-height:\s*1\.5;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*-webkit-line-clamp:\s*2;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*height:\s*3em;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*padding-bottom:\s*3px;/s);
+  assert.match(read('src/styles/pages.css'), /\.archive-card-meta\s*\{[^}]*height:\s*14\.85px;/s);
   assert.doesNotMatch(card, /document\.createRange\(\)/);
   assert.doesNotMatch(card, /titleLayoutIndex|titleMeasurementKeyRef|fontRevision/);
   assert.match(workflow, /getWebView\(\)\.getSettings\(\)\.setTextZoom\(100\)/);
@@ -1459,7 +1469,7 @@ test('archive multi-select exposes a checkbox indicator and keyboard semantics',
   const css = read('src/index.css');
 
   assert.match(card, /className=\{`archive-card-selection-checkbox\$\{selected \? ' is-selected' : ''\}`\}/);
-  assert.match(card, /className=\{`glass-panel archive-card-shell\$\{selected \? ' is-selected' : ''\}`\}/);
+  assert.match(card, /className=\{`surface archive-card-shell\$\{selected \? ' is-selected' : ''\}`\}/);
   assert.match(card, /role=\{selectionMode \? 'checkbox' : (?:undefined|'button')\}/);
   assert.match(card, /aria-checked=\{selectionMode \? selected : undefined\}/);
   assert.match(card, /onKeyDown=\{\(event\) => \{/);
@@ -1722,7 +1732,8 @@ test('ordinary UI controls use semantic colors in both themes', () => {
   assert.doesNotMatch(home, /rgba\(255,255,255,0\.0[34568]\)/);
   assert.doesNotMatch(dedupe, /rgba\(255,255,255,0\.035\)|rgba\(148,163,184,0\.16\)/);
   assert.doesNotMatch(archiveCard, /rgba\(255,255,255,0\.0[25]\)|transition:\s*'all/);
-  assert.match(archiveCard, /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-main\)\)/);
+  assert.match(archiveCard, /'--tag-ns-color': group\.color/);
+  assert.match(read('src/styles/pages.css'), /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-primary\)\)/);
   assert.match(tagSuggest, /className="tag-suggest-badge" style=\{\{ '--tag-suggest-ns-color': nsColor \}\}/);
   assert.match(read('src/styles/primitives.css'), /\.tag-suggest-badge\s*\{[\s\S]*color-mix\(in srgb, var\(--tag-suggest-ns-color\) 40%, var\(--text-primary\)\)/);
   assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-secondary\)/s);

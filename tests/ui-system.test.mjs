@@ -24,7 +24,8 @@ const RUNTIME_CUSTOM_PROPERTIES = new Set([
   '--metadata-tag-font-scale', '--metadata-tag-visible-width', '--reader-toolbar-height',
   '--reader-toolbar-title-width', '--settings-pane-height', '--tag-ns-color', '--task-progress',
   '--toast-duration',
-  '--tag-suggest-ns-color',
+  '--tag-suggest-ns-color', '--archive-meta-font-size', '--archive-meta-margin-top',
+  '--tag-color',
 ]);
 
 function declaredProperties(block) {
@@ -388,6 +389,51 @@ test('archive cards use quiet covers and moss progress at every viewport', () =>
   assert.match(pages, /\.archive-card-shell:hover\s*\{[^}]*transform:\s*translateY\(-2px\)/s);
   assert.match(pages, /\.watchlist-card[^}]*\.archive-card-shell\s*\{[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*none/s);
   assert.match(pages, /@media \(max-width:\s*390px\)[\s\S]*min-width:\s*0;[\s\S]*flex-wrap:\s*wrap/s);
+});
+
+test('ArchiveCard uses semantic surfaces and keeps only approved runtime inline styles', () => {
+  const card = read('src/components/ArchiveCard.jsx');
+  const pages = read('src/styles/pages.css');
+
+  assert.doesNotMatch(card, /glass-panel\s+archive-card-shell/);
+  assert.match(card, /className=\{`surface archive-card-shell archive-card-compact\$\{selected \? ' is-selected' : ''\}`/);
+  assert.match(card, /className=\{`surface archive-card-shell\$\{selected \? ' is-selected' : ''\}`/);
+
+  for (const fragment of [
+    "style={{ position: 'relative', display: 'block'",
+    "style={{ position: 'relative', display: 'inline-block'",
+    "padding: '12px'",
+    "backgroundColor: 'var(--cover-bg)'",
+    "objectFit: 'cover'",
+    "WebkitUserSelect: 'none'",
+    "fontSize: `${ARCHIVE_TITLE_FONT_SIZE}px`",
+    "display: 'flex', flexDirection: 'column'",
+    "position: 'fixed',\n             top: `${panelPos.top}px`",
+    "height: `${ARCHIVE_CARD_TITLE_SLOT_HEIGHT}px`",
+    "height: `${ARCHIVE_CARD_META_ROW_HEIGHT}px`",
+    "'--archive-title-font-size'",
+    "'--archive-title-line-height'",
+    "'--archive-title-glyph-safety'",
+  ]) {
+    assert.doesNotMatch(card, new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `ArchiveCard keeps static inline fragment: ${fragment}`);
+  }
+
+  assert.match(card, /style=\{\{ width: `\$\{compactProgressPct\}%` \}\}/);
+  assert.match(card, /style=\{\{ width: `\$\{progressPct\}%` \}\}/);
+  assert.match(card, /style=\{\{ top: `\$\{panelPos\.top\}px`, left: `\$\{panelPos\.left\}px` \}\}/);
+  assert.match(card, /'--archive-wide-card-width': `\$\{wideCardWidth\}px`/);
+  assert.match(card, /'--tag-ns-color': group\.color/);
+  assert.match(pages, /\.archive-title-slot\s*\{[^}]*height:\s*43\.7px;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.5;[^}]*padding-bottom:\s*3px;/s);
+  assert.match(pages, /\.archive-card-meta\s*\{[^}]*height:\s*14\.85px;/s);
+
+  for (const selector of [
+    '.archive-card-shell', '.archive-card-compact', '.archive-cover-frame', '.archive-cover-image',
+    '.archive-cover-loading', '.archive-card-meta', '.archive-tag-panel',
+    '.archive-tag-group', '.archive-tag-group-row', '.archive-tag-namespace', '.archive-tag-button',
+  ]) {
+    assert.match(pages, new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`), `pages.css is missing ${selector}`);
+  }
 });
 
 test('login and operational pages share one archive workbench language', () => {
