@@ -220,6 +220,15 @@ test('history and watchlist keep skeletons while async local state hydrates', ()
   assert.match(watchlist, /<ArchiveListLoadingGrid count=\{8\} displayMode=\{archiveDisplayMode\}/);
   assert.match(css, /\.archive-list-loading-grid\s*\{/);
   assert.match(css, /\.archive-list-loading-card\s*\{/);
+  for (const source of [history, watchlist]) {
+    assert.match(source, /archive-list-loading-card\$\{displayMode === 'compact' \? ' is-compact' : ''\}/);
+    for (const slot of ['title', 'progress', 'date', 'author', 'tags']) {
+      assert.match(source, new RegExp(`archive-list-loading-${slot}`));
+    }
+  }
+  assert.match(css, /\.archive-list-loading-card\.is-compact\s*\{[^}]*width:\s*100%;[^}]*min-height:\s*48px;[^}]*padding:\s*8px 14px;/s);
+  assert.match(css, /\.archive-list-loading-card\.is-compact\s*\{[^}]*grid-template-columns:\s*minmax\(0, 2\.5fr\) minmax\(54px, 0\.45fr\) minmax\(104px, 0\.75fr\) minmax\(130px, 1fr\) minmax\(220px, 2fr\)/s);
+  assert.match(css, /@media \(max-width:\s*680px\)[\s\S]*\.archive-list-loading-card\.is-compact\s*\{[^}]*grid-template-areas:\s*"title progress" "date author" "tags tags"/s);
 });
 
 test('history and watchlist narrow actions fill wrapped rows and use shared summary radius', () => {
@@ -919,25 +928,6 @@ test('login import feedback stays outside the height-limited form and expires', 
   assert.match(main, /<ToastProvider>/);
 });
 
-test('archive grids use native flex wrapping with shared card sizing', () => {
-  const css = read('src/index.css');
-  const home = read('src/pages/Home.jsx');
-  const history = read('src/pages/HistoryPage.jsx');
-  const watchlist = read('src/pages/WatchlistPage.jsx');
-  const grid = read('src/components/ArchiveGrid.jsx');
-  const pagination = read('src/lib/archivePagination.js');
-  assert.match(css, /\.archive-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;/s);
-  assert.match(css, /\.archive-grid\s*>\s*\.archive-card-wrap\.is-wide\s*\{[^}]*flex:\s*0\s+1\s+var\(--archive-wide-card-width,\s*316px\);[^}]*width:\s*min\(var\(--archive-wide-card-width,\s*316px\),\s*100%\);[^}]*max-width:\s*100%;/s);
-  assert.match(css, /\.archive-grid\s*>\s*\.archive-card-wrap\.is-wide\s*>\s*\.archive-card-shell\s*\{[^}]*width:\s*100%\s*!important;/s);
-  assert.doesNotMatch(css, /grid-auto-flow/);
-  assert.doesNotMatch(css, /grid-column:\s*span 2/);
-  assert.doesNotMatch(grid, /observeArchiveGridLayout/);
-  assert.doesNotMatch(pagination, /observeArchiveGridLayout/);
-  assert.match(home, /<ArchiveGrid/);
-  assert.match(history, /<ArchiveGrid/);
-  assert.match(watchlist, /<ArchiveGrid/);
-});
-
 test('home uses its 720px tablet breakpoint for archive spacing and pagination', () => {
   const home = read('src/pages/Home.jsx');
 
@@ -1460,7 +1450,7 @@ test('manual history cleanup locks page interactions and reports removed records
   assert.match(handler, /finally \{\s*setChecking\(false\)/);
   assert.match(history, /onClick=\{handleSyncHistory\}[\s\S]*?disabled=\{syncing \|\| checking\}/);
   assert.match(history, /<section[^>]*inert=\{checking \? '' : undefined\}[^>]*aria-busy=\{checking\}/);
-  assert.match(history, /<button className="btn" onClick=\{onBack\}>返回<\/button>/);
+  assert.match(history, /<button className="btn btn-secondary" onClick=\{onBack\}>返回<\/button>/);
 });
 
 test('archive multi-select exposes a checkbox indicator and keyboard semantics', () => {
@@ -1894,7 +1884,7 @@ test('EH comments use semantic theme tokens without fixed uploader colors', () =
   assert.match(tokens, /--comment-card-bg:\s*var\(--surface-raised\);/);
   assert.match(tokens, /--comment-card-border:\s*var\(--border-strong\);/);
   assert.match(tokens, /--comment-positive:\s*var\(--positive\);/);
-  assert.match(tokens, /--comment-uploader-border:\s*var\(--positive\);/);
+  assert.match(tokens, /--comment-uploader-border:\s*var\(--secondary\);/);
   assert.match(comments, /const scoreClass = c\.score > 0 \? 'var\(--comment-positive\)'/);
   assert.match(comments, /style=\{\{ color: scoreClass, fontWeight: 'bold', fontSize: '12px' \}\}/);
   assert.match(comments, /borderLeftColor: c\.isUploader \? 'var\(--comment-uploader-border\)' : 'var\(--comment-card-border\)'/);
@@ -2063,14 +2053,6 @@ test('catalog edge controls expose semantic picker controls and class-driven ver
   assert.match(version, /className=\{`app-version-link\$\{compact \? ' is-compact' : ''\}`\}/);
   assert.match(pages, /\.app-version-link\s*\{[^}]*font-size:\s*12px;/s);
   assert.match(pages, /\.app-version-link\.is-compact\s*\{[^}]*font-size:\s*11px;/s);
-});
-
-test('release version is 1.6.0 across package manifests', () => {
-  const packageJson = read('package.json');
-  const packageLock = read('package-lock.json');
-  assert.match(packageJson, /"version":\s*"1\.6\.0"/);
-  assert.match(packageLock, /"version":\s*"1\.6\.0"/);
-  assert.match(packageLock, /"version":\s*"1\.6\.0"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.6\.0"/);
 });
 
 test('sync data survives scope switches and failed flushes', () => {

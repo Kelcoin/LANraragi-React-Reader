@@ -399,6 +399,40 @@
 .collapse-button-icon { transition: transform .3s ease; }
 .archive-workspace.surface { padding: 22px 24px; }
 
+.history-page-surface { padding: 20px 24px; }
+.history-content-groups { display: flex; flex-direction: column; gap: 28px; }
+.history-period-group { display: flex; flex-direction: column; gap: 16px; }
+.history-period-header {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) 1fr auto;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-secondary);
+}
+.history-period-title-wrap { min-width: 0; }
+.history-period-title { color: var(--text-primary); font-size: 15px; font-weight: 700; }
+.history-period-rule { height: 1px; background: var(--border-subtle); }
+.history-period-count { font-size: 12px; white-space: nowrap; }
+.history-empty-state { padding: 48px 16px; color: var(--text-secondary); font-size: 14px; text-align: center; }
+.archive-selection-overlay {
+  position: absolute;
+  z-index: 5;
+  top: 8px;
+  left: 8px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent-contrast) 26%, transparent);
+  background: var(--overlay-bg);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-control);
+}
+.archive-selection-overlay.is-selected { border-color: var(--accent); background: var(--accent); }
+.history-section-actions .btn.is-selected { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+
 /* ArchiveCard semantic presentation. Geometry that comes from archive/grid
    measurement remains inline; fixed visual structure lives here. */
 .app-version-link { font-size: 12px; }
@@ -1007,7 +1041,11 @@
     .workbench-grid { grid-template-columns: 1fr; }
   }
 
-  @media (max-width: 600px) {
+@media (max-width: 600px) {
+  .history-page-surface { padding: 16px 14px; }
+  .history-content-groups { gap: 22px; }
+  .history-period-group { gap: 12px; }
+  .history-period-header { gap: 10px; }
     .recommendation-header { padding-inline: 14px; }
     .recommendation-scroller { padding: 10px 14px 16px; }
   }

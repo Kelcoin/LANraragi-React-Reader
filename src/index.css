@@ -253,10 +253,6 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
-.custom-select-option:hover:not([data-selected="true"]) {
-  background: var(--surface-raised) !important;
-}
-
 .toggle-switch-track {
   position: relative;
   width: 38px;
@@ -1410,10 +1406,13 @@ html[data-theme="light"] .app-version-link a {
 
 .archive-list-loading-card.is-compact {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 10px;
-  /* 紧凑模式高度由内容决定，不继承标准卡片的 307px min-height */
-  min-height: 0;
+  grid-template-columns: minmax(0, 2.5fr) minmax(54px, 0.45fr) minmax(104px, 0.75fr) minmax(130px, 1fr) minmax(220px, 2fr);
+  align-items: center;
+  gap: 14px;
+  flex: 1 1 100%;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 14px;
 }
 
 .archive-list-loading-cover {
@@ -1421,12 +1420,6 @@ html[data-theme="light"] .app-version-link a {
   /* 固定高度 210 匹配真实 ArchiveCard cover */
   height: 210px;
   border-radius: 8px;
-}
-
-.archive-list-loading-card.is-compact .archive-list-loading-cover {
-  aspect-ratio: 1;
-  height: auto;
-  grid-row: span 2;
 }
 
 .archive-list-loading-line {
@@ -1598,6 +1591,38 @@ html[data-theme="light"] .app-version-link a {
     gap: 10px;
   }
 
+}
+
+.archive-list-loading-card.is-compact > .shimmer-strip {
+  width: 100%;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.archive-list-loading-progress { max-width: 54px; }
+.archive-list-loading-date { max-width: 88px; }
+.archive-list-loading-author { max-width: 112px; }
+
+@media (max-width: 920px) {
+  .archive-list-loading-card.is-compact {
+    grid-template-columns: minmax(0, 2fr) minmax(52px, 0.5fr) minmax(96px, 0.8fr) minmax(120px, 1fr) minmax(160px, 1.4fr);
+    gap: 10px;
+  }
+}
+
+@media (max-width: 680px) {
+  .archive-list-loading-card.is-compact {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "title progress" "date author" "tags tags";
+    gap: 5px 10px;
+    padding: 10px 12px;
+  }
+
+  .archive-list-loading-title { grid-area: title; }
+  .archive-list-loading-progress { grid-area: progress; justify-self: end; }
+  .archive-list-loading-date { grid-area: date; }
+  .archive-list-loading-author { grid-area: author; }
+  .archive-list-loading-tags { grid-area: tags; }
 }
 
 .metadata-page-title {
@@ -4748,11 +4773,6 @@ html[data-theme="light"] .shimmer-strip {
 
 .custom-select-option {
   border-radius: var(--radius-xs) !important;
-}
-
-.custom-select-option[aria-selected="true"] {
-  color: var(--accent-strong) !important;
-  font-weight: 650;
 }
 
 .archive-tag-button {

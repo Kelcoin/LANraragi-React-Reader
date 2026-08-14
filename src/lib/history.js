@@ -6,6 +6,7 @@ import { getConfigScopeId, getServerScopeId, migrateLegacyStorageKey } from './c
 import { dispatchReadingProgressChanged } from './readingProgress';
 import { getAllowProgressRegression } from './readerSettings';
 import { updateArchiveProgressInSessionSnapshots } from './sessionState';
+import { commitRemoteRemoval } from './remoteRemoval';
 
 const LOCAL_HISTORY_KEY = 'lrr_history';
 const LOCAL_HIDE_READ_KEY = 'lrr_hide_read';
@@ -426,15 +427,16 @@ export const removeHistoryItems = async (archiveIds) => {
   const before = getStoredHistory();
   const next = before.filter((item) => !removeSet.has(item.id));
   const removed = before.length - next.length;
-  discardPendingHistorySync(Array.from(removeSet));
-  writeHistoryCache(next);
-  if (!hasRemoteHistory()) return removed;
-  try {
-    await workerJson('/history', { method: 'DELETE', body: { ids: Array.from(removeSet) } });
-  } catch {
-    setPendingHistoryDeletes([...getPendingHistoryDeletes(), ...removeSet]);
-    scheduleHistoryDeleteRetry();
-  }
+  if (removed === 0) return 0;
+  const ids = Array.from(removeSet);
+  await commitRemoteRemoval({
+    hasRemote: hasRemoteHistory(),
+    removeRemote: () => workerJson('/history', { method: 'DELETE', body: { ids }, keepalive: true }),
+    commitLocal: () => {
+      discardPendingHistorySync(ids);
+      writeHistoryCache(next);
+    },
+  });
   return removed;
 };
 
