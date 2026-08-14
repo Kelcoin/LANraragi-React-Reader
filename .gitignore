@@ -1,6 +1,7 @@
 node_modules/
 node_modules.*/
 dist/
+docs/
 .worktrees/
 .planning/
 .skill-archive/
@@ -25,5 +26,6 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Local agent tooling (may contain secrets)
+.superpowers/
 .reasonix/
 reasonix.toml
