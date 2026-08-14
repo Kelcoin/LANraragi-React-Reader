@@ -766,14 +766,14 @@ test('immersive Reader replaces its top toolbar with side-aware corner controls'
   assert.match(reader, /ToolbarGlyph name="close"/);
   assert.match(reader, /const immersiveDoublePageGap = Math\.min\(6,/);
   assert.match(reader, /getImmersiveSpreadSlotStyle/);
-  assert.match(css, /\.reader-immersive-controls\s*\{[^}]*bottom:\s*calc\(env\(safe-area-inset-bottom, 0px\) \+ 52px\);/s);
+  assert.match(css, /\.reader-immersive-controls\s*\{[^}]*bottom:\s*calc\(var\(--app-safe-area-bottom\) \+ 16px\);/s);
   assert.match(css, /\.reader-immersive-controls\[data-visible="true"\]/);
   assert.match(css, /cubic-bezier\(0\.34,\s*1\.56,\s*0\.64,\s*1\)/);
   assert.match(reader, /if \(showDrawer\) return;/);
   assert.match(reader, /onWheel=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(css, /\.reader-immersive-controls\[data-visible="true"\]\s+\.reader-immersive-control-button/);
   assert.match(css, /background:\s*var\(--reader-control-bg\)/);
-  assert.match(css, /\.reader-immersive-trigger\s*\{[^}]*width:\s*max\(32px,\s*7vw\);/s);
+  assert.match(css, /\.reader-immersive-trigger\s*\{[^}]*width:\s*clamp\(72px,\s*18vw,\s*160px\);/s);
   assert.match(reader, /\{\['left', 'right'\]\.map\(\(side\) => \(/);
   assert.match(reader, /data-visible=\{immersiveControlsSide === side \? 'true' : 'false'\}/);
 });
@@ -877,7 +877,16 @@ test('Reader disposes immersive super-resolution URLs after image refs detach', 
 
 test('Reader silently falls back for unsupported super-resolution images', () => {
   const reader = read('src/pages/Reader.jsx');
-  assert.match(reader, /if \(error\?\.name === 'NotSupportedError'\) return;/);
+  assert.match(reader, /resolveSuperResolutionFailure/);
+  assert.match(reader, /setSrArchiveEnabled\(false\)/);
+  assert.match(reader, /超分失败，已关闭并显示原图/);
+});
+
+test('super-resolution output dimensions never replace original page dimensions', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /if \(recordSourceSize\) onNaturalSize\?\.\(pageIndex, resolvedNaturalSize\);/);
+  assert.match(reader, /commitPageImage\(originalResolved, originalDecoded, null, `\$\{precision\}:original`, true, true\)/);
+  assert.match(reader, /commitImmersiveImage\(originalDecoded, `\$\{precision\}:original`, null, true\)/);
 });
 
 test('build and proxy hardening are reproducible', () => {
@@ -972,7 +981,7 @@ test('history page header has ordered narrow-screen layout hooks', () => {
   assert.match(css, /\.history-section-toolbar\s*\{/);
   assert.match(css, /\.history-summary-part\s*\{/);
   assert.doesNotMatch(css, /\.history-hide-read-toggle/);
-  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*var\(--radius-xs\);/s);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*var\(--radius-xs\);/s);
   assert.match(historyTokens, /--surface-subtle:/);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-header\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*align-items:\s*stretch;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-title-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*auto\)\s+minmax\(0,\s*1fr\);[\s\S]*align-items:\s*center;/s);
@@ -994,7 +1003,7 @@ test('home archive toolbar count is styled and empty cold restore fetches archiv
   assert.match(home, /const hasHydratedArchives = homeSnapshot && Array\.isArray\(homeSnapshot\.archives\) && homeSnapshot\.archives\.length > 0;/);
   assert.match(home, /if \(coldRestoreRef\.current && hasHydratedArchives\) return;/);
   assert.match(home, /if \(!archiveCatalogDirty && navigationRestoreRef\.current && hasHydratedArchives\)/);
-  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*999px;/s);
+  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*999px;/s);
   assert.match(pages, /\.archive-toolbar-summary\s*\{[\s\S]*align-items:\s*center;/s);
   assert.match(css, /\.archive-toolbar-summary h2,[\s\S]*\.archive-toolbar-summary h2 > span\s*\{[\s\S]*white-space:\s*nowrap;/s);
 });
@@ -1797,7 +1806,7 @@ test('dark theme uses the warm archive atelier palette and an independent overla
   assert.match(darkTheme, /--surface-subtle:\s*#171815/i);
   assert.match(darkTheme, /--accent:\s*#d16a57/i);
   assert.match(darkTheme, /--overlay:\s*rgba\(0,\s*0,\s*0,\s*0\.72\)/i);
-  assert.match(darkTheme, /--reader-stage:\s*#050505/i);
+  assert.match(darkTheme, /--reader-stage:\s*var\(--surface-inset\)/i);
   assert.match(css, /\.settings-overlay\s*\{[\s\S]*background:\s*var\(--overlay\)/s);
   assert.doesNotMatch(css, /\.settings-overlay\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--text-main\)/s);
 });
@@ -2082,10 +2091,10 @@ test('sync data survives scope switches and failed flushes', () => {
   assert.match(scope, /!localStorage\.getItem\(marker\)/);
 });
 
-test('both themes keep the normal reader stage near-black for image fidelity', () => {
+test('normal reader stage follows the theme while immersive mode remains black', () => {
   const tokens = read('src/styles/tokens.css');
-  assert.match(tokens, /--reader-stage:\s*#050505/i);
-  assert.match(tokens, /--reader-stage:\s*#050505/i);
+  assert.match(tokens, /--reader-stage:\s*var\(--surface-inset\)/i);
+  assert.match(tokens, /--immersive-bg:\s*#000/i);
 });
 
 test('reader thumbnail drawer coalesces scroll work and animates backdrop blur', () => {

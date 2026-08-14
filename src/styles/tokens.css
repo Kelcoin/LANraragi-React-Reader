@@ -29,7 +29,7 @@
     --danger-soft: #3d211f;
     --focus-ring: #d16a57;
     --overlay: rgba(0, 0, 0, 0.72);
-    --reader-stage: #050505;
+    --reader-stage: var(--surface-inset);
     --radius-xs: 4px;
     --radius-sm: 6px;
     --radius-md: 8px;
@@ -121,7 +121,7 @@
     --danger-soft: #f2dfda;
     --focus-ring: #b84a38;
     --overlay: rgba(28, 25, 21, 0.55);
-    --reader-stage: #050505;
+    --reader-stage: var(--surface-inset);
     --radius-xs: 4px;
     --radius-sm: 6px;
     --radius-md: 8px;
@@ -192,8 +192,8 @@
     --glass-border: var(--border-subtle);
     --glass-border-hover: var(--border-strong);
     --good: var(--positive);
-    --immersive-bg: var(--reader-stage);
-    --immersive-text: var(--reader-overlay-text);
+    --immersive-bg: #000;
+    --immersive-text: #fff;
     --olive: var(--positive);
     --olive-strong: var(--positive-strong);
     --overlay-bg: var(--overlay);

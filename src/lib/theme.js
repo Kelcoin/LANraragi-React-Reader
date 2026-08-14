@@ -240,7 +240,7 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
     '--danger-soft': mixHex(surface1, danger, dark ? 0.2 : 0.1),
     '--focus-ring': accent,
     '--overlay': dark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(28, 25, 21, 0.55)',
-    '--reader-stage': '#050505',
+    '--reader-stage': 'var(--surface-inset)',
     '--accent': accent,
     '--accent-strong': accentStrong,
     '--accent-soft': accentSoft,

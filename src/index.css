@@ -340,7 +340,7 @@ textarea:focus-visible,
   padding: 12px;
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 18px 48px rgba(0,0,0,0.38);
+  box-shadow: var(--shadow-popover);
 }
 
 .date-picker-header,
@@ -1155,7 +1155,7 @@ html[data-theme="light"] .app-version-link a {
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text-primary);
-  box-shadow: 0 16px 42px rgba(0,0,0,0.34);
+  box-shadow: var(--shadow-popover);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.65;
@@ -1877,7 +1877,6 @@ html[data-theme="light"] .app-version-link a {
   border-radius: 12px;
   background: var(--surface-subtle);
   border: 1px solid var(--border-strong);
-  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.2);
   transition: height 0.24s ease, padding 0.24s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -2052,7 +2051,7 @@ html[data-theme="light"] .metadata-tag-slot > .btn {
 }
 
 html[data-theme="light"] .metadata-tag-slot > .metadata-tag.is-revealed {
-  background: color-mix(in srgb, var(--accent) 10%, white);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-raised));
   color: var(--text-primary);
   text-shadow: none;
 }
@@ -2606,7 +2605,7 @@ html[data-theme="light"] .archive-context-menu {
   background: var(--surface);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 14px 42px rgba(0,0,0,0.42);
+  box-shadow: var(--shadow-popover);
 }
 
 .archive-search-preset-heading {
@@ -2788,17 +2787,14 @@ html[data-theme="light"] .archive-card-shell {
 }
 
 .watchlist-card:not(.watchlist-card-plain) .archive-card-shell {
-  border-color: color-mix(in srgb, var(--watchlist-glow) 48%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--watchlist-glow) 58%, transparent);
+  border-color: color-mix(in srgb, var(--positive) 48%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--positive) 58%, transparent);
   transition: border-color 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-html { --watchlist-glow: #9ba474; }
-html[data-theme="light"] { --watchlist-glow: #70784f; }
-
 .watchlist-card:not(.watchlist-card-plain):hover .archive-card-shell {
-  border-color: color-mix(in srgb, var(--watchlist-glow) 72%, transparent);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--watchlist-glow) 72%, transparent);
+  border-color: color-mix(in srgb, var(--positive) 72%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--positive) 72%, transparent);
 }
 
 .archive-cover-image {
@@ -2842,7 +2838,6 @@ html[data-theme="light"] .archive-tag-namespace {
 .reader-toolbar {
   background: var(--reader-toolbar-bg) !important;
   border-bottom: 1px solid var(--reader-control-border) !important;
-  box-shadow: 0 12px 30px rgba(0,0,0,0.24);
 }
 
 .reader-root { color: var(--text-primary); }
@@ -2936,12 +2931,8 @@ html[data-theme="light"] .archive-tag-namespace {
   position: absolute;
   bottom: 0;
   z-index: 125;
-  width: max(32px, 7vw);
-  /* Align the tap zone with the visual control column: 52px bottom gap +
-     4 x 48px buttons + 3 x 10px gaps = 274px above the safe area. A vh-based
-     height drifts on tall screens (zone taller than the buttons) and clips on
-     short ones (buttons unreachable). */
-  height: max(72px, calc(env(safe-area-inset-bottom, 0px) + 274px));
+  width: clamp(72px, 18vw, 160px);
+  height: clamp(120px, 32dvh, 280px);
   padding: 0;
   border: 0;
   background: transparent;
@@ -2971,7 +2962,7 @@ html[data-theme="light"] .archive-tag-namespace {
 
 .reader-immersive-controls {
   position: absolute;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 52px);
+  bottom: calc(var(--app-safe-area-bottom) + 16px);
   z-index: 130;
   display: flex;
   flex-direction: column-reverse;
@@ -2986,6 +2977,10 @@ html[data-theme="light"] .archive-tag-namespace {
 
 .reader-immersive-controls[data-side="left"] { left: calc(env(safe-area-inset-left, 0px) + 22px); }
 .reader-immersive-controls[data-side="right"] { right: calc(env(safe-area-inset-right, 0px) + 22px); }
+.reader-immersive-controls[data-indicator-position="center"],
+.reader-immersive-controls[data-side="right"][data-indicator-position="right"] {
+  bottom: calc(var(--app-safe-area-bottom) + 48px);
+}
 
 .reader-immersive-controls[data-visible="true"] {
   opacity: 1;
@@ -3406,7 +3401,7 @@ html[data-theme="light"] .shimmer-strip {
   border-radius: var(--radius-xs);
   background: var(--surface-subtle);
   color: var(--text-secondary);
-  font-family: 'Noto Sans SC Variable', system-ui, sans-serif;
+  font-family: inherit;
   font-size: 12px;
   font-synthesis: none;
   font-variant-numeric: tabular-nums;
@@ -3499,7 +3494,7 @@ html[data-theme="light"] .shimmer-strip {
   border-radius: 999px;
   background: var(--surface-subtle);
   color: var(--text-secondary);
-  font-family: 'Noto Sans SC Variable', system-ui, sans-serif;
+  font-family: inherit;
   font-size: 12px;
   font-synthesis: none;
   font-variant-numeric: tabular-nums;
@@ -3811,7 +3806,7 @@ html[data-theme="light"] .shimmer-strip {
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 800;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-lg-control);
 }
 
 .dedupe-execution-progress {
@@ -4014,7 +4009,6 @@ html[data-theme="light"] .shimmer-strip {
   padding: 16px 28px 18px;
   border-top: 1px solid var(--border-strong);
   background: var(--surface);
-  box-shadow: 0 -14px 30px rgba(0, 0, 0, 0.18);
 }
 
 .settings-panel-actions {
@@ -4099,14 +4093,14 @@ html[data-theme="light"] .shimmer-strip {
   min-height: 34px;
   border-color: transparent;
   background: transparent;
-  color: #fff;
+  color: var(--text-secondary);
   box-shadow: none;
 }
 
 .theme-palette-mode-tab.is-active {
   border-color: var(--border-strong);
   background: var(--surface);
-  color: #fff;
+  color: var(--text-primary);
   box-shadow: var(--shadow-lg-control);
 }
 
@@ -4246,7 +4240,7 @@ html[data-theme="light"] .shimmer-strip {
   display: block;
   pointer-events: none;
   border: 2px solid var(--surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-primary) 42%, transparent), 0 2px 6px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-primary) 42%, transparent), var(--shadow-control);
 }
 
 .theme-color-picker-saturation-thumb {

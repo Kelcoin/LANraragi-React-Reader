@@ -63,3 +63,40 @@ test('reader skeleton toolbar matches the real toolbar (no super-resolution slot
   assert.equal(desktop.length, 4, 'desktop right group keeps 沉浸/封面/设定/缩略');
   assert.equal(mobile.length, 4, 'mobile right group keeps 4 icon slots');
 });
+
+test('settings natural height adds stacked tabs but uses the tallest desktop column', () => {
+  assert.equal(typeof readerUiState.getSettingsPaneNaturalHeight, 'function');
+  assert.equal(readerUiState.getSettingsPaneNaturalHeight({
+    tabsHeight: 48, contentHeight: 320, gap: 16, inset: 24, stacked: true,
+  }), 408);
+  assert.equal(readerUiState.getSettingsPaneNaturalHeight({
+    tabsHeight: 180, contentHeight: 320, gap: 16, inset: 24, stacked: false,
+  }), 344);
+});
+
+test('archive super-resolution state never carries across archive ids', () => {
+  assert.equal(typeof readerUiState.resolveArchiveSuperResolutionState, 'function');
+  const autoSettings = { enabled: true, auto: true, thresholdKb: 500, runtimeReady: true };
+  assert.deepEqual(readerUiState.resolveArchiveSuperResolutionState({
+    archive: { arcid: 'large', pagecount: 10, size: 8 * 1024 * 1024 },
+    ...autoSettings,
+    manualOverride: { archiveId: 'small', enabled: true },
+  }), { enabled: false, manual: false });
+  assert.deepEqual(readerUiState.resolveArchiveSuperResolutionState({
+    archive: { arcid: 'small', pagecount: 10, size: 2 * 1024 * 1024 },
+    ...autoSettings,
+    manualOverride: { archiveId: 'small', enabled: false },
+  }), { enabled: false, manual: true });
+});
+
+test('super-resolution failures disable the current archive instead of leaving a false enabled state', () => {
+  assert.deepEqual(readerUiState.resolveSuperResolutionFailure({ name: 'AbortError' }), {
+    disable: false, notify: false,
+  });
+  assert.deepEqual(readerUiState.resolveSuperResolutionFailure(new Error('inference failed')), {
+    disable: true, notify: true,
+  });
+  assert.deepEqual(readerUiState.resolveSuperResolutionFailure({ name: 'NotSupportedError' }), {
+    disable: true, notify: true,
+  });
+});

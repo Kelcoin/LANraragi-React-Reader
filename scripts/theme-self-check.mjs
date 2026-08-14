@@ -16,7 +16,8 @@ const expectedTokens = [
   ['light surface', /data-theme="light"[\s\S]*--surface:\s*#fcfaf5/i],
   ['light accent', /data-theme="light"[\s\S]*--accent:\s*#b84a38/i],
   ['light positive', /data-theme="light"[\s\S]*--positive:\s*#66734a/i],
-  ['reader stage', /--reader-stage:\s*#050505/i],
+  ['reader stage follows theme', /--reader-stage:\s*var\(--surface-inset\)/i],
+  ['immersive stage is black', /--immersive-bg:\s*#000/i],
 ];
 
 const customThemeTokens = [

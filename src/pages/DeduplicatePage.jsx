@@ -178,7 +178,6 @@ function ProgressPanel({ progress, running }) {
         borderRadius: '999px',
         background: 'var(--surface-3)',
         overflow: 'hidden',
-        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.28)',
       }}>
         <div
           className={hasTotal ? undefined : 'shimmer-strip'}

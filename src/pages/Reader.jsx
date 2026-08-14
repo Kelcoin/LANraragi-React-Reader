@@ -19,7 +19,6 @@ import {
   getSuperResolutionCacheKey,
   getSuperResolutionModel,
   processSuperResolutionImageSource,
-  shouldAutoEnableSuperResolution,
   validateSuperResolutionManifest,
 } from '../lib/superResolution';
 import {
@@ -36,6 +35,7 @@ import { createReaderRenderState, getReaderCapabilities, loadReaderBootstrapReso
 import {
   getReaderArchivePanelModel,
   getReaderArchivePanelWindow,
+  getSettingsPaneNaturalHeight,
   getCenteredToolbarTitleWidth,
   getDrawerRowStride,
   getContentLanguage,
@@ -43,6 +43,8 @@ import {
   isReaderMobileViewport,
   resolvePageIndicatorPlacement,
   resolveReaderToolbarMode,
+  resolveArchiveSuperResolutionState,
+  resolveSuperResolutionFailure,
 } from '../lib/readerUiState';
 import { computeContainedImageRect } from '../lib/pageIndicatorLayout';
 import { classifyWebtoonSeams, compareSeamPixels, sampleImageSeam } from '../lib/webtoonDetector';
@@ -340,7 +342,7 @@ const PageImage = React.forwardRef(({
             decodeTicket = readerImageDecodeQueue.schedule(`page:${pageUrl}:${requestSeq}`, async (signal) => {
               if (!isMounted || requestSeq !== requestSeqRef.current) return;
               try {
-                const commitPageImage = (resolved, decoded, source, readyKey, notifyReady = false) => {
+                const commitPageImage = (resolved, decoded, source, readyKey, notifyReady = false, recordSourceSize = false) => {
                   if (!isMounted || requestSeq !== requestSeqRef.current || !imgRef.current) return false;
                   superResolutionSourceRef.current?.dispose();
                   superResolutionSourceRef.current = source;
@@ -356,7 +358,7 @@ const PageImage = React.forwardRef(({
                     try { nextCropInsets = detectImageBorderInsets(decoded.image); } catch {}
                   }
                   setNaturalSize(resolvedNaturalSize);
-                  onNaturalSize?.(pageIndex, resolvedNaturalSize);
+                  if (recordSourceSize) onNaturalSize?.(pageIndex, resolvedNaturalSize);
                   setCropInsets(nextCropInsets);
                   setImgSrc(resolved.src);
                   setLoadState('ready');
@@ -371,7 +373,7 @@ const PageImage = React.forwardRef(({
                   signal,
                 });
                 const originalDecoded = await decodeImageSource(originalResolved.src, { signal });
-                if (!commitPageImage(originalResolved, originalDecoded, null, `${precision}:original`, true)) return;
+                if (!commitPageImage(originalResolved, originalDecoded, null, `${precision}:original`, true, true)) return;
                 if (!superResolution) {
                   readyPrecisionRef.current = precisionKey;
                   return;
@@ -935,7 +937,7 @@ function getNormalReaderFrameStyle(isMobile, toolbarHeight = 'var(--reader-toolb
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    boxShadow: '0 18px 50px rgba(0,0,0,0.34), inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent)',
+    boxShadow: 'var(--shadow-lg), inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent)',
     boxSizing: 'border-box',
   };
 }
@@ -1152,7 +1154,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [srRuntimeContext, setSrRuntimeContext] = useState(null);
   const [srRuntimeError, setSrRuntimeError] = useState('');
   const srInitToastRequestedRef = useRef(false);
-  const srArchiveManualRef = useRef(false);
+  const srArchiveManualRef = useRef(null);
   const srErrorToastKeyRef = useRef('');
   const [showArchivePanel, setShowArchivePanel] = useState(false);
   const [immersiveControlsSide, setImmersiveControlsSide] = useState(null);
@@ -1282,13 +1284,20 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     };
   }, [settings.srEnabled, showToast, srManifest]);
   const handleSuperResolutionError = useCallback((error) => {
-    if (error?.name === 'NotSupportedError') return;
-    if (!srArchiveManualRef.current || error?.name === 'AbortError') return;
+    const failure = resolveSuperResolutionFailure(error);
+    if (!failure.notify) return;
+    if (failure.disable) {
+      srArchiveManualRef.current = {
+        archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
+        enabled: false,
+      };
+      setSrArchiveEnabled(false);
+    }
     const message = error?.message || '未知错误';
     if (srErrorToastKeyRef.current === message) return;
     srErrorToastKeyRef.current = message;
-    showToast(`超分失败，已显示原图：${message}`, 'error');
-  }, [showToast]);
+    showToast(`超分失败，已关闭并显示原图：${message}`, 'error');
+  }, [archive, archiveId, showToast]);
   const currentPageSize = pageSizes[currentIndex];
   const currentPageTooLargeForSuperResolution = Boolean(
     currentPageSize?.width
@@ -2074,7 +2083,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           const image = imgRef.current;
           const precision = settings.optimizedImageDecodeEnabled && !fullPrecisionDecode ? 'optimized' : 'full';
           const precisionKey = `${precision}:${superResolution?.manifest?.id ?? 'original'}`;
-          const commitImmersiveImage = (decoded, decodePrecision, superResolutionSource = null) => {
+          const commitImmersiveImage = (decoded, decodePrecision, superResolutionSource = null, recordSourceSize = false) => {
             replaceImmersiveSuperResolutionSource(
               image,
               superResolutionSource,
@@ -2086,11 +2095,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             image.dataset.decodePrecision = decodePrecision;
             image.dataset.pageIndex = String(pageIndex);
             image.dataset.readerUnit = unitKey;
-            setPageSizes((previous) => {
-              const current = previous[pageIndex];
-              if (current?.width === decoded.width && current?.height === decoded.height) return previous;
-              return { ...previous, [pageIndex]: { width: decoded.width, height: decoded.height } };
-            });
+            if (recordSourceSize) {
+              setPageSizes((previous) => {
+                const current = previous[pageIndex];
+                if (current?.width === decoded.width && current?.height === decoded.height) return previous;
+                return { ...previous, [pageIndex]: { width: decoded.width, height: decoded.height } };
+              });
+            }
             applyUnitStyle(image, unit);
             image.style.display = '';
           };
@@ -2184,7 +2195,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           const commit = () => {
             if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current) return false;
             const originalDecoded = decoded;
-            commitImmersiveImage(originalDecoded, `${precision}:original`);
+            commitImmersiveImage(originalDecoded, `${precision}:original`, null, true);
             startSuperResolutionUpgrade();
             return true;
           };
@@ -3597,12 +3608,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       const activeContentHeight = Array.from(activeContent.children)
         .reduce((total, child) => total + child.scrollHeight, 0)
         + contentGap * Math.max(0, activeContent.children.length - 1);
-      const contentHeight = tabs.scrollHeight
-        + (Number.parseFloat(tabsStyle.marginBottom) || 0)
-        + activeContentHeight;
+      const contentHeight = getSettingsPaneNaturalHeight({
+        tabsHeight: tabs.scrollHeight,
+        contentHeight: activeContentHeight,
+        gap: Number.parseFloat(tabsStyle.marginBottom) || 0,
+        inset: panelInset,
+        stacked: true,
+      });
       const top = Math.ceil(toolbarRef.current?.getBoundingClientRect().bottom || 0) + 8;
       const viewportLimit = window.innerHeight - top - 12;
-      setSettingsPanelHeight(Math.min(Math.ceil(contentHeight + panelInset), Math.floor(viewportLimit)));
+      setSettingsPanelHeight(Math.min(Math.ceil(contentHeight), Math.floor(viewportLimit)));
     };
     updateHeight();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateHeight);
@@ -3651,27 +3666,27 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       showToast(srRuntimeError ? `超分不可用：${srRuntimeError}` : '超分模型仍在初始化。', 'error');
       return;
     }
-    srArchiveManualRef.current = next;
+    srArchiveManualRef.current = {
+      archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
+      enabled: next,
+    };
     srErrorToastKeyRef.current = '';
     setSrArchiveEnabled(next);
     showToast(next ? '已为当前档案启用超分' : '已关闭当前档案超分', 'info');
-  }, [showToast, srArchiveEnabled, srManifest, srRuntimeContext, srRuntimeError]);
+  }, [archive, archiveId, showToast, srArchiveEnabled, srManifest, srRuntimeContext, srRuntimeError]);
 
   // 自动超分：当每页平均体积低于阈值时，自动启用当前档案的超分
   useEffect(() => {
-    if (!settings.srAuto || !settings.srEnabled) {
-      srArchiveManualRef.current = false;
-      setSrArchiveEnabled(false);
-      return;
-    }
-    if (!srRuntimeContext) {
-      srArchiveManualRef.current = false;
-      setSrArchiveEnabled(false);
-      return;
-    }
-    const shouldAuto = shouldAutoEnableSuperResolution(archive, settings.srAuto, settings.srAutoThreshold);
-    srArchiveManualRef.current = false;
-    setSrArchiveEnabled(shouldAuto);
+    const next = resolveArchiveSuperResolutionState({
+      archive,
+      enabled: settings.srEnabled,
+      auto: settings.srAuto,
+      thresholdKb: settings.srAutoThreshold,
+      runtimeReady: !!srRuntimeContext,
+      manualOverride: srArchiveManualRef.current,
+    });
+    if (!next.manual) srArchiveManualRef.current = null;
+    setSrArchiveEnabled(next.enabled);
   }, [archive, settings.srAuto, settings.srEnabled, settings.srAutoThreshold, srRuntimeContext]);
 
   const btnBase = getTopBarButtonStyle(toolbarCompact);
@@ -4297,6 +4312,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 className="reader-immersive-controls"
                 data-side={side}
                 data-visible={immersiveControlsSide === side ? 'true' : 'false'}
+                data-indicator-position={pageIndicatorShouldShow ? (isMobile ? 'center' : 'right') : 'none'}
                 inert={immersiveControlsSide === side ? undefined : ''}
                 onPointerEnter={() => holdImmersiveControls(side)}
                 onPointerLeave={() => revealImmersiveControls(side)}
@@ -4575,7 +4591,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           style={{
             width: '100%', maxWidth: '420px', height: '100%', background: 'var(--reader-panel-bg)',
             display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1,
-            boxShadow: drawerSide === 'left' ? '8px 0 32px rgba(0,0,0,0.5)' : '-8px 0 32px rgba(0,0,0,0.5)',
+            boxShadow: 'var(--shadow-lg)',
             transform: showDrawer ? 'translate3d(0,0,0)' : `translate3d(${drawerSide === 'left' ? '-100%' : '100%'},0,0)`,
             transition: 'transform 0.3s cubic-bezier(0.4,0,0.2,1)',
             contain: 'layout paint style',

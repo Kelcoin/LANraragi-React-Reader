@@ -1,3 +1,5 @@
+import { shouldAutoEnableSuperResolution } from './superResolution.js';
+
 const DESKTOP_TOOLBAR = Object.freeze({
   left: Object.freeze(['← 返回', '快速跳转']),
   right: Object.freeze(['沉浸模式', '设为封面', '阅读设定', '缩略面板']),
@@ -82,6 +84,43 @@ export function isIosWebKitPlatform(userAgent = '', platform = '', maxTouchPoint
 
 export function getContentLanguage(value) {
   return /[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9d]/u.test(String(value || '')) ? 'ja' : 'zh-CN';
+}
+
+export function getSettingsPaneNaturalHeight({
+  tabsHeight = 0,
+  contentHeight = 0,
+  gap = 0,
+  inset = 0,
+  stacked = false,
+} = {}) {
+  const bodyHeight = stacked
+    ? tabsHeight + gap + contentHeight
+    : Math.max(tabsHeight, contentHeight);
+  return Math.max(0, bodyHeight + inset);
+}
+
+export function resolveArchiveSuperResolutionState({
+  archive,
+  enabled,
+  auto,
+  thresholdKb,
+  runtimeReady,
+  manualOverride,
+} = {}) {
+  if (!enabled || !runtimeReady || !archive) return { enabled: false, manual: false };
+  const archiveId = String(archive.arcid ?? archive.id ?? '');
+  if (archiveId && String(manualOverride?.archiveId ?? '') === archiveId) {
+    return { enabled: !!manualOverride.enabled, manual: true };
+  }
+  return {
+    enabled: shouldAutoEnableSuperResolution(archive, auto, thresholdKb),
+    manual: false,
+  };
+}
+
+export function resolveSuperResolutionFailure(error) {
+  if (error?.name === 'AbortError') return { disable: false, notify: false };
+  return { disable: true, notify: true };
 }
 
 export function getDrawerRowStride(gridWidth) {

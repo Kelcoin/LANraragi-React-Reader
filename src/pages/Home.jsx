@@ -64,6 +64,7 @@ import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, 
 import { getArchiveSearchTotal, hasArchiveSearchQuery } from '../lib/archiveSearch';
 import { filterRandomArchives, getRandomHideRead, setRandomHideRead } from '../lib/randomArchiveFilter';
 import { DEFAULT_THEME_PALETTES, readStoredThemePalettes } from '../lib/theme';
+import { getSettingsPaneNaturalHeight } from '../lib/readerUiState';
 
 const FILTER_KEY = 'lrr_filter';
 const RANDOMS_RECENT_KEY = 'lrr_random_recent_v1';
@@ -964,7 +965,15 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       const contentHeight = Array.from(activeContent.children)
         .reduce((total, child) => total + child.scrollHeight, 0)
         + contentGap * Math.max(0, activeContent.children.length - 1);
-      const paneHeight = Math.max(tabs.scrollHeight, contentHeight) + paneInset;
+      const tabsStyle = getComputedStyle(tabs);
+      const stacked = tabsStyle.flexDirection === 'row';
+      const paneHeight = getSettingsPaneNaturalHeight({
+        tabsHeight: tabs.scrollHeight,
+        contentHeight,
+        gap: stacked ? (Number.parseFloat(tabsStyle.marginBottom) || 0) : 0,
+        inset: paneInset,
+        stacked,
+      });
       const fixedHeight = Array.from(dialog.children)
         .filter((child) => child !== pane)
         .reduce((total, child) => total + child.getBoundingClientRect().height, 0);
@@ -2872,7 +2881,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
           <div className="settings-panel-footer">
             <div className="settings-panel-actions">
-              <button type="button" className="btn btn-quiet" onClick={() => setShowConfig(false)}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowConfig(false)}>
                 取消
               </button>
               <button type="submit" className="btn btn-primary">

@@ -46,7 +46,8 @@ test('archive atelier exposes layered semantic theme tokens', () => {
   assert.match(css, /--surface:\s*#1b1c18/i);
   assert.match(css, /--accent:\s*#d16a57/i);
   assert.match(css, /--positive:\s*#8e9a69/i);
-  assert.match(css, /--reader-stage:\s*#050505/i);
+  assert.match(css, /--reader-stage:\s*var\(--surface-inset\)/i);
+  assert.match(css, /--immersive-bg:\s*#000/i);
   assert.match(css, /--surface-hover:/);
   assert.match(css, /--shadow-lg:/);
   assert.match(css, /data-theme="light"[\s\S]*--canvas:\s*#f2efe8/i);
@@ -532,7 +533,7 @@ test('reader exterior is warm, compact, and isolated from image geometry', () =>
   assert.match(readerCss, /\.reader-thumbnail-drawer-panel\s*\{[^}]*background:\s*var\(--surface\)\s*!important/s);
   assert.match(readerCss, /\.eh-comments\s*\{[^}]*border-radius:\s*var\(--radius-md\);[^}]*box-shadow:\s*none/s);
   assert.match(readerCss, /\.archive-thumbnail-dialog\s*\{[^}]*border-radius:\s*var\(--radius-md\)\s*!important/s);
-  assert.match(tokens, /--reader-stage:\s*#050505/i);
+  assert.match(tokens, /--reader-stage:\s*var\(--surface-inset\)/i);
   assert.doesNotMatch(readerCss, /\.reader-(?:stage|image|page-slot|spread|webtoon-page)/);
 });
 
@@ -552,7 +553,8 @@ test('theme self-check validates approved semantic colors and browser chrome', (
   const check = read('scripts/theme-self-check.mjs');
   assert.match(check, /--canvas/);
   assert.match(check, /--reader-stage/);
-  assert.match(check, /#050505/i);
+  assert.match(check, /--immersive-bg/);
+  assert.match(check, /#000/i);
   assert.match(check, /THEME_COLORS/);
   assert.match(check, /theme-color/);
   assert.match(check, /#121310/i);
@@ -575,7 +577,70 @@ test('settings categories animate measured panel height', () => {
   assert.match(pages, /\.settings-section\s*>\s*\.settings-section-inner\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*hidden/s);
   assert.match(pages, /\.settings-section-stack\s*\{[^}]*display:\s*grid/s);
   assert.match(reader, /className="settings-section-stack"/);
+  assert.match(home, /getSettingsPaneNaturalHeight/);
+  assert.match(reader, /getSettingsPaneNaturalHeight/);
   assert.match(pages, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.settings-panel-height-animate\s*\{[^}]*transition:\s*none;[^}]*\}[\s\S]*\.settings-section\s*\{[^}]*transition:\s*none/s);
+});
+
+test('immersive controls use safe-area bottom corners without fixed tall-screen offsets', () => {
+  const css = read('src/index.css');
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(css, /\.reader-immersive-trigger\s*\{[^}]*width:\s*clamp\([^}]*height:\s*clamp\(/s);
+  assert.match(css, /\.reader-immersive-controls\s*\{[^}]*bottom:\s*calc\(var\(--app-safe-area-bottom\)\s*\+\s*16px\)/s);
+  assert.match(reader, /data-indicator-position=\{pageIndicatorShouldShow \? \(isMobile \? 'center' : 'right'\) : 'none'\}/);
+  assert.match(css, /\.reader-immersive-controls\[data-indicator-position="center"\]/);
+  assert.match(css, /\.reader-immersive-controls\[data-side="right"\]\[data-indicator-position="right"\]/);
+  assert.doesNotMatch(css, /reader-immersive-(?:trigger|controls)[\s\S]{0,500}(?:274px|\+\s*52px)/);
+});
+
+test('summary badges inherit the shared language-aware font stack', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.history-page-summary\s*\{[^}]*font-family:\s*inherit/s);
+  assert.match(css, /\.archive-count-badge\s*\{[^}]*font-family:\s*inherit/s);
+  assert.doesNotMatch(css, /font-family:\s*'Noto Sans SC Variable',\s*system-ui,\s*sans-serif/);
+});
+
+test('shared text buttons inherit the language-aware font and palette tabs use semantic text colors', () => {
+  const primitives = read('src/styles/primitives.css');
+  const css = read('src/index.css');
+  assert.match(primitives, /\.btn\s*\{[^}]*font-family:\s*inherit/s);
+  assert.match(css, /\.theme-palette-mode-tab\s*\{[^}]*color:\s*var\(--text-secondary\)/s);
+  assert.match(css, /\.theme-palette-mode-tab\.is-active\s*\{[^}]*color:\s*var\(--text-primary\)/s);
+  assert.doesNotMatch(css, /\.theme-palette-mode-tab(?:\.is-active)?\s*\{[^}]*color:\s*#fff/s);
+});
+
+test('standalone cancel actions use bordered secondary buttons', () => {
+  const home = read('src/pages/Home.jsx');
+  const dialogs = read('src/components/ConfirmDialog.jsx');
+
+  assert.match(home, /settings-panel-actions[\s\S]*?className="btn btn-secondary"[^>]*>[\s\S]*?取消[\s\S]*?<\/button>/);
+  assert.match(dialogs, /data-dialog-cancel[\s\S]*?className="btn btn-secondary"|className="btn btn-secondary"[\s\S]*?data-dialog-cancel/);
+  assert.doesNotMatch(home, /className="btn btn-quiet"[^>]*>[\s\S]{0,80}?取消[\s\S]{0,40}?<\/button>/);
+});
+
+test('ordinary UI presentation contains no fixed color literals outside approved color authorities', () => {
+  const literalColor = /#[0-9a-f]{3,8}\b|(?<![\w$])(?:rgba?|hsla?)\(/i;
+  const namedColor = /(?:color|background|border-color|fill|stroke):\s*(?:white|black|red|green|blue)\b/i;
+  const approved = new Set([
+    'src/styles/tokens.css',
+    'src/lib/color.js',
+    'src/lib/theme.js',
+    'src/components/ThemeColorPicker.jsx',
+  ]);
+  const sourceRoot = new URL('../src/', import.meta.url);
+  const collectSourceFiles = (directory, prefix = 'src/') => fs.readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => entry.isDirectory()
+      ? collectSourceFiles(new URL(`${entry.name}/`, directory), `${prefix}${entry.name}/`)
+      : (/\.(?:css|js|jsx)$/.test(entry.name) ? [`${prefix}${entry.name}`] : []));
+  const sourceFiles = collectSourceFiles(sourceRoot);
+
+  for (const file of sourceFiles) {
+    if (approved.has(file)) continue;
+    const source = read(file);
+    assert.doesNotMatch(source, literalColor, file);
+    assert.doesNotMatch(source, namedColor, file);
+    assert.doesNotMatch(source, /color-mix\([^)]*,\s*(?:white|black)\s*\)/i, file);
+  }
 });
 
 test('settings category tabs expose inactive panels without focus leakage', () => {
