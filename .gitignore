@@ -26,5 +26,6 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Local agent tooling (may contain secrets)
+.superpowers/
 .reasonix/
 reasonix.toml
