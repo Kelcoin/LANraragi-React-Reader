@@ -394,6 +394,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [archiveDisplayMode, setArchiveDisplayModeState] = useState(() => getArchiveDisplayMode());
   const [showConfig, setShowConfig] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState('general');
+  const [settingsPanelHeight, setSettingsPanelHeight] = useState(null);
   const [configTransfer, setConfigTransfer] = useState(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [configNotice, setConfigNotice] = useState(null);
@@ -942,6 +943,46 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
   }, [showConfig]);
+
+  useLayoutEffect(() => {
+    if (!showConfig) {
+      setSettingsPanelHeight(null);
+      return undefined;
+    }
+    const dialog = settingsDialogRef.current;
+    const pane = settingsPaneRef.current;
+    if (!dialog || !pane) return undefined;
+    const activeContent = pane.querySelector('.settings-section.is-active > .settings-section-inner');
+    const tabs = pane.querySelector('.settings-category-tabs');
+    if (!activeContent || !tabs) return undefined;
+    const updateHeight = () => {
+      const paneStyle = getComputedStyle(pane);
+      const paneInset = ['paddingTop', 'paddingBottom']
+        .reduce((total, property) => total + (Number.parseFloat(paneStyle[property]) || 0), 0);
+      const contentStyle = getComputedStyle(activeContent);
+      const contentGap = Number.parseFloat(contentStyle.rowGap) || 0;
+      const contentHeight = Array.from(activeContent.children)
+        .reduce((total, child) => total + child.scrollHeight, 0)
+        + contentGap * Math.max(0, activeContent.children.length - 1);
+      const paneHeight = Math.max(tabs.scrollHeight, contentHeight) + paneInset;
+      const fixedHeight = Array.from(dialog.children)
+        .filter((child) => child !== pane)
+        .reduce((total, child) => total + child.getBoundingClientRect().height, 0);
+      const overlay = dialog.parentElement;
+      const overlayStyle = getComputedStyle(overlay);
+      const viewportLimit = overlay.clientHeight - ['paddingTop', 'paddingBottom']
+        .reduce((total, property) => total + (Number.parseFloat(overlayStyle[property]) || 0), 0);
+      setSettingsPanelHeight(Math.min(Math.ceil(fixedHeight + paneHeight), Math.floor(viewportLimit)));
+    };
+    updateHeight();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateHeight);
+    observer?.observe(activeContent);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [settingsCategory, showConfig]);
 
   const probeServerStatus = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!force && serverProbePromiseRef.current) return serverProbePromiseRef.current;
@@ -2553,7 +2594,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     </div>
     {showConfig && createPortal(
       <div className="settings-overlay" role="presentation" onClick={() => setShowConfig(false)}>
-        <form ref={settingsDialogRef} className="surface settings-panel settings-panel-form" role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {
+        <form ref={settingsDialogRef} className="surface settings-panel settings-panel-form settings-panel-height-animate" style={{ height: settingsPanelHeight == null ? 'auto' : `${settingsPanelHeight}px` }} role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {
           e.preventDefault();
           setWorkerUrl(cfgWorkerUrl);
           setSyncToken(cfgSyncToken);
@@ -2577,6 +2618,8 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 key={key}
                 type="button"
                 role="tab"
+                id={`home-settings-tab-${key}`}
+                aria-controls={`home-settings-panel-${key}`}
                 aria-selected={settingsCategory === key}
                 className={`btn btn-quiet settings-category-tab${settingsCategory === key ? ' is-active' : ''}`}
                 onClick={() => setSettingsCategory(key)}
@@ -2586,7 +2629,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             ))}
           </div>
 
-          <div className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
+          <div id="home-settings-panel-general" role="tabpanel" aria-labelledby="home-settings-tab-general" aria-hidden={settingsCategory !== 'general'} inert={settingsCategory === 'general' ? undefined : ''} className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
             <div className="settings-section-inner">
               <div className="settings-group">
                 <CacheSettings />
@@ -2660,7 +2703,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             </div>
           </div>
 
-          <div className={`settings-section${settingsCategory === 'worker' ? ' is-active' : ''}`}>
+          <div id="home-settings-panel-worker" role="tabpanel" aria-labelledby="home-settings-tab-worker" aria-hidden={settingsCategory !== 'worker'} inert={settingsCategory === 'worker' ? undefined : ''} className={`settings-section${settingsCategory === 'worker' ? ' is-active' : ''}`}>
             <div className="settings-section-inner">
               <div className="settings-group">
                 <div className="settings-row">
@@ -2758,7 +2801,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             </div>
           </div>
 
-          <div className={`settings-section${settingsCategory === 'palette' ? ' is-active' : ''}`}>
+          <div id="home-settings-panel-palette" role="tabpanel" aria-labelledby="home-settings-tab-palette" aria-hidden={settingsCategory !== 'palette'} inert={settingsCategory === 'palette' ? undefined : ''} className={`settings-section${settingsCategory === 'palette' ? ' is-active' : ''}`}>
             <div className="settings-section-inner">
               <div className="settings-group">
               <div className="theme-palette-mode-tabs" role="tablist" aria-label="自定义配色模式">
@@ -2812,7 +2855,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             </div>
           </div>
 
-          <div className={`settings-section${settingsCategory === 'tools' ? ' is-active' : ''}`}>
+          <div id="home-settings-panel-tools" role="tabpanel" aria-labelledby="home-settings-tab-tools" aria-hidden={settingsCategory !== 'tools'} inert={settingsCategory === 'tools' ? undefined : ''} className={`settings-section settings-section-tools${settingsCategory === 'tools' ? ' is-active' : ''}`}>
             <div className="settings-section-inner">
               <div className="settings-group">
                 <div className="settings-tool-grid">

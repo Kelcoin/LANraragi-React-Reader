@@ -558,13 +558,34 @@ test('theme self-check validates approved semantic colors and browser chrome', (
   assert.match(check, /#121310/i);
 });
 
-test('settings layout uses intrinsic active content without legacy height feedback', () => {
+test('settings categories animate measured panel height', () => {
   const home = read('src/pages/Home.jsx');
+  const reader = read('src/pages/Reader.jsx');
   const pages = read('src/styles/pages.css');
-  assert.doesNotMatch(home, /--settings-pane-height/);
-  assert.doesNotMatch(home, /active\.scrollHeight/);
-  assert.match(pages, /\.settings-layout\s*>\s*\.settings-section\s*\{[^}]*display:\s*none;[^}]*max-height:\s*none/s);
-  assert.match(pages, /\.settings-layout\s*>\s*\.settings-section\.is-active\s*\{[^}]*display:\s*block/s);
+  assert.match(home, /const \[settingsPanelHeight, setSettingsPanelHeight\] = useState\(null\)/);
+  assert.match(home, /settingsPaneRef\.current[\s\S]*scrollHeight/);
+  assert.match(home, /height:\s*settingsPanelHeight == null \? 'auto' : `\$\{settingsPanelHeight\}px`/);
+  assert.match(reader, /const \[settingsPanelHeight, setSettingsPanelHeight\] = useState\(null\)/);
+  assert.match(reader, /settingsPanelContentRef\.current[\s\S]*scrollHeight/);
+  assert.match(reader, /height:\s*settingsPanelHeight == null \? 'auto' : `\$\{settingsPanelHeight\}px`/);
+  assert.match(pages, /\.settings-panel-height-animate\s*\{[^}]*transition:\s*height[^}]*var\(--motion-curve\)/s);
+  assert.doesNotMatch(pages, /\.settings-layout\s*>\s*\.settings-section\s*\{[^}]*display:\s*none/s);
+  assert.match(pages, /\.settings-section\s*\{[^}]*display:\s*grid;[^}]*grid-template-rows:\s*0fr;[^}]*max-height:\s*none;[^}]*opacity:\s*0;[^}]*transition:[^}]*grid-template-rows[^}]*opacity/s);
+  assert.match(pages, /\.settings-section\.is-active\s*\{[^}]*grid-template-rows:\s*1fr;[^}]*opacity:\s*1/s);
+  assert.match(pages, /\.settings-section\s*>\s*\.settings-section-inner\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*hidden/s);
+  assert.match(pages, /\.settings-section-stack\s*\{[^}]*display:\s*grid/s);
+  assert.match(reader, /className="settings-section-stack"/);
+  assert.match(pages, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.settings-panel-height-animate\s*\{[^}]*transition:\s*none;[^}]*\}[\s\S]*\.settings-section\s*\{[^}]*transition:\s*none/s);
+});
+
+test('settings category tabs expose inactive panels without focus leakage', () => {
+  for (const file of ['src/pages/Home.jsx', 'src/pages/Reader.jsx']) {
+    const source = read(file);
+    assert.match(source, /role="tab"[\s\S]*id=\{`[^`]*tab-\$\{key\}`\}[\s\S]*aria-controls=\{`[^`]*panel-\$\{key\}`\}/s);
+    assert.match(source, /role="tabpanel"[\s\S]*aria-labelledby="(?:home|reader)-settings-tab-/s);
+    assert.match(source, /aria-hidden=\{settingsCategory !==/);
+    assert.match(source, /inert=\{settingsCategory === [^?]+\? undefined : ''\}/);
+  }
 });
 
 test('expanded EH settings do not clip real configuration fields', () => {
@@ -621,13 +642,23 @@ test('settings grid starts active content without implicit rows or cramped inset
   assert.doesNotMatch(css, /grid-row:\s*1 \/ span 4/);
 });
 
+test('settings tools balance desktop whitespace without centering mobile controls', () => {
+  const css = read('src/styles/reader.css');
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /settings-section settings-section-tools/);
+  assert.match(css, /@media \(min-width:\s*769px\)[\s\S]*\.settings-layout\s*>\s*\.settings-section-tools\s*\{[^}]*align-self:\s*stretch;/s);
+  assert.match(css, /@media \(min-width:\s*769px\)[\s\S]*\.settings-section-tools\s*>\s*\.settings-section-inner\s*\{[^}]*height:\s*100%;[^}]*align-content:\s*center;/s);
+});
+
 test('custom select interaction uses Base UI state attributes only', () => {
   const index = read('src/index.css');
   const primitives = read('src/styles/primitives.css');
   assert.doesNotMatch(index, /\.custom-select-option:hover/);
   assert.doesNotMatch(index, /\.custom-select-option\[aria-selected/);
-  assert.match(primitives, /\.custom-select-option\[data-highlighted\]\s*\{[^}]*background:\s*var\(--accent-soft\);/s);
-  assert.match(primitives, /\.custom-select-option\[data-selected\]\s*\{[^}]*color:\s*var\(--accent-strong\);/s);
+  assert.match(primitives, /\.custom-select-option\[data-highlighted\]:not\(\[data-selected\]\)\s*\{[^}]*background:\s*var\(--surface-hover\);/s);
+  assert.match(primitives, /\.custom-select-option\[data-selected\]\s*\{[^}]*background:\s*var\(--accent-soft\);[^}]*color:\s*var\(--accent-strong\);/s);
+  assert.match(primitives, /\.custom-select-list\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*gap:\s*2px;/s);
+  assert.match(primitives, /\.custom-select-option\s*\{[^}]*min-height:\s*40px;/s);
 });
 
 test('dark default secondary is warm-neutral and positive tokens stay independent', () => {

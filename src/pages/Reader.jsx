@@ -1108,6 +1108,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const serverUrlRef = useRef((localStorage.getItem('lrr_server_url') || '').replace(/\/$/, ''));
   const serverInfoRef = useRef(getStoredServerInfo());
   const containerRef = useRef(null);
+  const settingsPanelRef = useRef(null);
+  const settingsPanelContentRef = useRef(null);
   // ===== Core States =====
   const [archive, setArchive] = useState(() => readerSnapshot?.archive || null);
   const [pages, setPages] = useState(() => Array.isArray(readerSnapshot?.pages) ? readerSnapshot.pages : []);
@@ -1144,6 +1146,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [drawerSide, setDrawerSide] = useState('right');
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState('general');
+  const [settingsPanelHeight, setSettingsPanelHeight] = useState(null);
   const [srSupport] = useState(() => detectSuperResolutionSupport());
   const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
   const [srRuntimeContext, setSrRuntimeContext] = useState(null);
@@ -3573,6 +3576,44 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     return () => window.removeEventListener('mousedown', handler);
   }, [canShowMetadata, showArchivePanel, showSettingsPanel]);
 
+  useLayoutEffect(() => {
+    if (!showSettingsPanel) {
+      setSettingsPanelHeight(null);
+      return undefined;
+    }
+    const panel = settingsPanelRef.current;
+    const content = settingsPanelContentRef.current;
+    if (!panel || !content) return undefined;
+    const activeContent = content.querySelector('.settings-section.is-active > .settings-section-inner');
+    const tabs = content.querySelector('.settings-category-tabs');
+    if (!activeContent || !tabs) return undefined;
+    const updateHeight = () => {
+      const panelStyle = getComputedStyle(panel);
+      const panelInset = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+        .reduce((total, property) => total + (Number.parseFloat(panelStyle[property]) || 0), 0);
+      const tabsStyle = getComputedStyle(tabs);
+      const activeContentStyle = getComputedStyle(activeContent);
+      const contentGap = Number.parseFloat(activeContentStyle.rowGap) || 0;
+      const activeContentHeight = Array.from(activeContent.children)
+        .reduce((total, child) => total + child.scrollHeight, 0)
+        + contentGap * Math.max(0, activeContent.children.length - 1);
+      const contentHeight = tabs.scrollHeight
+        + (Number.parseFloat(tabsStyle.marginBottom) || 0)
+        + activeContentHeight;
+      const top = Math.ceil(toolbarRef.current?.getBoundingClientRect().bottom || 0) + 8;
+      const viewportLimit = window.innerHeight - top - 12;
+      setSettingsPanelHeight(Math.min(Math.ceil(contentHeight + panelInset), Math.floor(viewportLimit)));
+    };
+    updateHeight();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateHeight);
+    observer?.observe(activeContent);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [settingsCategory, showSettingsPanel]);
+
   const isLTR = settings.direction === 'ltr';
   const leftAction = isLTR ? handlePrev : handleNext;
   const rightAction = isLTR ? handleNext : handlePrev;
@@ -3867,13 +3908,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
         {/* ===== Settings Panel ===== */}
         {showSettingsPanel && createPortal(
-          <div data-panel="settings"
-            className="reader-panel-surface glass-panel dropdown-animate"
+          <div ref={settingsPanelRef} data-panel="settings"
+            className="reader-panel-surface glass-panel dropdown-animate settings-panel-height-animate"
             style={{
               position: 'fixed',
               top: `${settingsPanelTop + 8}px`,
               right: 'max(20px, calc(var(--app-safe-area-right) + 12px))',
               maxHeight: `calc(100dvh - ${settingsPanelTop + 8}px - max(12px, calc(var(--app-safe-area-bottom) + 8px)))`,
+              height: settingsPanelHeight == null ? 'auto' : `${settingsPanelHeight}px`,
               zIndex: 9999,
               padding: '22px',
               width: 'min(440px, calc(100vw - 32px))',
@@ -3881,7 +3923,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               display: 'flex', flexDirection: 'column',
             }}
           >
-            <div data-reader-overlay-scroll className="no-scrollbar" style={{ overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', flex: 1 }}>
+            <div ref={settingsPanelContentRef} data-reader-overlay-scroll className="no-scrollbar" style={{ overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', flex: 1 }}>
             <div className="settings-category-tabs" role="tablist" aria-label="阅读设置分类">
               {[
                 ['general', '通用'],
@@ -3892,6 +3934,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   key={key}
                   type="button"
                   role="tab"
+                  id={`reader-settings-tab-${key}`}
+                  aria-controls={`reader-settings-panel-${key}`}
                   aria-selected={settingsCategory === key}
                   className={`btn settings-category-tab${settingsCategory === key ? ' is-active' : ''}`}
                   onClick={() => setSettingsCategory(key)}
@@ -3901,8 +3945,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               ))}
             </div>
 
+            <div className="settings-section-stack">
             {/* 通用 */}
-            <div className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
+            <div id="reader-settings-panel-general" role="tabpanel" aria-labelledby="reader-settings-tab-general" aria-hidden={settingsCategory !== 'general'} inert={settingsCategory === 'general' ? undefined : ''} className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
               <div className="settings-section-inner">
                 <div className="settings-group">
                   <div className="settings-row">
@@ -3949,7 +3994,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             </div>
 
             {/* 阅读 */}
-            <div className={`settings-section${settingsCategory === 'reading' ? ' is-active' : ''}`}>
+            <div id="reader-settings-panel-reading" role="tabpanel" aria-labelledby="reader-settings-tab-reading" aria-hidden={settingsCategory !== 'reading'} inert={settingsCategory === 'reading' ? undefined : ''} className={`settings-section${settingsCategory === 'reading' ? ' is-active' : ''}`}>
               <div className="settings-section-inner">
                 <div className="settings-group">
                   <div className="settings-row">
@@ -3980,7 +4025,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             </div>
 
             {/* 其他（含超分） */}
-            <div className={`settings-section${settingsCategory === 'other' ? ' is-active' : ''}`}>
+            <div id="reader-settings-panel-other" role="tabpanel" aria-labelledby="reader-settings-tab-other" aria-hidden={settingsCategory !== 'other'} inert={settingsCategory === 'other' ? undefined : ''} className={`settings-section${settingsCategory === 'other' ? ' is-active' : ''}`}>
               <div className="settings-section-inner">
                 <div className="settings-group">
                   <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '4px' }}>超分</div>
@@ -4011,6 +4056,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   </div>
                 </div>
               </div>
+            </div>
             </div>
             </div>
           </div>

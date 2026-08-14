@@ -1,17 +1,40 @@
 /* Unlayered compatibility rules intentionally outrank legacy index.css while
    page styles are migrated out of that file. */
 
-.settings-layout > .settings-section {
-  display: none;
+.settings-section {
+  display: grid;
+  grid-template-rows: 0fr;
   max-height: none;
-  opacity: 1;
-  overflow: visible;
-  transition: none;
+  min-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-base) var(--motion-curve),
+    opacity var(--motion-fast) ease,
+    visibility 0s linear var(--motion-base);
 }
 
-.settings-layout > .settings-section.is-active {
-  display: block;
-  max-height: none;
+.settings-section.is-active {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.settings-section > .settings-section-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-section-stack {
+  display: grid;
+}
+
+.settings-section-stack > .settings-section {
+  grid-area: 1 / 1;
 }
 
 .settings-eh-details {
@@ -231,6 +254,9 @@
   gap: 0;
   padding: 0;
   overflow: hidden;
+}
+.settings-panel-height-animate {
+  transition: height var(--motion-base) var(--motion-curve);
 }
 .settings-panel-header {
   padding: 28px 28px 12px;
@@ -674,6 +700,8 @@
 @media (max-width: 410px) { .home-welcome-detail { display: none; } }
 
 @media (prefers-reduced-motion: reduce) {
+  .settings-panel-height-animate { transition: none; }
+  .settings-section { transition: none; }
   .settings-eh-details { transition: none; }
 }
 
