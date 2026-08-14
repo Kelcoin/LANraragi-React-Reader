@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { encodeApiKey, lrrApi } from '../lib/api';
-import { flushHistorySync, getHistory, saveHistory, getHideRead, removeHistoryItem, loadHistoryState } from '../lib/history';
+import { flushHistorySync, getHistory, saveHistory, getHideRead, pruneHistoryItems, removeHistoryItem, loadHistoryState } from '../lib/history';
 import { clampProgressPage } from '../lib/historyProgressCache';
-import { getWatchlist, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItem } from '../lib/watchlist';
+import { getWatchlist, loadWatchlistState, mergeWatchlistProgress, pruneWatchlistItem, removeWatchlistItem } from '../lib/watchlist';
 import { getReaderArchiveListMeta } from '../lib/readerArchiveList';
 import { isArchiveMissingError } from '../lib/historyMaintenance';
 import { translateTag, categorizeTags } from '../lib/tags';
@@ -757,7 +757,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
               .slice(0, 6);
             const meta = getReaderArchiveListMeta(item, type);
             const progressPct = getArchiveProgressPercent(item);
-            const showProgress = progressPct != null && shouldShowArchiveProgress(progressBarVisibility, type !== 'random');
+            const showProgress = progressPct != null && shouldShowArchiveProgress(progressBarVisibility, type === 'history');
 
             return (
               <div
@@ -2525,7 +2525,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         } catch (error) {
           if (!controller.signal.aborted) {
             dispatchRender({ type: 'error', resource: 'metadata', error });
-            if (isArchiveMissingError(error)) removeHistoryItem(archiveId).catch(() => {});
+            if (isArchiveMissingError(error)) pruneHistoryItems([archiveId]).catch(() => {});
           }
           throw error;
         }
@@ -2546,7 +2546,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         } catch (error) {
           if (!controller.signal.aborted) {
             dispatchRender({ type: 'error', resource: 'manifest', error });
-            if (isArchiveMissingError(error)) removeHistoryItem(archiveId).catch(() => {});
+            if (isArchiveMissingError(error)) pruneHistoryItems([archiveId]).catch(() => {});
           }
           throw error;
         }
@@ -2614,7 +2614,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       const totalPages = Number(archive.pagecount || pages.length) || 0;
       if (archiveId && totalPages > 0 && highestPage / totalPages > 0.8 && !watchlistAutoRemovedRef.current.has(archiveId)) {
         watchlistAutoRemovedRef.current.add(archiveId);
-        removeWatchlistItem(archiveId).catch(() => {});
+        pruneWatchlistItem(archiveId).catch(() => {});
       }
       if (serverTracksProgress && archiveId) {
         enqueueLrrProgressSync(archiveId, highestPage);
@@ -3206,18 +3206,27 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     ));
   }, []);
 
-  const confirmRemoveHistory = useCallback(() => {
+  const confirmRemoveHistory = useCallback(async () => {
     if (!historyDeleteTarget?.id) return;
-    removeHistoryItem(historyDeleteTarget.id).catch(() => {});
-    setHistoryEntries(getHistory());
-    setHistoryDeleteTarget(null);
-  }, [historyDeleteTarget]);
+    try {
+      await removeHistoryItem(historyDeleteTarget.id);
+      setHistoryEntries(getHistory());
+      setHistoryDeleteTarget(null);
+    } catch (error) {
+      showToast(`删除历史记录失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [historyDeleteTarget, showToast]);
 
-  const handleRemoveWatchlist = useCallback((item) => {
+  const handleRemoveWatchlist = useCallback(async (item) => {
     const id = item?.id || item?.arcid;
     if (!id) return;
-    removeWatchlistItem(id).finally(() => setWatchlistEntries(getWatchlist()));
-  }, []);
+    try {
+      await removeWatchlistItem(id);
+      setWatchlistEntries(getWatchlist());
+    } catch (error) {
+      showToast(`移除待看档案失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [showToast]);
 
   const handleSetCover = useCallback(() => {
     if (!archiveId || pages.length === 0 || coverSetting) return;

@@ -8,6 +8,7 @@ import './regression-contracts.test.mjs';
 import './metadata-tag-layout.test.mjs';
 import './archive-layout.test.mjs';
 import './archive-progress.test.mjs';
+import './remote-removal.test.mjs';
 import './reading-progress.test.mjs';
 import './random-archive-filter.test.mjs';
 import './reader-layout.test.mjs';

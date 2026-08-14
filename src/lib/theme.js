@@ -3,14 +3,14 @@ export const CUSTOM_THEME_STORAGE_KEY = 'lrr_custom_theme';
 export const THEME_MODES = ['auto', 'dark', 'light'];
 export const DEFAULT_THEME_PALETTE = Object.freeze({
   accent: '#b74632',
-  secondary: '#70784f',
+  secondary: '#8a715c',
   background: '#f4f0e8',
 });
 export const DEFAULT_THEME_PALETTES = Object.freeze({
   light: DEFAULT_THEME_PALETTE,
   dark: Object.freeze({
     accent: '#d16a57',
-    secondary: '#8e9a69',
+    secondary: '#b8a58f',
     background: '#121310',
   }),
 });
@@ -23,6 +23,7 @@ const CUSTOM_THEME_PROPERTIES = [
   '--canvas', '--surface', '--surface-subtle', '--surface-raised', '--surface-hover', '--surface-inset',
   '--text-primary', '--text-secondary', '--text-muted', '--border-subtle', '--border-strong',
   '--accent', '--accent-strong', '--accent-soft', '--accent-contrast',
+  '--secondary', '--secondary-strong', '--secondary-soft',
   '--positive', '--positive-strong', '--positive-soft', '--warning', '--warning-soft',
   '--danger', '--danger-soft', '--focus-ring', '--overlay', '--reader-stage',
   '--reader-toolbar-bg', '--reader-control-bg', '--reader-control-hover-bg', '--reader-control-border', '--reader-control-text',
@@ -210,6 +211,8 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
   const accentSoft = dark ? mixHex(surface1, accent, 0.25) : mixHex(surface1, accent, 0.16);
   const secondarySoft = dark ? mixHex(surface1, secondary, 0.24) : mixHex(surface1, secondary, 0.15);
   const good = dark ? '#8e9a69' : '#66734a';
+  const goodStrong = ensureReadable(dark ? mixHex(good, '#ffffff', 0.2) : mixHex(good, '#000000', 0.2), surface1, dark ? 3.2 : 4.5);
+  const goodSoft = dark ? mixHex(surface1, good, 0.24) : mixHex(surface1, good, 0.15);
   const danger = dark ? '#d96b62' : '#a93f35';
   const accentContrast = luminance(accent) > 0.42 ? '#171815' : '#fffaf2';
   const dangerContrast = luminance(danger) > 0.42 ? '#171815' : '#fffaf2';
@@ -225,9 +228,12 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
     '--text-muted': dark ? '#858176' : '#948d82',
     '--border-subtle': border,
     '--border-strong': borderHover,
+    '--secondary': secondary,
+    '--secondary-strong': secondaryStrong,
+    '--secondary-soft': secondarySoft,
     '--positive': good,
-    '--positive-strong': secondaryStrong,
-    '--positive-soft': secondarySoft,
+    '--positive-strong': goodStrong,
+    '--positive-soft': goodSoft,
     '--warning': dark ? '#d4a75d' : '#95631f',
     '--warning-soft': dark ? '#382e1d' : '#f4ead6',
     '--danger': danger,

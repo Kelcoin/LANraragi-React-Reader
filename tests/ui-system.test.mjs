@@ -9,6 +9,7 @@ const REQUIRED_SEMANTIC_TOKENS = [
   '--canvas', '--surface', '--surface-subtle', '--surface-raised', '--surface-hover', '--surface-inset',
   '--text-primary', '--text-secondary', '--text-muted', '--border-subtle', '--border-strong',
   '--accent', '--accent-strong', '--accent-soft', '--accent-contrast',
+  '--secondary', '--secondary-strong', '--secondary-soft',
   '--positive', '--positive-strong', '--positive-soft', '--warning', '--warning-soft',
   '--danger', '--danger-soft', '--focus-ring', '--overlay', '--reader-stage',
   '--radius-xs', '--radius-sm', '--radius-md', '--shadow-control', '--shadow-lg',
@@ -260,9 +261,10 @@ test('built-in and custom themes expose the complete semantic token contract', (
 
   assert.deepEqual(DEFAULT_THEME_PALETTES.dark, {
     accent: '#d16a57',
-    secondary: '#8e9a69',
+    secondary: '#b8a58f',
     background: '#121310',
   });
+  assert.notEqual(DEFAULT_THEME_PALETTES.light.secondary, '#66734a');
 
   const tokens = createCustomThemeTokens(DEFAULT_THEME_PALETTES.dark, 'dark');
   for (const property of REQUIRED_SEMANTIC_TOKENS.filter((name) => !name.startsWith('--radius-') && !name.startsWith('--motion-') && !name.startsWith('--shadow-'))) {
@@ -462,6 +464,22 @@ test('catalog edge controls use semantic classes and retain approved picker runt
   assert.match(pages, /\.theme-color-picker-trigger,\s*\.theme-color-picker-eyedropper\s*\{[^}]*min-width:\s*32px;[^}]*min-height:\s*32px;/s);
 });
 
+test('history and watchlist pages use semantic surfaces and class-driven presentation', () => {
+  const history = read('src/pages/HistoryPage.jsx');
+  const watchlist = read('src/pages/WatchlistPage.jsx');
+  const pages = read('src/styles/pages.css');
+  for (const source of [history, watchlist]) {
+    assert.doesNotMatch(source, /glass-panel/);
+    assert.doesNotMatch(source, /style=\{\{\s*(?:padding:|display:|textAlign:|position:|background:|border:|color:|fontSize:|gridTemplateColumns:|height:|width:|borderRadius:)/s);
+    assert.match(source, /<ArchiveGrid[^>]*style=\{\{ gap: isNarrow \? '10px' : '16px' \}\}/);
+    const buttons = [...source.matchAll(/<button\b[^>]*>/g)].map(([opening]) => opening);
+    buttons.forEach((opening) => assert.match(opening, /className=(?:"|\{`)[^"`}]*\bbtn\b/));
+  }
+  for (const selector of ['.history-page-surface', '.history-content-groups', '.history-period-group', '.history-period-header', '.history-empty-state', '.archive-selection-overlay']) {
+    assert.match(pages, new RegExp(`${selector.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\s*\\{`));
+  }
+});
+
 test('login and operational pages share one archive workbench language', () => {
   const pages = read('src/styles/pages.css');
   const app = read('src/App.jsx');
@@ -499,7 +517,8 @@ test('settings use desktop navigation and mobile top tabs without changing field
   assert.match(index, /@import url\('\.\/styles\/reader\.css'\);/);
   assert.match(home, /className="settings-panel-scroll settings-layout"/);
   assert.match(readerCss, /\.settings-layout\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*180px minmax\(0,\s*1fr\)/s);
-  assert.match(readerCss, /\.settings-layout\s*>\s*\.settings-category-tabs\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1 \/ span 4/s);
+  assert.match(readerCss, /\.settings-layout\s*>\s*\.settings-category-tabs\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;/s);
+  assert.doesNotMatch(readerCss, /grid-row:\s*1 \/ span 4/);
   assert.match(readerCss, /@media \(max-width:\s*768px\)[\s\S]*\.settings-layout\s*\{[^}]*grid-template-columns:\s*1fr/s);
   assert.match(readerCss, /@media \(max-width:\s*768px\)[\s\S]*\.settings-layout\s*>\s*\.settings-category-tabs\s*\{[^}]*display:\s*flex/s);
   assert.match(readerCss, /\.settings-layout \.settings-row\s*\{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none/s);
@@ -508,7 +527,7 @@ test('settings use desktop navigation and mobile top tabs without changing field
 test('reader exterior is warm, compact, and isolated from image geometry', () => {
   const readerCss = read('src/styles/reader.css');
   const tokens = read('src/styles/tokens.css');
-  assert.match(readerCss, /\.reader-toolbar-button\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/s);
+  assert.match(readerCss, /\.reader-toolbar-button\s*\{[^}]*width:\s*auto\s*!important;[^}]*min-height:\s*36px\s*!important/s);
   assert.match(readerCss, /\.reader-panel-surface\s*\{[^}]*background:\s*var\(--surface\)\s*!important/s);
   assert.match(readerCss, /\.reader-thumbnail-drawer-panel\s*\{[^}]*background:\s*var\(--surface\)\s*!important/s);
   assert.match(readerCss, /\.eh-comments\s*\{[^}]*border-radius:\s*var\(--radius-md\);[^}]*box-shadow:\s*none/s);
@@ -585,4 +604,44 @@ test('tag suggestion visuals use semantic classes with runtime-only styles', () 
   assert.match(primitives, /\.tag-suggest-option\.is-active\s*\{[^}]*background:\s*var\(--accent-soft\)/s);
   assert.match(primitives, /\.tag-suggest-badge\s*\{[\s\S]*var\(--tag-suggest-ns-color\)/s);
   assert.match(primitives, /\.tag-suggest-panel\s*\{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*200000;/s);
+});
+
+test('reader toolbar keeps text controls intrinsic and fixes only icon modes', () => {
+  const css = read('src/styles/reader.css');
+  assert.match(css, /\.reader-toolbar-button\s*\{[^}]*width:\s*auto\s*!important;[^}]*min-height:\s*36px\s*!important/s);
+  assert.match(css, /\.reader-toolbar\[data-mode="icons"\] \.reader-toolbar-button,[\s\S]*\.reader-toolbar\[data-mode="mobile"\] \.reader-toolbar-button\s*\{[^}]*width:\s*40px\s*!important;[^}]*height:\s*40px\s*!important/s);
+  assert.doesNotMatch(css, /\[data-reader-toolbar\] \.reader-toolbar-button\s*\{[^}]*width:\s*44px/s);
+});
+
+test('settings grid starts active content without implicit rows or cramped inset', () => {
+  const css = read('src/styles/reader.css');
+  assert.match(css, /\.settings-layout\s*\{[^}]*align-content:\s*start;/s);
+  assert.match(css, /\.settings-layout\s*>\s*\.settings-category-tabs\s*\{[^}]*grid-row:\s*1;[^}]*padding:\s*0 16px 0 0;/s);
+  assert.match(css, /\.settings-layout\s*>\s*\.settings-section\s*\{[^}]*padding-inline:\s*16px 4px;/s);
+  assert.doesNotMatch(css, /grid-row:\s*1 \/ span 4/);
+});
+
+test('custom select interaction uses Base UI state attributes only', () => {
+  const index = read('src/index.css');
+  const primitives = read('src/styles/primitives.css');
+  assert.doesNotMatch(index, /\.custom-select-option:hover/);
+  assert.doesNotMatch(index, /\.custom-select-option\[aria-selected/);
+  assert.match(primitives, /\.custom-select-option\[data-highlighted\]\s*\{[^}]*background:\s*var\(--accent-soft\);/s);
+  assert.match(primitives, /\.custom-select-option\[data-selected\]\s*\{[^}]*color:\s*var\(--accent-strong\);/s);
+});
+
+test('dark default secondary is warm-neutral and positive tokens stay independent', () => {
+  const css = read('src/styles/tokens.css');
+  assert.equal(DEFAULT_THEME_PALETTES.dark.secondary, '#b8a58f');
+  assert.match(css, /:root,\s*:root\[data-theme="dark"\][\s\S]*--positive:\s*#8e9a69;[\s\S]*--comment-uploader-border:\s*var\(--secondary\);/i);
+  const tokens = createCustomThemeTokens(DEFAULT_THEME_PALETTES.dark, 'dark');
+  assert.notEqual(tokens['--positive-strong'], tokens['--comment-uploader-border']);
+});
+
+test('light default secondary is warm-neutral and independent from positive', () => {
+  const css = read('src/styles/tokens.css');
+  assert.notEqual(DEFAULT_THEME_PALETTES.light.secondary, '#66734a');
+  assert.match(css, /:root\[data-theme="light"\][\s\S]*--secondary:\s*#8a715c;[\s\S]*--positive:\s*#66734a;/i);
+  const tokens = createCustomThemeTokens(DEFAULT_THEME_PALETTES.light, 'light');
+  assert.notEqual(tokens['--secondary'], tokens['--positive']);
 });

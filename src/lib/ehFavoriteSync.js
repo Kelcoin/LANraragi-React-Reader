@@ -84,6 +84,7 @@ export async function removeEhFavorite({ galleryUrl, cookie, workerUrl, token })
     method: 'POST',
     headers,
     body: JSON.stringify({ mode: 'remove', url: galleryUrl, cookie }),
+    keepalive: true,
   });
 
   let data = null;

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMe
 import { createPortal } from 'react-dom';
 import { loadArchiveMetadataBatch, lrrApi } from '../lib/api';
 import { getHistory, getHideRead, setHideRead, getCropCover, setCropCover, getArchiveBrowseMode, setArchiveBrowseMode, getArchiveDisplayMode, setArchiveDisplayMode, ARCHIVE_DISPLAY_MODES, removeHistoryItem, loadHistoryState } from '../lib/history';
-import { addWatchlistItem, getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItem, removeWatchlistItems } from '../lib/watchlist';
+import { addWatchlistItem, getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, pruneWatchlistItem, pruneWatchlistItems, removeWatchlistItem } from '../lib/watchlist';
 import { loadTagDB, startTagDBUpdateTimer, stopTagDBUpdateTimer } from '../lib/tags';
 import { getWorkerUrl, setWorkerUrl, getSyncToken, setSyncToken, importConfig, hasValidWorkerConfig } from '../lib/worker-config';
 import { runHistoryExistenceCheck } from '../lib/historyMaintenance';
@@ -425,6 +425,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, [themeMode]);
   const [readerSettings, setReaderSettings] = useState(readReaderSettings);
   const showHistoricalArchiveProgress = shouldShowArchiveProgress(readerSettings.progressBarVisibility, true);
+  const showWatchlistArchiveProgress = shouldShowArchiveProgress(readerSettings.progressBarVisibility, false);
   const showGlobalArchiveProgress = shouldShowArchiveProgress(readerSettings.progressBarVisibility, false);
   const reserveGlobalProgressSpace = readerSettings.progressBarVisibility === ARCHIVE_PROGRESS_VISIBILITY.GLOBAL;
   const [randoms, setRandoms] = useState(() => {
@@ -704,7 +705,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const watchlistIds = useMemo(() => new Set(watchlistWithProgress.map((item) => item.id || item.arcid).filter(Boolean)), [watchlistWithProgress]);
 
   useEffect(() => {
-    if (watchlistAutoRemoveIds.length > 0) removeWatchlistItems(watchlistAutoRemoveIds).catch(() => {});
+    if (watchlistAutoRemoveIds.length > 0) pruneWatchlistItems(watchlistAutoRemoveIds).catch(() => {});
   }, [watchlistAutoRemoveIds]);
 
   const handleOpenArchiveMenu = useCallback((archive, point, event, options = {}) => {
@@ -799,7 +800,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       const deletedId = await deleteArchiveWithSync(archiveDeleteTarget, archiveDeleteSyncConfirmed, ({ galleryUrl, error }) => {
         ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
       });
-      removeWatchlistItem(deletedId).catch(() => {});
+      pruneWatchlistItem(deletedId).catch(() => {});
       removeDeletedArchiveIds([deletedId]);
       setArchiveDeleteTarget(null);
       if (ehFailures.length > 0) {
@@ -815,7 +816,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     } finally {
       setArchiveDeleting(false);
     }
-  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, deleteArchiveWithSync, removeDeletedArchiveIds, removeWatchlistItem]);
+  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, deleteArchiveWithSync, removeDeletedArchiveIds]);
 
   useEffect(() => {
     if (archives.length === 0 && randoms.length === 0) return;
@@ -1785,7 +1786,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       setBulkDeleteProgress({ label: '正在删除', current: deletedIds.length + lrrFailures.length, total, detail: title });
     }
     if (deletedIds.length > 0) {
-      removeWatchlistItems(deletedIds).catch(() => {});
+      pruneWatchlistItems(deletedIds).catch(() => {});
       removeDeletedArchiveIds(deletedIds);
     }
     setBulkDeleteProgress({
@@ -1807,7 +1808,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       lrrFailures,
       message: '已完成其余删除操作。失败档案仍保持选中，可稍后重试。',
     });
-  }, [bulkDeleteSyncConfirmed, ehFavoriteDeleteSync, removeDeletedArchiveIds, removeWatchlistItems, selectedArchiveList, workerReady]);
+  }, [bulkDeleteSyncConfirmed, ehFavoriteDeleteSync, removeDeletedArchiveIds, selectedArchiveList, workerReady]);
 
   const archiveCountLabel = useMemo(() => {
     if (loading) return '正在获取结果...';
@@ -2037,13 +2038,17 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setHistoryDeleteTarget(archive);
   }, []);
 
-  const removeHistoryArchive = useCallback((archive) => {
+  const removeHistoryArchive = useCallback(async (archive) => {
     const archiveId = archive?.id || archive?.arcid;
     if (!archiveId) return;
-    removeHistoryItem(archiveId).catch(() => {});
-    setHistory((prev) => prev.filter((item) => item.id !== archiveId));
-    setHistoryDeleteTarget(null);
-  }, []);
+    try {
+      await removeHistoryItem(archiveId);
+      setHistory((prev) => prev.filter((item) => item.id !== archiveId));
+      setHistoryDeleteTarget(null);
+    } catch (error) {
+      showToast(`删除历史记录失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [showToast]);
 
   const addWatchlistArchive = useCallback((archive) => {
     if (!archive?.arcid && !archive?.id) return;
@@ -2051,12 +2056,16 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setWatchlist(getWatchlist());
   }, []);
 
-  const removeWatchlistArchive = useCallback((archive) => {
+  const removeWatchlistArchive = useCallback(async (archive) => {
     const archiveId = archive?.id || archive?.arcid;
     if (!archiveId) return;
-    removeWatchlistItem(archiveId).catch(() => {});
-    setWatchlist((prev) => prev.filter((item) => (item.id || item.arcid) !== archiveId));
-  }, []);
+    try {
+      await removeWatchlistItem(archiveId);
+      setWatchlist((prev) => prev.filter((item) => (item.id || item.arcid) !== archiveId));
+    } catch (error) {
+      showToast(`移除待看档案失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [showToast]);
 
   const handleRemoveHistory = useCallback(() => {
     removeHistoryArchive(historyDeleteTarget);
@@ -2208,7 +2217,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="home-carousel-collapse" style={{ maxHeight: watchlistCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
             <div ref={watchlistScroller.ref} onWheelCapture={watchlistScroller.onWheelCapture} onScroll={watchlistScroller.onScroll} onMouseDown={watchlistScroller.onMouseDown} onClickCapture={watchlistScroller.onClickCapture} onDragStart={watchlistScroller.onDragStart} style={{ gap: isNarrow ? '10px' : '16px', padding: getHomeCarouselPadding(isNarrow), ...watchlistScroller.getTouchScrollStyle(), ...watchlistScroller.getMouseScrollStyle() }} className="no-scrollbar home-carousel-scroller">
               {watchlistWithProgress.map(item => (
-                <ArchiveCard key={`watch-${item.id || item.arcid}`} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
+                <ArchiveCard key={`watch-${item.id || item.arcid}`} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showWatchlistArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
               {watchlistOverflow && (
                 <button
@@ -2589,7 +2598,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 </div>
 
                 <label className="settings-row">
-                  <SettingHint text={'禁止：所有档案卡片都不显示阅读进度。\n仅历史记录：保持历史与待看组件中的进度提示。\n全局：有阅读进度的档案卡片均会显示。'}>显示进度条</SettingHint>
+                  <SettingHint text={'禁止：所有档案卡片都不显示阅读进度。\n仅历史记录：只在阅读历史中显示进度提示。\n全局：有阅读进度的档案卡片均会显示。'}>显示进度条</SettingHint>
                   <div className="settings-control">
                     <CustomSelect
                       ariaLabel="显示进度条"
