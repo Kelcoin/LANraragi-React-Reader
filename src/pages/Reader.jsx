@@ -14,12 +14,14 @@ import { SUPER_RESOLUTION_MAX_INFERENCE_PIXELS } from '../lib/cachePolicy';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange, sanitizeUnsignedIntegerInput } from '../lib/readerSettings';
 import {
   SUPER_RESOLUTION_MODELS,
+  cancelVisibleSuperResolutionJobs,
   createSuperResolutionRuntime,
   detectSuperResolutionSupport,
   getSuperResolutionCacheKey,
   getSuperResolutionModel,
   processSuperResolutionImageSource,
   validateSuperResolutionManifest,
+  verifySuperResolutionSupport,
 } from '../lib/superResolution';
 import {
   clearArchiveProgressMarker,
@@ -35,14 +37,21 @@ import { createReaderRenderState, getReaderCapabilities, loadReaderBootstrapReso
 import {
   getReaderArchivePanelModel,
   getReaderArchivePanelWindow,
+  getForegroundSuperResolutionPageIndices,
   getSettingsPaneNaturalHeight,
   getCenteredToolbarTitleWidth,
   getDrawerRowStride,
   getContentLanguage,
   isIosWebKitPlatform,
   isReaderMobileViewport,
+  IMMERSIVE_DOUBLE_TAP_MS,
+  resolveImmersiveClickZone,
+  resolveImmersiveDoubleTapScale,
+  resolveImmersiveTapAction,
+  resolveImmersiveZoomPan,
   resolvePageIndicatorPlacement,
   resolveReaderToolbarMode,
+  rememberReaderToolbarFullWidth,
   resolveArchiveSuperResolutionState,
   resolveSuperResolutionFailure,
 } from '../lib/readerUiState';
@@ -192,24 +201,6 @@ async function resolvePageImageSource(pageUrl, {
   }, { priority });
 }
 
-function scheduleSuperResolutionPreload(pageUrl, superResolution) {
-  const cacheKey = getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution?.manifest);
-  return readerImageDecodeQueue.schedule(`super-resolution:${cacheKey}`, async (signal) => {
-    if (await getCachedImage(cacheKey)) return true;
-    const src = await resolvePageImageSource(pageUrl, { priority: IMAGE_LOAD_PRIORITY.PRELOAD });
-    if (!src || signal.aborted) return false;
-    const result = await processSuperResolutionImageSource(src, {
-      ...superResolution,
-      signal,
-      cacheKey,
-      getCachedSource: getCachedImage,
-      cacheResult: putImage,
-    });
-    result.dispose();
-    return true;
-  }, IMAGE_LOAD_PRIORITY.PRELOAD);
-}
-
 const DRAWER_COLUMNS = 3;
 const DRAWER_GAP = 12;
 const DRAWER_OVERSCAN_ROWS = 4;
@@ -296,6 +287,7 @@ const PageImage = React.forwardRef(({
     if (preserveReadySource) {
       setShowLoadingStatus(false);
       setNetworkPending(false);
+      onReady?.(pageIndex);
       return undefined;
     }
 
@@ -398,7 +390,7 @@ const PageImage = React.forwardRef(({
                 }
                 const enhancedResolved = await getReaderPreviewSource(source, {
                   enabled: previewDecodeEnabled,
-                  fullPrecision,
+                  fullPrecision: true,
                   sourceSize: pendingSuperResolutionSource || sourceSize,
                   signal,
                 });
@@ -594,10 +586,10 @@ const PageImage = React.forwardRef(({
             color: loadState === 'error' ? 'var(--danger)' : 'var(--text-main)',
           }}
         >
-          <div style={{ fontSize: 'clamp(18px, 2.2vw, 28px)', lineHeight: 1.35, fontWeight: 750, letterSpacing: '0.3px', textWrap: 'balance' }}>
+          <div style={{ fontSize: 'clamp(18px, 2.2vw, 28px)', lineHeight: 1.35, fontWeight: 'var(--font-weight-bold)', letterSpacing: '0.3px', textWrap: 'balance' }}>
             {loadState === 'error' ? (errorLabel || '图片加载失败') : (loadingLabel || '正在加载图像…')}
           </div>
-          <div style={{ fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 600, color: loadState === 'error' ? 'var(--danger-text)' : 'var(--text-sub)' }}>
+          <div style={{ fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 'var(--font-weight-semibold)', color: loadState === 'error' ? 'var(--danger-text)' : 'var(--text-sub)' }}>
             {loadState === 'error' ? '稍后可再次翻页重试' : (loadingHint || '图像就绪后会立即显示')}
           </div>
         </div>
@@ -718,7 +710,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
     >
       <div ref={contentRef} style={{ padding: '18px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '12px', borderBottom: '1px solid var(--reader-control-border)', paddingBottom: '8px' }}>
-        <span style={{ fontSize: '13px', color: 'var(--accent)', fontWeight: 600 }}>{title}</span>
+        <span style={{ fontSize: 'var(--font-size-body)', color: 'var(--accent)', fontWeight: 'var(--font-weight-semibold)' }}>{title}</span>
         <div className="reader-panel-tabs" role="group" aria-label="档案列表类型">
           {[
             ['history', '阅读历史'],
@@ -738,7 +730,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
         </div>
       </div>
       {items.length === 0 ? (
-        <div style={{ fontSize: '12px', color: 'var(--text-sub)', padding: '8px 0', display: 'grid', gap: '10px' }}>
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-sub)', padding: '8px 0', display: 'grid', gap: '10px' }}>
           <span>{emptyMessage}</span>
           {onRetry && <button type="button" className="reader-panel-view-more" onClick={onRetry}>重试</button>}
         </div>
@@ -787,23 +779,23 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
               >
                 <ReaderArchiveThumb archiveId={id} cacheOnly={cacheOnly} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {item.title}
                   </div>
                   {displayTags.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '4px' }}>
                       {displayTags.map((tag, index) => (
-                        <span key={index} style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'color-mix(in srgb, var(--surface-3) 84%, var(--text-sub))', border: '1px solid color-mix(in srgb, var(--glass-border-hover) 58%, transparent)', whiteSpace: 'nowrap' }}>{tag}</span>
+                        <span key={index} style={{ fontSize: 'var(--font-size-2xs)', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'color-mix(in srgb, var(--surface-3) 84%, var(--text-sub))', border: '1px solid color-mix(in srgb, var(--glass-border-hover) 58%, transparent)', whiteSpace: 'nowrap' }}>{tag}</span>
                       ))}
                     </div>
                   )}
                 </div>
                 <div style={{ flexShrink: 0, textAlign: 'right', minWidth: '52px' }}>
-                  <div style={{ fontSize: '10px', color: 'var(--text-sub)' }}>
+                  <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--text-sub)' }}>
                     {meta.timestamp ? new Date(meta.timestamp).toLocaleDateString() : ''}
                   </div>
                   {meta.progress && (
-                    <div style={{ fontSize: '10px', color: 'var(--accent)', marginTop: '2px' }}>{meta.progress}</div>
+                    <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--accent)', marginTop: '2px' }}>{meta.progress}</div>
                   )}
                 </div>
                 {onDelete && <button
@@ -814,7 +806,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
                   }}
                   style={{
                     background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                    fontSize: '16px', lineHeight: 1, padding: '2px 4px', borderRadius: '4px', flexShrink: 0,
+                    fontSize: 'var(--font-size-lg)', lineHeight: 1, padding: '2px 4px', borderRadius: '4px', flexShrink: 0,
                   }}
                   title={type === 'watchlist' ? '移出待看' : '删除历史'}
                   aria-label={type === 'watchlist' ? `将${item.title || '档案'}移出待看` : `删除${item.title || '档案'}的历史记录`}
@@ -953,7 +945,7 @@ function getTopBarButtonStyle(isMobile, disabled = false) {
     borderRadius: '8px',
     cursor: disabled ? 'not-allowed' : 'pointer',
     fontSize: isMobile ? '16px' : '13px',
-    fontWeight: '500',
+    fontWeight: 'var(--font-weight-medium)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -985,10 +977,14 @@ function getPageNavButtonStyle(isMobile) {
 function useReaderToolbarMode(isMobile, layoutKey = null) {
   const toolbarRef = useRef(null);
   const [mode, setMode] = useState(isMobile ? 'mobile' : 'full');
+  const modeRef = useRef(mode);
+  const fullRequiredWidthRef = useRef(0);
+  modeRef.current = mode;
 
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
     if (!toolbar) return undefined;
+    fullRequiredWidthRef.current = 0;
     const update = () => {
       const availableWidth = toolbar.clientWidth;
       const left = toolbar.querySelector('.reader-toolbar-group-left');
@@ -1031,10 +1027,17 @@ function useReaderToolbarMode(isMobile, layoutKey = null) {
       const fullRightWidth = fullGroupWidth(right, 8);
       const iconLeftWidth = (leftButtons * 40) + (Math.max(0, leftButtons - 1) * 6);
       const iconRightWidth = (rightButtons * 40) + (Math.max(0, rightButtons - 1) * 6);
+      const measuredFullWidth = (Math.max(fullLeftWidth, fullRightWidth) * 2)
+        + titleWidth + horizontalPadding + groupGaps;
       const measured = {
-        full: (Math.max(fullLeftWidth, fullRightWidth) * 2) + titleWidth + horizontalPadding + groupGaps,
+        full: rememberReaderToolbarFullWidth({
+          previousWidth: fullRequiredWidthRef.current,
+          measuredWidth: measuredFullWidth,
+          mode: modeRef.current,
+        }),
         icons: (Math.max(iconLeftWidth, iconRightWidth) * 2) + titleWidth + horizontalPadding + groupGaps,
       };
+      fullRequiredWidthRef.current = measured.full;
       setMode(resolveReaderToolbarMode({
         isMobile,
         availableWidth,
@@ -1149,7 +1152,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState('general');
   const [settingsPanelHeight, setSettingsPanelHeight] = useState(null);
-  const [srSupport] = useState(() => detectSuperResolutionSupport());
+  const [srSupport, setSrSupport] = useState(() => {
+    const initial = detectSuperResolutionSupport();
+    return { ...initial, checking: initial.supported };
+  });
   const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
   const [srRuntimeContext, setSrRuntimeContext] = useState(null);
   const [srRuntimeError, setSrRuntimeError] = useState('');
@@ -1177,6 +1183,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [hideRead] = useState(getHideRead);
   const [randomHideRead] = useState(getRandomHideRead);
   const [isMobile, setIsMobile] = useState(() => isReaderMobileViewport(window.innerWidth));
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
   const { toolbarRef, mode: toolbarMode } = useReaderToolbarMode(isMobile, viewMode);
   const toolbarCompact = toolbarMode !== 'full';
   const isIosWebKit = useMemo(() => isIosWebKitPlatform(
@@ -1254,7 +1262,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   useEffect(() => {
     setSrRuntimeContext(null);
     setSrRuntimeError('');
-    if (!settings.srEnabled || !srManifest) return undefined;
+    if (!settings.srEnabled || !srManifest || !srSupport.supported || srSupport.checking) return undefined;
 
     let active = true;
     let runtime;
@@ -1273,6 +1281,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setSrRuntimeContext({ runtime, manifest: srManifest, backend });
     }).catch((error) => {
       if (!active) return;
+      srArchiveManualRef.current = null;
+      setSrArchiveEnabled(false);
+      setSettingsState((current) => {
+        if (!current.srEnabled) return current;
+        const next = { ...current, srEnabled: false };
+        localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(next));
+        return next;
+      });
       const message = error?.message || '模型初始化失败';
       setSrRuntimeError(message);
       if (srInitToastRequestedRef.current) showToast(`超分初始化失败：${message}`, 'error');
@@ -1280,9 +1296,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     });
     return () => {
       active = false;
+      cancelVisibleSuperResolutionJobs();
       runtime.dispose();
     };
-  }, [settings.srEnabled, showToast, srManifest]);
+  }, [settings.srEnabled, showToast, srManifest, srSupport.checking, srSupport.supported]);
   const handleSuperResolutionError = useCallback((error) => {
     const failure = resolveSuperResolutionFailure(error);
     if (!failure.notify) return;
@@ -1308,8 +1325,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const activeSuperResolution = srArchiveEnabled && !currentPageTooLargeForSuperResolution
     ? srRuntimeContext
     : null;
-  function getSuperResolutionForPage(pageIndex) {
-    if (!srArchiveEnabled || !srRuntimeContext) return null;
+  function getSuperResolutionForPage(pageIndex, foreground = true) {
+    if (!foreground || !srArchiveEnabled || !srRuntimeContext) return null;
     const size = pageSizes[pageIndex];
     if (size?.width && size?.height && srManifest?.scale
       && size.width * size.height * srManifest.scale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS) {
@@ -1341,6 +1358,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }), [effectiveReadingLayout, pages.length, settings.direction, splitWidePages]);
   const currentSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: currentIndex, splitPart });
   const currentSpread = readerSpreads[Math.max(0, currentSpreadIndex)] || [];
+  const foregroundSuperResolutionPageIndices = getForegroundSuperResolutionPageIndices({
+    webtoonActive,
+    currentIndex,
+    currentSpread,
+  });
   const currentSpreadPageIndices = new Set(currentSpread.map((unit) => unit.pageIndex));
   const adjacentDecodePageIndices = [...new Set(
     getReaderDecodeWindow(readerSpreads, currentSpreadIndex)
@@ -1457,6 +1479,21 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    verifySuperResolutionSupport().then((support) => {
+      if (!active) return;
+      setSrSupport({ ...support, checking: false });
+      if (!support.supported) {
+        cancelVisibleSuperResolutionJobs();
+        updateSettings((current) => current.srEnabled
+          ? { ...current, srEnabled: false }
+          : current);
+      }
+    });
+    return () => { active = false; };
+  }, [updateSettings]);
 
   useEffect(() => {
     readerImageDecodeQueue.setMaxConcurrent(settings.maxConcurrentDecodes);
@@ -1777,7 +1814,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const webtoonContainerRef = useRef(null);
   const webtoonScrollRafRef = useRef(null);
   const lastTapRef = useRef(0);
-  const lastTapPosRef = useRef({ x: 0, y: 0 });
   const singleTapTimerRef = useRef(null);
   const pinchStartRef = useRef({ dist: 0, scale: 1.0, cx: 0, cy: 0 });
   const overshootTimerRef = useRef(null);
@@ -1785,6 +1821,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const lastTouchTimeRef = useRef(0);
   const immersiveControlsTimerRef = useRef(null);
   const immersiveTouchGuardUntilRef = useRef(0);
+  const immersiveIndicatorAnchorRef = useRef(null);
+  const pageIndicatorShouldShowRef = useRef(false);
 
   // ===== Pan refs =====
   const panRef = useRef({ x: panX, y: panY, startX: 0, startY: 0, originX: panX, originY: panY });
@@ -1793,6 +1831,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const hideImmersiveControls = useCallback(() => {
     if (immersiveControlsTimerRef.current) clearTimeout(immersiveControlsTimerRef.current);
     immersiveControlsTimerRef.current = null;
+    immersiveIndicatorAnchorRef.current = null;
     setImmersiveControlsSide(null);
   }, []);
 
@@ -1800,6 +1839,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const nextSide = side === 'left' ? 'left' : 'right';
     if (immersiveControlsTimerRef.current) clearTimeout(immersiveControlsTimerRef.current);
     immersiveControlsTimerRef.current = null;
+    if (!immersiveIndicatorAnchorRef.current) {
+      immersiveIndicatorAnchorRef.current = pageIndicatorShouldShowRef.current
+        ? (isMobileRef.current ? 'center' : 'right')
+        : 'none';
+    }
     setImmersiveControlsSide(nextSide);
   }, []);
 
@@ -1843,6 +1887,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     setZoomScale(zoomScaleRef.current);
   }, [scheduleZoomTransform]);
 
+  const exitImmersiveMode = useCallback(() => {
+    if (wheelZoomCommitTimerRef.current) clearTimeout(wheelZoomCommitTimerRef.current);
+    wheelZoomCommitTimerRef.current = null;
+    zoomScaleRef.current = 1.0;
+    panRef.current = { x: 0, y: 0, startX: 0, startY: 0, originX: 0, originY: 0 };
+    scheduleZoomTransform();
+    setPanX(0);
+    setPanY(0);
+    setZoomScale(1.0);
+    hideImmersiveControls();
+    setViewMode('normal');
+  }, [hideImmersiveControls, scheduleZoomTransform]);
+
   const applyZoomAtPoint = useCallback((nextScale, focalX = window.innerWidth / 2, focalY = window.innerHeight / 2, commit = true) => {
     const prevScale = zoomScaleRef.current || 1;
     let scale = Math.max(1, Math.min(5, nextScale));
@@ -1856,17 +1913,21 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return scale;
     }
 
-    const ratio = scale / Math.max(prevScale, 0.001);
     const originX = window.innerWidth / 2;
     const originY = window.innerHeight / 2;
-    const focalOffsetX = focalX - originX;
-    const focalOffsetY = focalY - originY;
-    const maxTx = Math.max(0, (scale - 1) * window.innerWidth / 2);
-    const maxTy = Math.max(0, (scale - 1) * window.innerHeight / 2);
-    const nextX = Math.max(-maxTx, Math.min(maxTx, ratio * panRef.current.x + (1 - ratio) * focalOffsetX));
-    const nextY = Math.max(-maxTy, Math.min(maxTy, ratio * panRef.current.y + (1 - ratio) * focalOffsetY));
-
-    panRef.current = { ...panRef.current, x: nextX, y: nextY };
+    panRef.current = {
+      ...panRef.current,
+      ...resolveImmersiveZoomPan({
+        previousScale: prevScale,
+        nextScale: scale,
+        panX: panRef.current.x,
+        panY: panRef.current.y,
+        focalX,
+        focalY,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      }),
+    };
     zoomScaleRef.current = scale;
     if (commit) commitZoomTransform(true);
     else scheduleZoomTransform();
@@ -2122,7 +2183,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   });
                   const resolved = await getReaderPreviewSource(superResolutionSource.src, {
                     enabled: settings.optimizedImageDecodeEnabled,
-                    fullPrecision: fullPrecisionDecode,
+                    fullPrecision: true,
                     sourceSize: superResolutionSource,
                     signal,
                   });
@@ -2267,7 +2328,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return committed;
     };
 
-    loadSpread([imgCurrRef, imgCurrSecondRef], activeSpread, IMAGE_LOAD_PRIORITY.CRITICAL, true, getSuperResolutionForPage).then((ok) => {
+    loadSpread(
+      [imgCurrRef, imgCurrSecondRef],
+      activeSpread,
+      IMAGE_LOAD_PRIORITY.CRITICAL,
+      true,
+      (pageIndex) => getSuperResolutionForPage(pageIndex, foregroundSuperResolutionPageIndices.has(pageIndex)),
+    ).then((ok) => {
       if (!alive || loadSeq !== immersiveLoadSeqRef.current) return;
       if (currentIndexRef.current !== idx || currentSpreadIndexRef.current !== activeSpreadIndex) return;
       if (ok) {
@@ -2311,8 +2378,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
   // ===== Immersive corner controls =====
   useEffect(() => {
+    if (viewMode !== 'immersive') immersiveIndicatorAnchorRef.current = null;
     return () => {
       if (immersiveControlsTimerRef.current) clearTimeout(immersiveControlsTimerRef.current);
+      if (viewMode === 'immersive') immersiveIndicatorAnchorRef.current = null;
     };
   }, [viewMode]);
 
@@ -2669,23 +2738,20 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const clientY = isTouchEvent ? touches[0].clientY : e.clientY;
 
     // Double-tap detection (works in both 100% and zoomed states)
-    const dxTap = Math.abs(clientX - lastTapPosRef.current.x);
-    const dyTap = Math.abs(clientY - lastTapPosRef.current.y);
-    if (now - lastTapRef.current < 350 && dxTap < 30 && dyTap < 30) {
+    if (resolveImmersiveTapAction({ timestamp: now, lastTimestamp: lastTapRef.current }) === 'double-tap') {
       if (singleTapTimerRef.current) { clearTimeout(singleTapTimerRef.current); singleTapTimerRef.current = null; }
       lastTapRef.current = 0;
       skipNextClickRef.current = true;
-      const isZoomed = zoomScaleRef.current !== 1.0;
-      const w = window.innerWidth;
-      if (isZoomed) {
-        applyZoomAtPoint(1.0, clientX, clientY);
-      } else if (clientX >= w * 0.42 && clientX <= w * 0.58) {
-        applyZoomAtPoint(1.75, clientX, clientY);
-      }
+      isPanningRef.current = false;
+      isSwipingRef.current = false;
+      applyZoomAtPoint(
+        resolveImmersiveDoubleTapScale(zoomScaleRef.current),
+        clientX,
+        clientY,
+      );
       return;
     }
     lastTapRef.current = now;
-    lastTapPosRef.current = { x: clientX, y: clientY };
 
     if (zoomScaleRef.current !== 1.0) {
       isPanningRef.current = true;
@@ -2722,9 +2788,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         let scale = pinchStartRef.current.scale * (dist / pinchStartRef.current.dist);
         if (scale > 3.15) scale = 3.15;
         if (scale < 0.95) scale = 0.95;
-        const cx = (touches[0].clientX + touches[1].clientX) / 2;
-        const cy = (touches[0].clientY + touches[1].clientY) / 2;
-        applyZoomAtPoint(scale, cx, cy, false);
+        applyZoomAtPoint(scale, pinchStartRef.current.cx, pinchStartRef.current.cy, false);
       }
       return;
     }
@@ -2876,7 +2940,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         animOut((deltaX > 0 ? 1 : -1) * window.innerWidth);
         scheduleReaderCleanupTimer(() => {
           flushSync(() => {
-            setViewMode('normal');
+            exitImmersiveMode();
           });
           resetAll();
         }, 150);
@@ -2921,14 +2985,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return;
     }
 
-    const x = e.clientX;
-    const w = window.innerWidth;
-
-    if (x < w * 0.45) {
+    const zone = resolveImmersiveClickZone({ x: e.clientX, width: window.innerWidth });
+    singleTapTimerRef.current = setTimeout(() => {
+      singleTapTimerRef.current = null;
+      if (zone === 'previous') {
       settings.direction === 'ltr' ? handlePrevRef.current() : handleNextRef.current();
-    } else if (x > w * 0.55) {
+      } else if (zone === 'next') {
       settings.direction === 'ltr' ? handleNextRef.current() : handlePrevRef.current();
-    }
+      }
+    }, IMMERSIVE_DOUBLE_TAP_MS);
   }, [hideImmersiveControls, immersiveControlsSide, viewMode, settings.direction, webtoonActive]);
 
   // ===== Wheel zoom =====
@@ -3036,6 +3101,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (visibleImmediately) {
       setDisplayedIndex(bounded);
     }
+    if (bounded !== currentIndexRef.current) cancelVisibleSuperResolutionJobs();
     setSplitPart(targetSplitPart === 1 ? 1 : 0);
     setCurrentIndex(bounded);
     setPageLoadPhase((prev) => ({
@@ -3075,11 +3141,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const target = getAdjacentSpreadLocation(readerSpreads, { pageIndex: currentIndex, splitPart }, 1);
     if (!target || currentSpreadIndex >= readerSpreads.length - 1) {
       if (viewMode !== 'immersive') return;
-      setViewMode('normal');
+      exitImmersiveMode();
       return;
     }
     commitPageTarget(target.pageIndex, { targetSplitPart: target.splitPart, showIndicator: viewMode === 'immersive' });
-  }, [commitPageTarget, currentIndex, currentSpreadIndex, readerSpreads, splitPart, viewMode]);
+  }, [commitPageTarget, currentIndex, currentSpreadIndex, exitImmersiveMode, readerSpreads, splitPart, viewMode]);
 
   const handlePrev = useCallback(() => {
     const target = getAdjacentSpreadLocation(readerSpreads, { pageIndex: currentIndex, splitPart }, -1);
@@ -3162,6 +3228,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       if (!Number.isInteger(bestIndex) || bestIndex < 0 || bestIndex === currentIndexRef.current) return;
       currentIndexRef.current = bestIndex;
       setSplitPart(0);
+      cancelVisibleSuperResolutionJobs();
       setCurrentIndex(bestIndex);
       setDisplayedIndex(bestIndex);
       setPageLoadPhase((previous) => ({
@@ -3267,7 +3334,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   // ===== Back handler: immersive → normal mode, not home =====
   const handleGoBack = useCallback(() => {
     if (viewMode === 'immersive') {
-      setViewMode('normal');
+      exitImmersiveMode();
     } else {
       if (archive && pages.length > 0) {
         const highestPage = clampProgressPage(Math.max(
@@ -3282,7 +3349,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
       onBack();
     }
-  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, onBack, pages.length, persistReadingProgress, serverTracksProgress, viewMode]);
+  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, exitImmersiveMode, onBack, pages.length, persistReadingProgress, serverTracksProgress, viewMode]);
 
   // ===== Preload indices =====
   const getPreloadIndices = () => {
@@ -3552,27 +3619,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     });
   }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.optimizedImageDecodeEnabled, settings.preloadCount]);
 
-  useEffect(() => {
-    if (!activeSuperResolution || pages.length === 0 || coldRestoreRef.current) return undefined;
-    if (pageLoadPhase.status !== 'ready' || pageLoadPhase.targetIndex !== currentIndex) return undefined;
-    const indices = getPreloadIndices();
-    let cancelled = false;
-    let ticket = null;
-    const run = async () => {
-      for (const idx of indices.slice(0, settings.preloadCount)) {
-        if (cancelled) break;
-        ticket = scheduleSuperResolutionPreload(pages[idx], activeSuperResolution);
-        try { await ticket.promise; } catch {}
-        ticket = null;
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-      ticket?.cancel();
-    };
-  }, [activeSuperResolution, archiveId, currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.preloadCount]);
-
   // ===== Outside-click to close panels =====
   useEffect(() => {
     if (!showSettingsPanel && !showArchivePanel) return;
@@ -3644,7 +3690,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }, [settings.autoTurnActive, showToast, updateSettings]);
 
   const handleToggleSrEnabled = useCallback((enabled) => {
-    if (enabled && !srSupport.supported) {
+    if (enabled && (srSupport.checking || !srSupport.supported)) {
       showToast(srSupport.reason || '当前环境不支持超分。', 'error');
       return;
     }
@@ -3662,21 +3708,39 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       showToast('当前模型尚未配置可验证的模型文件。', 'error');
       return;
     }
-    if (next && !srRuntimeContext) {
-      showToast(srRuntimeError ? `超分不可用：${srRuntimeError}` : '超分模型仍在初始化。', 'error');
+    if (next && !srRuntimeContext && srRuntimeError) {
+      showToast(`超分不可用：${srRuntimeError}`, 'error');
       return;
     }
     srArchiveManualRef.current = {
       archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
       enabled: next,
     };
+    if (!next) cancelVisibleSuperResolutionJobs();
     srErrorToastKeyRef.current = '';
     setSrArchiveEnabled(next);
+    if (next && !srRuntimeContext) {
+      showToast('超分模型仍在初始化，初始化完成后将自动启用。', 'info');
+      return;
+    }
     showToast(next ? '已为当前档案启用超分' : '已关闭当前档案超分', 'info');
   }, [archive, archiveId, showToast, srArchiveEnabled, srManifest, srRuntimeContext, srRuntimeError]);
 
   // 自动超分：当每页平均体积低于阈值时，自动启用当前档案的超分
   useEffect(() => {
+    if (!settings.srEnabled) {
+      srArchiveManualRef.current = null;
+      setSrArchiveEnabled(false);
+      return;
+    }
+    const currentArchiveId = String(archive?.arcid ?? archive?.id ?? archiveId);
+    if (srArchiveManualRef.current && srArchiveManualRef.current.archiveId !== currentArchiveId) {
+      srArchiveManualRef.current = null;
+    }
+    if (!srRuntimeContext) {
+      setSrArchiveEnabled(!!srArchiveManualRef.current?.enabled);
+      return;
+    }
     const next = resolveArchiveSuperResolutionState({
       archive,
       enabled: settings.srEnabled,
@@ -3688,6 +3752,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (!next.manual) srArchiveManualRef.current = null;
     setSrArchiveEnabled(next.enabled);
   }, [archive, settings.srAuto, settings.srEnabled, settings.srAutoThreshold, srRuntimeContext]);
+
+  useEffect(() => {
+    if (!srArchiveEnabled) cancelVisibleSuperResolutionJobs();
+  }, [srArchiveEnabled]);
 
   const btnBase = getTopBarButtonStyle(toolbarCompact);
 
@@ -3705,6 +3773,29 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const displayedSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: displayedIndex, splitPart });
   const displayedSpread = readerSpreads[Math.max(0, displayedSpreadIndex)] || [];
   const normalSpreadRenderState = getPendingSpreadRenderState(currentSpread, displayedSpread, targetPending);
+  const decodeWindowUnits = (() => {
+    const entries = new Map();
+    const addUnit = (unit, visible, priority) => {
+      const key = `${unit.pageIndex}:${unit.splitPart}`;
+      const existing = entries.get(key);
+      if (existing) {
+        existing.visible ||= visible;
+        existing.priority = Math.max(existing.priority, priority);
+      } else {
+        entries.set(key, { unit, visible, priority });
+      }
+    };
+    normalSpreadRenderState.units.forEach((unit, slotIndex) => addUnit(
+      unit,
+      slotIndex < normalSpreadRenderState.visibleSlotCount,
+      IMAGE_LOAD_PRIORITY.CRITICAL,
+    ));
+    getReaderDecodeWindow(readerSpreads, currentSpreadIndex).forEach((spread) => {
+      if (spread === currentSpread) return;
+      spread.forEach((unit) => addUnit(unit, false, IMAGE_LOAD_PRIORITY.ADJACENT));
+    });
+    return [...entries.values()];
+  })();
   const normalPagePending = targetPending && !webtoonActive;
   const pageSwitchLabel = normalPagePending ? `正在切换到第 ${normalTargetIndex + 1} 页…` : '';
   const immersivePagePending = viewMode === 'immersive' && normalPagePending;
@@ -3763,6 +3854,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     pageIndicatorVisibilityMode === 'pinned' ||
     (pageIndicatorVisibilityMode === 'auto' && pageNumVisible)
   );
+  pageIndicatorShouldShowRef.current = pageIndicatorShouldShow;
+  const immersiveIndicatorPosition = immersiveControlsSide
+    ? (immersiveIndicatorAnchorRef.current || (pageIndicatorShouldShow ? (isMobile ? 'center' : 'right') : 'none'))
+    : (pageIndicatorShouldShow ? (isMobile ? 'center' : 'right') : 'none');
   // Keep swipe-related refs in sync (closure-free access for handlePointerMove/Up)
   currentIndexRef.current = currentIndex;
   splitPartCurrentRef.current = splitPart;
@@ -3837,8 +3932,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 left: '50%',
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
-                fontSize: '15px',
-                fontWeight: 'bold',
+                fontSize: 'var(--font-size-lg)',
+                fontWeight: 'var(--font-weight-bold)',
                 textAlign: 'center',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -3983,7 +4078,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       value={preloadInput}
                       onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setPreloadInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 10) { updateSettings((s) => ({ ...s, preloadCount: n })); } }}
                       onBlur={() => { const n = parseInt(preloadInput, 10); if (isNaN(n) || n < 1) { setPreloadInput('1'); updateSettings((s) => ({ ...s, preloadCount: 1 })); } else if (n > 10) { setPreloadInput('10'); updateSettings((s) => ({ ...s, preloadCount: 10 })); } }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
                   </div>
                   <div className="settings-row">
@@ -3992,7 +4087,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       value={decodeConcurrencyInput}
                       onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setDecodeConcurrencyInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 6) { updateSettings((s) => ({ ...s, maxConcurrentDecodes: n })); } }}
                       onBlur={() => { const n = parseInt(decodeConcurrencyInput, 10); const next = Math.max(1, Math.min(6, isNaN(n) ? 3 : n)); setDecodeConcurrencyInput(String(next)); updateSettings((s) => ({ ...s, maxConcurrentDecodes: next })); }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
                   </div>
                   <div className="settings-row">
@@ -4001,7 +4096,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       value={autoTurnInput}
                       onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setAutoTurnInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 60) { updateSettings((s) => ({ ...s, autoTurnInterval: n })); } }}
                       onBlur={() => { const n = parseInt(autoTurnInput, 10); if (isNaN(n) || n < 1) { setAutoTurnInput('1'); updateSettings((s) => ({ ...s, autoTurnInterval: 1 })); } else if (n > 60) { setAutoTurnInput('60'); updateSettings((s) => ({ ...s, autoTurnInterval: 60 })); } }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
                   </div>
                 </div>
@@ -4043,14 +4138,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             <div id="reader-settings-panel-other" role="tabpanel" aria-labelledby="reader-settings-tab-other" aria-hidden={settingsCategory !== 'other'} inert={settingsCategory === 'other' ? undefined : ''} className={`settings-section${settingsCategory === 'other' ? ' is-active' : ''}`}>
               <div className="settings-section-inner">
                 <div className="settings-group">
-                  <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '4px' }}>超分</div>
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--accent)', fontWeight: 'var(--font-weight-semibold)', marginBottom: '4px' }}>超分</div>
                   <div className="settings-row">
                     <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。\n预超分页数与“预加载”数量一致；实际同时处理数量受“最大同时解码”限制。\n图片过大、不适合超分时，沉浸模式中的超分按钮会自动隐藏。'}>启用超分</SettingHint>
-                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={(!srSupport.supported || !srManifest) && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={(srSupport.checking || !srSupport.supported || !srManifest) && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
                   </div>
-                  {!srSupport.supported && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
-                  {srSupport.supported && !srManifest && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>当前模型尚未配置可验证的模型文件。</div>}
-                  {srRuntimeError && <div style={{ fontSize: '11px', color: 'var(--danger-text)', marginTop: '2px' }}>{srRuntimeError}</div>}
+                  {srSupport.checking && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>正在检测 WebGPU 显卡适配器…</div>}
+                  {!srSupport.supported && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
+                  {srSupport.supported && !srManifest && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>当前模型尚未配置可验证的模型文件。</div>}
+                  {srRuntimeError && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>{srRuntimeError}</div>}
                   <div className="settings-row">
                     <span className="settings-row-title">超分模型</span>
                     <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} disabled={!settings.srEnabled} compact /></div>
@@ -4066,7 +4162,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       disabled={!settings.srEnabled}
                       onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setSrThresholdInput(raw); const n = parseInt(raw, 10); if (!isNaN(n)) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
                       onBlur={() => { const n = parseInt(srThresholdInput, 10); const next = isNaN(n) ? DEFAULT_READER_SETTINGS.srAutoThreshold : n; setSrThresholdInput(String(next)); updateSettings((s) => ({ ...s, srAutoThreshold: next })); }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
                   </div>
                 </div>
@@ -4137,7 +4233,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                           serializedDecode
                           previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                           sourceSize={pageSizes[index]}
-                          superResolution={getSuperResolutionForPage(index)}
+                          superResolution={getSuperResolutionForPage(
+                            index,
+                            foregroundSuperResolutionPageIndices.has(index),
+                          )}
                           onSuperResolutionError={handleSuperResolutionError}
                           onNaturalSize={handlePageNaturalSize}
                           onLoadStart={distance === 0 ? handlePageVisualLoadStart : undefined}
@@ -4150,17 +4249,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   })}
                 </div>
               ) : (
-                <div style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: settings.scaleMode === 'original' ? 'flex-start' : 'center', gap: settings.doublePageGap, overflow: settings.scaleMode === 'original' ? 'auto' : 'hidden' }}>
-                  {normalSpreadRenderState.units.map((unit, slotIndex) => {
-                    const slotVisible = slotIndex < normalSpreadRenderState.visibleSlotCount;
-                    return (
-                    <div key={`spread-slot:${slotIndex}`} style={{ flex: slotVisible ? '1 1 0' : '0 0 0', width: slotVisible ? 'auto' : 0, minWidth: 0, height: '100%', display: 'flex', visibility: slotVisible ? 'visible' : 'hidden', pointerEvents: slotVisible ? 'auto' : 'none', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: settings.scaleMode === 'original' ? 'flex-start' : 'center', gap: settings.doublePageGap, overflow: settings.scaleMode === 'original' ? 'auto' : 'hidden' }}>
+                  {decodeWindowUnits.map(({ unit, visible, priority }) => (
+                    <div key={`reader-page:${unit.pageIndex}:${unit.splitPart}`} aria-hidden={visible ? undefined : 'true'} style={visible ? { flex: '1 1 0', width: 'auto', minWidth: 0, height: '100%', display: 'flex', visibility: 'visible', pointerEvents: 'auto', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' } : { position: 'absolute', left: 0, top: 0, width: '1px', height: '1px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
                       <PageImage
                         pageUrl={pages[unit.pageIndex]}
                         pageIndex={unit.pageIndex}
                         isImmersive={false}
                         cacheOnly={assetCacheOnly}
-                        priority={IMAGE_LOAD_PRIORITY.CRITICAL}
+                        priority={priority}
                         style={{ ...scaleStyle, width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%', borderRadius: '8px' }}
                         cropSide={unit.cropSide}
                         rotateWide={settings.rotateWidePagesEnabled}
@@ -4169,19 +4266,21 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                         previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                         fullPrecision={fullPrecisionDecode}
                         sourceSize={pageSizes[unit.pageIndex]}
-                        superResolution={getSuperResolutionForPage(unit.pageIndex)}
+                        superResolution={getSuperResolutionForPage(
+                          unit.pageIndex,
+                          foregroundSuperResolutionPageIndices.has(unit.pageIndex),
+                        )}
                         onSuperResolutionError={handleSuperResolutionError}
                         onNaturalSize={handlePageNaturalSize}
-                        loadingLabel={`正在加载第 ${unit.pageIndex + 1} 页`}
-                        loadingHint="正在请求图像"
-                        errorLabel={`第 ${unit.pageIndex + 1} 页加载失败`}
-                        onLoadStart={unit.pageIndex === currentIndex ? handlePageVisualLoadStart : undefined}
-                        onReady={handleNormalSpreadUnitReady}
-                        onError={unit.pageIndex === currentIndex ? handlePageVisualError : undefined}
+                        loadingLabel={visible ? `正在加载第 ${unit.pageIndex + 1} 页` : undefined}
+                        loadingHint={visible ? '正在请求图像' : undefined}
+                        errorLabel={visible ? `第 ${unit.pageIndex + 1} 页加载失败` : undefined}
+                        onLoadStart={visible && unit.pageIndex === currentIndex ? handlePageVisualLoadStart : undefined}
+                        onReady={visible ? handleNormalSpreadUnitReady : undefined}
+                        onError={visible && unit.pageIndex === currentIndex ? handlePageVisualError : undefined}
                       />
                     </div>
-                    );
-                  })}
+                  ))}
                 </div>
               )) : (
                 <ReaderStageSlot
@@ -4205,36 +4304,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     background: 'var(--immersive-bg)',
                     color: 'var(--immersive-text)',
                     fontSize: 'clamp(18px, 3vw, 30px)',
-                    fontWeight: 750,
+                    fontWeight: 'var(--font-weight-bold)',
                     pointerEvents: 'none',
                   }}
                 >
                   {pageSwitchLabel}
-                </div>
-              )}
-              {!webtoonActive && adjacentDecodePageIndices.length > 0 && (
-                <div
-                  aria-hidden="true"
-                  style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
-                >
-                  {adjacentDecodePageIndices.map((pageIndex) => (
-                    <PageImage
-                      key={`decode-window:${pageIndex}`}
-                      pageUrl={pages[pageIndex]}
-                      pageIndex={pageIndex}
-                      isImmersive={false}
-                      cacheOnly={assetCacheOnly}
-                      priority={IMAGE_LOAD_PRIORITY.ADJACENT}
-                      serializedDecode
-                      previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
-                      fullPrecision={fullPrecisionDecode}
-                      sourceSize={pageSizes[pageIndex]}
-                      superResolution={getSuperResolutionForPage(pageIndex)}
-                      onSuperResolutionError={handleSuperResolutionError}
-                      onNaturalSize={handlePageNaturalSize}
-                      style={{ width: '1px', height: '1px' }}
-                    />
-                  ))}
                 </div>
               )}
             </div>
@@ -4248,7 +4322,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               >
                 ‹
               </button>
-              <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-sub)', userSelect: 'none', minWidth: '60px', textAlign: 'center' }}>
+              <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-sub)', userSelect: 'none', minWidth: '60px', textAlign: 'center' }}>
                   {canShowPageCount ? normalPageLabel : '— / —'}
               </span>
               <button
@@ -4312,7 +4386,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 className="reader-immersive-controls"
                 data-side={side}
                 data-visible={immersiveControlsSide === side ? 'true' : 'false'}
-                data-indicator-position={pageIndicatorShouldShow ? (isMobile ? 'center' : 'right') : 'none'}
+                data-indicator-position={immersiveIndicatorPosition}
                 inert={immersiveControlsSide === side ? undefined : ''}
                 onPointerEnter={() => holdImmersiveControls(side)}
                 onPointerLeave={() => revealImmersiveControls(side)}
@@ -4323,7 +4397,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 onClickCapture={consumeImmersiveTouchClick}
                 onClick={(event) => event.stopPropagation()}
               >
-                <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { setViewMode('normal'); hideImmersiveControls(); }} title="退出沉浸模式" aria-label="退出沉浸模式">
+                <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={exitImmersiveMode} title="退出沉浸模式" aria-label="退出沉浸模式">
                   <ToolbarGlyph name="close" size={20} />
                 </button>
                 {!webtoonActive && (
@@ -4369,11 +4443,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       pageIndex={index}
                       isImmersive
                       cacheOnly={assetCacheOnly}
-                      priority={Math.abs(index - currentIndex) <= 1 ? IMAGE_LOAD_PRIORITY.ADJACENT : IMAGE_LOAD_PRIORITY.PRELOAD}
+                      priority={index === currentIndex ? IMAGE_LOAD_PRIORITY.CRITICAL : (Math.abs(index - currentIndex) === 1 ? IMAGE_LOAD_PRIORITY.ADJACENT : IMAGE_LOAD_PRIORITY.PRELOAD)}
                       serializedDecode
                       previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                       sourceSize={pageSizes[index]}
-                      superResolution={getSuperResolutionForPage(index)}
+                      superResolution={getSuperResolutionForPage(
+                        index,
+                        foregroundSuperResolutionPageIndices.has(index),
+                      )}
                       onSuperResolutionError={handleSuperResolutionError}
                       onNaturalSize={handlePageNaturalSize}
                       style={{ width: '100%', height: 'auto', maxWidth: '100%', objectFit: 'contain', borderRadius: 0 }}
@@ -4424,7 +4501,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   color: 'color-mix(in srgb, var(--immersive-text) 60%, transparent)', userSelect: 'none', pointerEvents: 'none',
                 }}>
                   <HomeSectionGlyph name="continue" size={48} color="color-mix(in srgb, var(--immersive-text) 60%, transparent)" style={{ opacity: 0.7 }} />
-                  <span style={{ fontSize: '16px', letterSpacing: '2px' }}>继续滑动退出沉浸模式</span>
+                  <span style={{ fontSize: 'var(--font-size-lg)', letterSpacing: '2px' }}>继续滑动退出沉浸模式</span>
                 </div>
               ) : (
                 <div style={getImmersiveSpreadGroupStyle(immersiveRightSpread)}>
@@ -4467,7 +4544,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     background: 'var(--immersive-bg)',
                   }}
                 >
-                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: 'var(--immersive-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
+                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 'var(--font-weight-bold)', color: 'var(--immersive-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
                     {pageSwitchLabel}
                   </div>
                 </div>
@@ -4477,10 +4554,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 style={{
                   ...getImmersiveSpreadGroupStyle(currentSpread),
                   display: 'flex', justifyContent: 'center', alignItems: 'center',
-                  transform: `translate3d(${panX}px, ${panY}px, 0) scale(${zoomScale})`,
+                  transform: `translate3d(${panRef.current.x}px, ${panRef.current.y}px, 0) scale(${zoomScaleRef.current})`,
                   transformOrigin: 'center center',
-                  transition: (isZoomingRef.current || isPanningRef.current) ? 'none' : 'transform 0.15s ease-out',
-                  willChange: zoomScale > 1 ? 'transform' : 'auto',
+                  transition: (isZoomingRef.current || isPanningRef.current) ? 'none' : 'transform 0.18s ease-out',
+                  willChange: zoomScaleRef.current > 1 ? 'transform' : 'auto',
                 }}
               >
                 <div style={getImmersiveSpreadSlotStyle(currentSpread, 0)}>
@@ -4516,7 +4593,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   borderRadius: '16px',
                   background: 'color-mix(in srgb, var(--immersive-bg) 65%, transparent)',
                   border: '1px solid color-mix(in srgb, var(--immersive-text) 12%, transparent)',
-                  fontSize: '11px',
+                  fontSize: 'var(--font-size-xs)',
                   letterSpacing: '1px',
                   pointerEvents: 'none',
                   zIndex: 90,
@@ -4602,7 +4679,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--reader-control-border)', paddingBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-              <h3 id="reader-thumbnail-drawer-title" style={{ margin: 0, fontSize: '18px' }}>档案信息</h3>
+              <h3 id="reader-thumbnail-drawer-title" style={{ margin: 0, fontSize: 'var(--font-size-xl)' }}>档案信息</h3>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               {hasArchiveReadingProgress(archive, historyEntries.find((item) => item.id === archiveId)?.page) && (
@@ -4613,7 +4690,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               <button className="reader-drawer-icon-button" onClick={() => navigateToMetadata(archiveId)} title="编辑元数据" aria-label="编辑元数据">
                 <ToolbarGlyph name="metadata" size={18} />
               </button>
-              <button className="reader-drawer-icon-button" onClick={closeThumbnailDrawer} aria-label="关闭缩略面板" title="关闭缩略面板" style={{ fontSize: '20px' }}>
+              <button className="reader-drawer-icon-button" onClick={closeThumbnailDrawer} aria-label="关闭缩略面板" title="关闭缩略面板" style={{ fontSize: 'var(--font-size-xl)' }}>
                 <ToolbarGlyph name="close" size={17} />
               </button>
             </div>
@@ -4621,18 +4698,18 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
           <div style={{ marginBottom: '20px', background: 'var(--surface-2)', borderRadius: '8px', display: 'flex', flexDirection: 'column', maxHeight: '35%', flexShrink: 0 }}>
             <div style={{ padding: '14px 14px 0 14px' }}>
-              <div lang={getContentLanguage(archive?.title)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '14px', lineHeight: 1.4, wordBreak: 'break-word' }}>
+              <div lang={getContentLanguage(archive?.title)} style={{ fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-main)', marginBottom: '14px', lineHeight: 1.4, wordBreak: 'break-word' }}>
                 {archive?.title}
               </div>
             </div>
             <div data-reader-overlay-scroll className="no-scrollbar" style={{ overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', padding: '0 14px 14px 14px', flex: 1 }}>
             {(() => {
               const grouped = groupedTags;
-              if (grouped.length === 0) return <div style={{ color: 'var(--text-sub)', fontSize: '12px' }}>无标签</div>;
+              if (grouped.length === 0) return <div style={{ color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)' }}>无标签</div>;
               return grouped.map((group) => (
                 <div key={group.ns} style={{ marginBottom: '8px' }}>
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: `color-mix(in srgb, ${group.color} 76%, var(--text-main))`, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap', background: `color-mix(in srgb, ${group.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${group.color} 36%, transparent)`, borderRadius: '5px', padding: '2px 6px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: `color-mix(in srgb, ${group.color} 76%, var(--text-main))`, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap', background: `color-mix(in srgb, ${group.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${group.color} 36%, transparent)`, borderRadius: '5px', padding: '2px 6px' }}>
                       <NamespaceGlyph ns={group.ns} size={14} color={group.color} />
                       {stripDecoratedLabel(group.label)}
                     </span>
@@ -4664,7 +4741,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                           background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
                           border: `1px solid color-mix(in srgb, ${group.color} 32%, transparent)`,
                           color: 'var(--text-main)',
-                          fontSize: '10px',
+                          fontSize: 'var(--font-size-2xs)',
                           whiteSpace: 'nowrap',
                           lineHeight: '1.5',
                           cursor: 'pointer',
@@ -4689,14 +4766,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             </div>
           </div>
 
-          <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: 'var(--text-sub)' }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: 'var(--font-size-md)', color: 'var(--text-sub)' }}>
             页面总览 · 共{pages.length}页{archiveSizeLabel ? ` · ${archiveSizeLabel}` : ''}
           </h4>
-          {thumbnailQueueState === 'loading' && <div role="status" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--text-sub)', fontSize: '12px' }}>正在准备页面缩略图…</div>}
+          {thumbnailQueueState === 'loading' && <div role="status" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)' }}>正在准备页面缩略图…</div>}
           {thumbnailQueueState !== 'idle' && thumbnailQueueState !== 'loading' && thumbnailQueueState !== 'ready' && (
-            <div role="alert" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--danger-text)', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div role="alert" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--danger-text)', fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
               <span>页面缩略图准备失败：{thumbnailQueueState}</span>
-              <button type="button" className="btn" onClick={() => setThumbnailQueueRetryToken((token) => token + 1)} style={{ padding: '4px 8px', fontSize: '11px' }}>重试</button>
+              <button type="button" className="btn" onClick={() => setThumbnailQueueRetryToken((token) => token + 1)} style={{ padding: '4px 8px', fontSize: 'var(--font-size-xs)' }}>重试</button>
             </div>
           )}
           <div style={{ flex: 1, minHeight: 0 }}>
@@ -4752,7 +4829,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <ArchivePageThumbnail archiveId={archiveId} pageIndex={idx} active={showDrawer} cacheOnly={assetCacheOnly} eager={drawerPrefetchSet.has(idx)} />
                       </div>
-                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--overlay-bg)', color: 'var(--reader-overlay-text)', fontSize: '11px', textAlign: 'center', padding: '2px 0' }}>
+                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--overlay-bg)', color: 'var(--reader-overlay-text)', fontSize: 'var(--font-size-xs)', textAlign: 'center', padding: '2px 0' }}>
                         P. {idx + 1}
                       </div>
                     </button>

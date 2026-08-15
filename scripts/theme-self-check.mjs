@@ -8,8 +8,8 @@ const theme = read('src/lib/theme.js');
 const html = read('index.html');
 
 const expectedTokens = [
-  ['dark canvas', /--canvas:\s*#121310/i],
-  ['dark surface', /--surface:\s*#1b1c18/i],
+  ['dark canvas', /--canvas:\s*#0b0c0a/i],
+  ['dark surface', /--surface:\s*#11120f/i],
   ['dark accent', /--accent:\s*#d16a57/i],
   ['dark positive', /--positive:\s*#8e9a69/i],
   ['light canvas', /data-theme="light"[\s\S]*--canvas:\s*#f2efe8/i],
@@ -40,9 +40,9 @@ for (const mode of ['dark', 'light']) {
   }
 }
 
-assert.match(theme, /const THEME_COLORS\s*=\s*\{[\s\S]*dark:\s*'#121310'[\s\S]*light:\s*'#f2efe8'/);
+assert.match(theme, /const THEME_COLORS\s*=\s*\{[\s\S]*dark:\s*'#0b0c0a'[\s\S]*light:\s*'#f2efe8'/);
 assert.match(theme, /querySelector\?\.\('\[data-theme-color\]'\)/);
 assert.match(theme, /themeColor\?\.setAttribute\('content',/);
-assert.match(html, /<meta[^>]+name="theme-color"[^>]+data-theme-color[^>]+content="#121310"/i);
+assert.match(html, /<meta[^>]+name="theme-color"[^>]+data-theme-color[^>]+content="#0b0c0a"/i);
 
 console.log('theme self-check: PASS');

@@ -11,11 +11,11 @@ export const DEFAULT_THEME_PALETTES = Object.freeze({
   dark: Object.freeze({
     accent: '#d16a57',
     secondary: '#b8a58f',
-    background: '#121310',
+    background: '#0b0c0a',
   }),
 });
 const THEME_COLORS = {
-  dark: '#121310',
+  dark: '#0b0c0a',
   light: '#f2efe8',
 };
 

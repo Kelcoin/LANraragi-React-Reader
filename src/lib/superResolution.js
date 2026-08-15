@@ -1,7 +1,26 @@
 import { createSuperResolutionRuntime as createRuntime } from './superResolutionRuntime.js';
 import { isAnimatedImageBlob } from './readerPreviewDecode.js';
+import {
+  hasWebGpuApi,
+  requestHighPerformanceWebGpuAdapter,
+  WEBGPU_ADAPTER_UNAVAILABLE_REASON,
+  WEBGPU_UNSUPPORTED_REASON,
+} from './webGpuSupport.js';
 
 const visiblePageJobs = new Map();
+
+export function cancelVisibleSuperResolutionJobs(cacheKey) {
+  if (typeof cacheKey === 'string' && cacheKey) {
+    const entry = visiblePageJobs.get(cacheKey);
+    if (entry) {
+      entry.controller.abort();
+      if (visiblePageJobs.get(cacheKey) === entry) visiblePageJobs.delete(cacheKey);
+    }
+    return;
+  }
+  for (const entry of visiblePageJobs.values()) entry.controller.abort();
+  visiblePageJobs.clear();
+}
 
 // 超分能力检测与模型选项（UI 框架；wasm 引擎后续接入）
 export const SUPER_RESOLUTION_MODELS = Object.freeze([
@@ -10,17 +29,17 @@ export const SUPER_RESOLUTION_MODELS = Object.freeze([
     label: 'Waifu2x',
     description: '动漫插画通用模型，兼顾去噪、线条和色块，画质与速度较均衡。',
     id: 'waifu2x-cunet-art-scale2x-20250502',
-    url: 'https://huggingface.co/deepghs/waifu2x_onnx/resolve/333b95cc88a6a9f39abb6426ab580f0d673f1185/20250502/onnx_models/cunet/art/scale2x.onnx',
+    url: '/models/waifu2x-cunet-art-scale2x/scale2x.onnx',
     scale: 2,
     inputLayout: 'nchw',
     outputLayout: 'nchw',
     inputName: 'x',
     outputName: 'y',
     colorSpace: 'rgb',
-    executionProviders: ['wasm'],
-    inputWidth: 224,
-    inputHeight: 224,
-    tileCore: 152,
+    executionProviders: ['webgpu'],
+    inputWidth: 384,
+    inputHeight: 384,
+    tileCore: 312,
     padding: 36,
     outputInset: 18,
     checksum: {
@@ -46,11 +65,11 @@ export const SUPER_RESOLUTION_MODELS = Object.freeze([
     inputName: 'input',
     outputName: 'Identity',
     colorSpace: 'rgb',
-    executionProviders: ['webgl', 'wasm'],
+    executionProviders: ['webgpu'],
     inputWidth: 64,
     inputHeight: 64,
-    tileCore: 28,
-    padding: 18,
+    tileCore: 64,
+    padding: 0,
     checksum: {
       algorithm: 'SHA-256',
       digest: '01bd550f8a4e875355ef248ab380676cc0283e78460459201136559051f7a15e',
@@ -131,7 +150,7 @@ function hasValidExecutionProviders(manifest) {
   return Array.isArray(providers)
     && providers.length > 0
     && new Set(providers).size === providers.length
-    && providers.every((provider) => ['webgl', 'wasm'].includes(provider));
+    && providers.every((provider) => provider === 'webgpu');
 }
 
 export function validateSuperResolutionManifest(manifest) {
@@ -153,21 +172,7 @@ export function validateSuperResolutionManifest(manifest) {
 
 export function getSuperResolutionCacheKey(sourceUrl, manifest) {
   if (!hasText(sourceUrl) || !validateSuperResolutionManifest(manifest)) return null;
-  return `sr:v1:${manifest.id.trim()}:${manifest.scale}:${manifest.checksum.digest.toLowerCase()}:${sourceUrl.trim()}`;
-}
-
-function detectGpuSupport() {
-  // WebGL 是 Real-CUGAN 等浏览器端引擎可用的最低公共能力标记。
-  try {
-    const canvas = globalThis.document?.createElement?.('canvas');
-    if (!canvas) return false;
-    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-    if (!gl) return false;
-    if (typeof gl.getParameter === 'function') gl.getParameter(gl.VERSION);
-    return true;
-  } catch {
-    return false;
-  }
+  return `sr:v4:${manifest.id.trim()}:${manifest.scale}:${manifest.checksum.digest.toLowerCase()}:${sourceUrl.trim()}`;
 }
 
 /**
@@ -206,8 +211,21 @@ export function detectSuperResolutionSupport() {
     || typeof globalThis.crypto?.subtle?.digest !== 'function') {
     return { supported: false, reason: '当前浏览器缺少图像解码或 Worker 能力，无法运行超分引擎。' };
   }
-  const gpu = detectGpuSupport();
-  return { supported: true, reason: '', gpu };
+  if (!hasWebGpuApi()) return { supported: false, reason: WEBGPU_UNSUPPORTED_REASON };
+  return { supported: true, reason: '' };
+}
+
+export async function verifySuperResolutionSupport({ requestAdapter } = {}) {
+  const initial = detectSuperResolutionSupport();
+  if (!initial.supported && typeof requestAdapter !== 'function') return initial;
+  try {
+    const adapter = await requestHighPerformanceWebGpuAdapter(requestAdapter);
+    return adapter
+      ? { supported: true, reason: '' }
+      : { supported: false, reason: WEBGPU_ADAPTER_UNAVAILABLE_REASON };
+  } catch {
+    return { supported: false, reason: WEBGPU_ADAPTER_UNAVAILABLE_REASON };
+  }
 }
 
 export function createSuperResolutionRuntime(options = {}) {
@@ -258,24 +276,27 @@ export async function processSuperResolutionImageSource(sourceUrl, {
   revokeObjectURL = globalThis.URL?.revokeObjectURL?.bind(globalThis.URL),
 } = {}) {
   if (keepAlive && hasText(cacheKey) && typeof cacheResult === 'function') {
-    let job = visiblePageJobs.get(cacheKey);
-    if (!job) {
-      job = processSuperResolutionImageSource(sourceUrl, {
+    let entry = visiblePageJobs.get(cacheKey);
+    if (!entry) {
+      const controller = new AbortController();
+      const job = processSuperResolutionImageSource(sourceUrl, {
         runtime,
         manifest,
         cacheKey,
         getCachedSource,
         cacheResult,
+        signal: controller.signal,
         fetcher,
         createObjectURL,
         revokeObjectURL,
       });
-      visiblePageJobs.set(cacheKey, job);
+      entry = { job, controller };
+      visiblePageJobs.set(cacheKey, entry);
       job.finally(() => {
-        if (visiblePageJobs.get(cacheKey) === job) visiblePageJobs.delete(cacheKey);
+        if (visiblePageJobs.get(cacheKey) === entry) visiblePageJobs.delete(cacheKey);
       }).catch(() => {});
     }
-    return waitForJob(job, signal);
+    return waitForJob(entry.job, signal);
   }
   if (!hasText(sourceUrl)) throw new TypeError('sourceUrl must be a non-empty string');
   if (typeof runtime?.processBlob !== 'function') throw new TypeError('runtime must provide processBlob()');

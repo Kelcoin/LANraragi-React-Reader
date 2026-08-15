@@ -56,6 +56,20 @@ test('reader toolbar switches to icons before text reaches the title', () => {
   }), 'icons');
 });
 
+test('reader toolbar retains its full-mode width after labels are hidden', () => {
+  assert.equal(typeof readerUiState.rememberReaderToolbarFullWidth, 'function');
+  assert.equal(readerUiState.rememberReaderToolbarFullWidth({
+    previousWidth: 1100,
+    measuredWidth: 900,
+    mode: 'icons',
+  }), 1100);
+  assert.equal(readerUiState.rememberReaderToolbarFullWidth({
+    previousWidth: 1100,
+    measuredWidth: 1120,
+    mode: 'full',
+  }), 1120);
+});
+
 test('reader skeleton toolbar matches the real toolbar (no super-resolution slot)', () => {
   const desktop = readerUiState.getReaderToolbarGroups(false).right;
   const mobile = readerUiState.getReaderToolbarGroups(true).right;
@@ -89,14 +103,75 @@ test('archive super-resolution state never carries across archive ids', () => {
   }), { enabled: false, manual: true });
 });
 
-test('super-resolution failures disable the current archive instead of leaving a false enabled state', () => {
+test('foreground super-resolution contains only pages visible in the current reading surface', () => {
+  assert.deepEqual([...readerUiState.getForegroundSuperResolutionPageIndices({
+    webtoonActive: true,
+    currentIndex: 7,
+    currentSpread: [{ pageIndex: 6 }, { pageIndex: 7 }],
+  })], [7]);
+  assert.deepEqual([...readerUiState.getForegroundSuperResolutionPageIndices({
+    webtoonActive: false,
+    currentIndex: 7,
+    currentSpread: [{ pageIndex: 7 }, { pageIndex: 8 }, { pageIndex: 8 }],
+  })], [7, 8]);
+});
+
+test('immersive tap timing wins over tap location for double-tap zoom', () => {
+  assert.equal(typeof readerUiState.resolveImmersiveTapAction, 'function');
+  assert.equal(readerUiState.resolveImmersiveTapAction({
+    timestamp: 1200,
+    x: 20,
+    y: 20,
+    lastTimestamp: 1000,
+    lastX: 100,
+    lastY: 100,
+  }), 'double-tap');
+  assert.equal(readerUiState.resolveImmersiveTapAction({
+    timestamp: 1600,
+    x: 20,
+    y: 20,
+    lastTimestamp: 1000,
+    lastX: 100,
+    lastY: 100,
+  }), 'single-tap');
+});
+
+test('immersive double tap toggles between normal and zoomed scale', () => {
+  assert.equal(typeof readerUiState.resolveImmersiveDoubleTapScale, 'function');
+  assert.equal(readerUiState.resolveImmersiveDoubleTapScale(1), 1.75);
+  assert.equal(readerUiState.resolveImmersiveDoubleTapScale(1.75), 1);
+  assert.equal(readerUiState.resolveImmersiveDoubleTapScale(2.4), 1);
+});
+
+test('immersive single tap still navigates by click zone', () => {
+  assert.equal(typeof readerUiState.resolveImmersiveClickZone, 'function');
+  assert.equal(readerUiState.resolveImmersiveClickZone({ x: 100, width: 1000 }), 'previous');
+  assert.equal(readerUiState.resolveImmersiveClickZone({ x: 500, width: 1000 }), 'none');
+  assert.equal(readerUiState.resolveImmersiveClickZone({ x: 900, width: 1000 }), 'next');
+});
+
+test('immersive zoom keeps the requested focal point stable while panned', () => {
+  assert.equal(typeof readerUiState.resolveImmersiveZoomPan, 'function');
+  assert.deepEqual(readerUiState.resolveImmersiveZoomPan({
+    previousScale: 2,
+    nextScale: 3,
+    panX: -100,
+    panY: 50,
+    focalX: 250,
+    focalY: 150,
+    viewportWidth: 1000,
+    viewportHeight: 600,
+  }), { x: 150, y: 200 });
+});
+
+test('super-resolution failures fall back per page without disabling the archive', () => {
   assert.deepEqual(readerUiState.resolveSuperResolutionFailure({ name: 'AbortError' }), {
     disable: false, notify: false,
   });
   assert.deepEqual(readerUiState.resolveSuperResolutionFailure(new Error('inference failed')), {
-    disable: true, notify: true,
+    disable: false, notify: true,
   });
   assert.deepEqual(readerUiState.resolveSuperResolutionFailure({ name: 'NotSupportedError' }), {
-    disable: true, notify: true,
+    disable: false, notify: true,
   });
 });

@@ -7,7 +7,6 @@ import ArchiveThumbnailDialog from '../components/ArchiveThumbnailDialog';
 import DatePicker from '../components/DatePicker';
 import ExecutionProgressPanel from '../components/ExecutionProgressPanel';
 import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
-import { ToolbarGlyph } from '../components/AppGlyphs';
 import { lrrApi, waitForMinionJob } from '../lib/api';
 import { rememberArchiveMetadata } from '../lib/archiveMetadataCache';
 import {
@@ -23,8 +22,8 @@ import {
   getTodayDateString,
   groupDuplicatePairsByChain,
   normalizeDedupeDateRange,
+  mergeSmartDuplicateSelection,
   normalizeDuplicateSelection,
-  selectDuplicateDeletionIds,
   toPairKey,
 } from '../lib/deduplicate';
 import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
@@ -152,9 +151,9 @@ function ProgressPanel({ progress, running }) {
     <div className="glass-panel workbench-section dedupe-progress-section" style={{ padding: '18px', marginBottom: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '18px', alignItems: 'flex-start', marginBottom: '14px', flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 850, fontSize: '16px', lineHeight: 1.35 }}>{progress.label}</div>
+          <div style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-lg)', lineHeight: 1.35 }}>{progress.label}</div>
           {progress.detail && (
-            <div style={{ marginTop: '5px', color: 'var(--text-sub)', fontSize: '13px', lineHeight: 1.55 }}>
+            <div style={{ marginTop: '5px', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)', lineHeight: 1.55 }}>
               {progress.detail}
             </div>
           )}
@@ -166,8 +165,8 @@ function ProgressPanel({ progress, running }) {
           border: '1px solid var(--glass-border)',
           background: 'var(--surface-2)',
           color: 'var(--text-main)',
-          fontSize: '13px',
-          fontWeight: 750,
+          fontSize: 'var(--font-size-body)',
+          fontWeight: 'var(--font-weight-bold)',
           textAlign: 'center',
         }}>
           {showPercent ? `${Math.floor(percent)}%` : statusText}
@@ -225,9 +224,9 @@ function StatsPanel({
   return (
     <div className="glass-panel workbench-section dedupe-scan-section" style={{ padding: '14px 16px', marginBottom: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <div style={{ fontWeight: 800, fontSize: '14px' }}>本次扫描</div>
+        <div style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-md)' }}>本次扫描</div>
         {stats.missing > 0 && (
-          <div style={{ color: 'var(--text-sub)', fontSize: '12px' }}>
+          <div style={{ color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)' }}>
             缺失封面的档案已排除，不参与相似度计算
           </div>
         )}
@@ -244,8 +243,8 @@ function StatsPanel({
               minWidth: 0,
             }}
           >
-            <div style={{ color: 'var(--text-sub)', fontSize: '12px', lineHeight: 1.3 }}>{label}</div>
-            <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 850, fontSize: '18px', lineHeight: 1.2 }}>
+            <div style={{ color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)', lineHeight: 1.3 }}>{label}</div>
+            <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-xl)', lineHeight: 1.2 }}>
               {formatCount(value)}
             </div>
           </div>
@@ -274,16 +273,16 @@ function DateRangePanel({ range, running, onChange, onReset, onStart }) {
   return (
     <div className="glass-panel workbench-section dedupe-scope-section" style={{ padding: '14px 16px', marginBottom: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0, fontWeight: 800, fontSize: '16px', lineHeight: 1.3, textWrap: 'balance' }}>检测范围</h2>
+        <h2 style={{ margin: 0, fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-lg)', lineHeight: 1.3, textWrap: 'balance' }}>检测范围</h2>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button type="button" className="btn" onClick={onReset} disabled={running} style={{ padding: '7px 12px', fontSize: '12px' }}>重置</button>
-          <button type="button" className="btn" onClick={onStart} disabled={running} style={{ padding: '7px 12px', fontSize: '12px' }}>
+          <button type="button" className="btn" onClick={onReset} disabled={running}>重置</button>
+          <button type="button" className="btn" onClick={onStart} disabled={running}>
             {running ? '处理中…' : '开始检测'}
           </button>
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', alignItems: 'end' }}>
-        <label style={{ display: 'grid', gap: '6px', color: 'var(--text-sub)', fontSize: '12px' }}>
+        <label style={{ display: 'grid', gap: '6px', color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)' }}>
           开始日期
           <DatePicker
             value={range.start}
@@ -292,7 +291,7 @@ function DateRangePanel({ range, running, onChange, onReset, onStart }) {
             onChange={(value) => onChange({ ...range, start: value })}
           />
         </label>
-        <label style={{ display: 'grid', gap: '6px', color: 'var(--text-sub)', fontSize: '12px' }}>
+        <label style={{ display: 'grid', gap: '6px', color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)' }}>
           结束日期
           <DatePicker
             value={range.end}
@@ -334,9 +333,6 @@ function DedupeArchiveItem({
         selected={selected}
         onSelectToggle={onToggle}
         disabled={selectionDisabled}
-        overlay={selected ? (
-          <div className="dedupe-card-selected-mark"><ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" /></div>
-        ) : null}
       />
       <div className="dedupe-card-size-row">
         <div className="dedupe-card-size">
@@ -359,9 +355,9 @@ function EmptyState({ title, detail }) {
       borderRadius: '12px',
       textAlign: 'center',
     }}>
-      <div style={{ fontSize: '16px', fontWeight: 850, lineHeight: 1.45 }}>{title}</div>
+      <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)', lineHeight: 1.45 }}>{title}</div>
       {detail && (
-        <div style={{ marginTop: '8px', color: 'var(--text-sub)', fontSize: '13px', lineHeight: 1.65 }}>
+        <div style={{ marginTop: '8px', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)', lineHeight: 1.65 }}>
           {detail}
         </div>
       )}
@@ -382,6 +378,7 @@ export default function DeduplicatePage({ onBack }) {
   const [ignoredPairs, setIgnoredPairs] = useState(new Set());
   const [selectedArchiveIds, setSelectedArchiveIds] = useState(new Set());
   const [selectedGroupKeys, setSelectedGroupKeys] = useState(new Set());
+  const [manuallyTouchedGroupKeys, setManuallyTouchedGroupKeys] = useState(new Set());
   const [processedDeletedArchiveIds, setProcessedDeletedArchiveIds] = useState(new Set());
   const [processedNonDuplicatePairKeys, setProcessedNonDuplicatePairKeys] = useState(new Set());
   const [savedResultAvailable, setSavedResultAvailable] = useState(hasSavedDedupeResult);
@@ -461,6 +458,7 @@ export default function DeduplicatePage({ onBack }) {
     setWorkerWarning('');
     setSelectedArchiveIds(new Set());
     setSelectedGroupKeys(new Set());
+    setManuallyTouchedGroupKeys(new Set());
     setProcessedDeletedArchiveIds(new Set());
     setProcessedNonDuplicatePairKeys(new Set());
     setGroups([]);
@@ -583,6 +581,10 @@ export default function DeduplicatePage({ onBack }) {
   const toggleArchiveSelection = useCallback((archive) => {
     const id = archiveId(archive);
     if (!id) return;
+    const ownerGroupKeys = new Set(groups
+      .filter((group) => groupIds(group).includes(id))
+      .map(groupKey));
+    setManuallyTouchedGroupKeys((prev) => new Set([...prev, ...ownerGroupKeys]));
     setSelectedArchiveIds((prev) => {
       if (prev.has(id)) {
         const next = new Set(prev);
@@ -591,15 +593,13 @@ export default function DeduplicatePage({ onBack }) {
       }
       return new Set(normalizeDuplicateSelection(groups, [...prev, id]));
     });
-    const ownerGroupKeys = new Set(groups
-      .filter((group) => groupIds(group).includes(id))
-      .map(groupKey));
     setSelectedGroupKeys((prev) => new Set(Array.from(prev).filter((key) => !ownerGroupKeys.has(key))));
   }, [groups]);
 
   const toggleGroupSelection = useCallback((group) => {
     const key = groupKey(group);
     const ids = new Set(groupIds(group));
+    setManuallyTouchedGroupKeys((prev) => new Set([...prev, key]));
     setSelectedGroupKeys((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -614,10 +614,15 @@ export default function DeduplicatePage({ onBack }) {
   }, []);
 
   const smartSelect = useCallback(() => {
-    const candidates = groups.flatMap((group) => selectDuplicateDeletionIds(group).slice(0, 1));
-    setSelectedArchiveIds(new Set(normalizeDuplicateSelection(groups, candidates)));
-    setSelectedGroupKeys(new Set());
-  }, [groups]);
+    const result = mergeSmartDuplicateSelection(
+      groups,
+      manuallyTouchedGroupKeys,
+      selectedArchiveIds,
+      selectedGroupKeys,
+    );
+    setSelectedArchiveIds(new Set(result.archiveIds));
+    setSelectedGroupKeys(new Set(result.groupKeys));
+  }, [groups, manuallyTouchedGroupKeys, selectedArchiveIds, selectedGroupKeys]);
 
   const requestExecuteSelected = useCallback(() => {
     setDeleteSyncConfirmed(true);
@@ -831,6 +836,7 @@ export default function DeduplicatePage({ onBack }) {
       setSelectedGroupKeys(workerReady
         ? new Set((payload.selectedGroupKeys || []).filter((key) => visibleGroupKeys.has(key)))
         : new Set());
+      setManuallyTouchedGroupKeys(new Set());
       setProcessedDeletedArchiveIds(deletedSet);
       setProcessedNonDuplicatePairKeys(nonDuplicateSet);
       setIgnoredPairs(new Set(Array.isArray(payload.ignoredPairs) ? payload.ignoredPairs : []));
@@ -918,7 +924,7 @@ export default function DeduplicatePage({ onBack }) {
     <div className="dedupe-page workbench-page">
       <header className="workbench-header dedupe-page-header">
         <div>
-          <h1 style={{ margin: 0, fontSize: '24px', lineHeight: 1.2 }}>重复档案检测</h1>
+          <h1 style={{ margin: 0, fontSize: 'var(--font-size-3xl)', lineHeight: 1.2 }}>重复档案检测</h1>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button type="button" className="btn" onClick={onBack} disabled={running}>返回</button>
@@ -939,7 +945,7 @@ export default function DeduplicatePage({ onBack }) {
       <ProgressPanel progress={progress} running={running} />
 
       {!running && workerWarning && (
-        <div className="glass-panel" style={{ padding: '12px 14px', marginBottom: '16px', borderColor: 'var(--warning-border)', color: 'var(--warning-text)', fontSize: '13px' }}>
+        <div className="glass-panel" style={{ padding: '12px 14px', marginBottom: '16px', borderColor: 'var(--warning-border)', color: 'var(--warning-text)', fontSize: 'var(--font-size-body)' }}>
           {workerWarning}
         </div>
       )}
@@ -954,7 +960,9 @@ export default function DeduplicatePage({ onBack }) {
         running={running}
         onSmartSelect={smartSelect}
         onToggleAllGroups={() => {
-          setSelectedGroupKeys(allGroupsSelected ? new Set() : new Set(groups.map(groupKey)));
+          const allGroupKeys = groups.map(groupKey);
+          setManuallyTouchedGroupKeys((prev) => new Set([...prev, ...allGroupKeys]));
+          setSelectedGroupKeys(allGroupsSelected ? new Set() : new Set(allGroupKeys));
           setSelectedArchiveIds(new Set());
         }}
         onExecute={requestExecuteSelected}

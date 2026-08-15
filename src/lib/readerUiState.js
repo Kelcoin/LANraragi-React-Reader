@@ -10,6 +10,8 @@ const MOBILE_TOOLBAR = Object.freeze({
   right: Object.freeze(['', '', '', '']),
 });
 
+export const IMMERSIVE_DOUBLE_TAP_MS = 350;
+
 export function getReaderToolbarGroups(isMobile) {
   return isMobile ? MOBILE_TOOLBAR : DESKTOP_TOOLBAR;
 }
@@ -66,6 +68,14 @@ export function resolveReaderToolbarMode({
   return 'mobile';
 }
 
+export function rememberReaderToolbarFullWidth({ previousWidth = 0, measuredWidth = 0, mode } = {}) {
+  const previous = Number(previousWidth);
+  const measured = Number(measuredWidth);
+  if (!Number.isFinite(measured) || measured <= 0) return Math.max(0, previous || 0);
+  if (mode === 'full') return measured;
+  return Math.max(0, previous || 0, measured);
+}
+
 export function getCenteredToolbarTitleWidth({ toolbar, leftGroup, rightGroup, gap = 16 }) {
   const toolbarLeft = Number(toolbar?.left);
   const toolbarRight = Number(toolbar?.right);
@@ -118,9 +128,77 @@ export function resolveArchiveSuperResolutionState({
   };
 }
 
+export function getForegroundSuperResolutionPageIndices({
+  webtoonActive,
+  currentIndex,
+  currentSpread = [],
+} = {}) {
+  const indices = webtoonActive
+    ? [currentIndex]
+    : currentSpread.map((unit) => unit?.pageIndex);
+  return new Set(indices.filter((index) => Number.isInteger(index) && index >= 0));
+}
+
+export function resolveImmersiveTapAction({
+  timestamp,
+  lastTimestamp,
+} = {}) {
+  const next = Number(timestamp);
+  const previous = Number(lastTimestamp);
+  return Number.isFinite(next) && Number.isFinite(previous)
+    && next >= previous
+    && next - previous <= IMMERSIVE_DOUBLE_TAP_MS
+    ? 'double-tap'
+    : 'single-tap';
+}
+
+export function resolveImmersiveClickZone({ x, width } = {}) {
+  const nextX = Number(x);
+  const nextWidth = Number(width);
+  if (!Number.isFinite(nextX) || !Number.isFinite(nextWidth) || nextWidth <= 0) return 'none';
+  if (nextX < nextWidth * 0.45) return 'previous';
+  if (nextX > nextWidth * 0.55) return 'next';
+  return 'none';
+}
+
+export function resolveImmersiveDoubleTapScale(currentScale) {
+  return Number(currentScale) > 1 ? 1 : 1.75;
+}
+
+export function resolveImmersiveZoomPan({
+  previousScale,
+  nextScale,
+  panX,
+  panY,
+  focalX,
+  focalY,
+  viewportWidth,
+  viewportHeight,
+} = {}) {
+  const previous = Number(previousScale);
+  const next = Number(nextScale);
+  const width = Number(viewportWidth);
+  const height = Number(viewportHeight);
+  if (![previous, next, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    return { x: 0, y: 0 };
+  }
+  if (next <= 1) return { x: 0, y: 0 };
+
+  const focalOffsetX = Number(focalX) - width / 2;
+  const focalOffsetY = Number(focalY) - height / 2;
+  const maxX = (next - 1) * width / 2;
+  const maxY = (next - 1) * height / 2;
+  const rawX = Number(panX) + (previous - next) * (Number.isFinite(focalOffsetX) ? focalOffsetX : 0);
+  const rawY = Number(panY) + (previous - next) * (Number.isFinite(focalOffsetY) ? focalOffsetY : 0);
+  return {
+    x: Math.max(-maxX, Math.min(maxX, Number.isFinite(rawX) ? rawX : 0)),
+    y: Math.max(-maxY, Math.min(maxY, Number.isFinite(rawY) ? rawY : 0)),
+  };
+}
+
 export function resolveSuperResolutionFailure(error) {
   if (error?.name === 'AbortError') return { disable: false, notify: false };
-  return { disable: true, notify: true };
+  return { disable: false, notify: true };
 }
 
 export function getDrawerRowStride(gridWidth) {

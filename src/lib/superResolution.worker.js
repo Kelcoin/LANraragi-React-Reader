@@ -7,8 +7,7 @@ import {
   resolveBoundedImageSize,
 } from './cachePolicy.js';
 
-const WEBGL_BACKEND = 'webgl';
-const WASM_BACKEND = 'wasm';
+const WEBGPU_BACKEND = 'webgpu';
 const MODEL_CACHE_NAME = 'readoshi-super-resolution-models-v1';
 let productionOrt = null;
 
@@ -64,7 +63,8 @@ async function digestWithWebCrypto(bytes) {
 async function createProductionSession(modelBytes, backend) {
   const ort = await loadOrtBackend(backend);
   const session = await ort.InferenceSession.create(modelBytes, {
-    executionProviders: [backend],
+    executionProviders: [{ name: backend, powerPreference: 'high-performance' }],
+    graphOptimizationLevel: 'all',
   });
   productionOrt = ort;
   return session;
@@ -198,6 +198,65 @@ function validateOutputTensor(tensor, width, height, scale, layout, colorSpace =
     );
   }
   return { width: outputWidth, height: outputHeight };
+}
+
+function copyRgbTensorTileToOutput(outputTensor, outputPixels, outputWidth, outputTensorWidth, tile, scale, crop) {
+  const data = outputTensor.data;
+  const outputTensorHeight = outputTensor.dims[2];
+  const planeSize = outputTensorWidth * outputTensorHeight;
+  const tileWidth = tile.core.width * scale;
+  const tileHeight = tile.core.height * scale;
+  const baseTargetX = tile.core.x * scale;
+  const baseTargetY = tile.core.y * scale;
+  for (let y = 0; y < tileHeight; y += 1) {
+    let tensorOffset = (y + crop) * outputTensorWidth + crop;
+    let target = ((baseTargetY + y) * outputWidth + baseTargetX) * 4;
+    for (let x = 0; x < tileWidth; x += 1) {
+      const red = data[tensorOffset];
+      const green = data[planeSize + tensorOffset];
+      const blue = data[planeSize * 2 + tensorOffset];
+      if (!Number.isFinite(red) || !Number.isFinite(green) || !Number.isFinite(blue)) {
+        throw createNamedError('TensorValueError', 'Model output contains a non-finite value');
+      }
+      outputPixels[target] = Math.round(Math.max(0, Math.min(1, red)) * 255);
+      outputPixels[target + 1] = Math.round(Math.max(0, Math.min(1, green)) * 255);
+      outputPixels[target + 2] = Math.round(Math.max(0, Math.min(1, blue)) * 255);
+      tensorOffset += 1;
+      target += 4;
+    }
+  }
+}
+
+function blitNchwRgbTile({
+  outputTensor,
+  outputPixels,
+  outputWidth,
+  outputTensorWidth,
+  tile,
+  scale,
+  crop,
+}) {
+  copyRgbTensorTileToOutput(outputTensor, outputPixels, outputWidth, outputTensorWidth, tile, scale, crop);
+}
+
+function copyScaledAlphaNearest({
+  sourcePixels,
+  sourceWidth,
+  sourceHeight,
+  outputPixels,
+  outputWidth,
+  outputHeight,
+  scale,
+}) {
+  for (let y = 0; y < outputHeight; y += 1) {
+    const sourceY = Math.min(sourceHeight - 1, Math.floor(y / scale));
+    let target = (y * outputWidth) * 4 + 3;
+    for (let x = 0; x < outputWidth; x += 1) {
+      const sourceX = Math.min(sourceWidth - 1, Math.floor(x / scale));
+      outputPixels[target] = sourcePixels[(sourceY * sourceWidth + sourceX) * 4 + 3];
+      target += 4;
+    }
+  }
 }
 
 function readTensorRgb(tensor, layout, width, x, y) {
@@ -395,20 +454,32 @@ async function processBlobImage({
         );
         const crop = (tilePlan.padding - (manifest.outputInset ?? 0)) * scale;
         const outputTensorWidth = output.width;
-        for (let y = 0; y < tile.core.height * scale; y += 1) {
-          for (let x = 0; x < tile.core.width * scale; x += 1) {
-            const tensorX = x + crop;
-            const tensorY = y + crop;
-            const rgb = colorSpace === 'ycbcr-y'
-              ? yCbCrToRgb(
-                outputTensor.data[tensorY * outputTensorWidth + tensorX],
-                ...sampleCbCr(padded, tensorX, tensorY, scale),
-              )
-              : readTensorRgb(outputTensor, outputLayout, outputTensorWidth, tensorX, tensorY);
-            const target = ((tile.core.y * scale + y) * outputWidth + tile.core.x * scale + x) * 4;
-            outputPixels[target] = colorSpace === 'ycbcr-y' ? rgb[0] : clampByte(rgb[0]);
-            outputPixels[target + 1] = colorSpace === 'ycbcr-y' ? rgb[1] : clampByte(rgb[1]);
-            outputPixels[target + 2] = colorSpace === 'ycbcr-y' ? rgb[2] : clampByte(rgb[2]);
+        if (colorSpace === 'rgb' && outputLayout === 'nchw') {
+          blitNchwRgbTile({
+            outputTensor,
+            outputPixels,
+            outputWidth,
+            outputTensorWidth,
+            tile,
+            scale,
+            crop,
+          });
+        } else {
+          for (let y = 0; y < tile.core.height * scale; y += 1) {
+            for (let x = 0; x < tile.core.width * scale; x += 1) {
+              const tensorX = x + crop;
+              const tensorY = y + crop;
+              const rgb = colorSpace === 'ycbcr-y'
+                ? yCbCrToRgb(
+                  outputTensor.data[tensorY * outputTensorWidth + tensorX],
+                  ...sampleCbCr(padded, tensorX, tensorY, scale),
+                )
+                : readTensorRgb(outputTensor, outputLayout, outputTensorWidth, tensorX, tensorY);
+              const target = ((tile.core.y * scale + y) * outputWidth + tile.core.x * scale + x) * 4;
+              outputPixels[target] = colorSpace === 'ycbcr-y' ? rgb[0] : clampByte(rgb[0]);
+              outputPixels[target + 1] = colorSpace === 'ycbcr-y' ? rgb[1] : clampByte(rgb[1]);
+              outputPixels[target + 2] = colorSpace === 'ycbcr-y' ? rgb[2] : clampByte(rgb[2]);
+            }
           }
         }
       } finally {
@@ -417,15 +488,15 @@ async function processBlobImage({
       }
     }
 
-    for (let y = 0; y < outputHeight; y += 1) {
-      const sourceY = Math.min(image.height - 1, Math.floor(y / scale));
-      for (let x = 0; x < outputWidth; x += 1) {
-        const sourceX = Math.min(image.width - 1, Math.floor(x / scale));
-        outputPixels[((y * outputWidth) + x) * 4 + 3] = image.pixels[
-          (sourceY * image.width + sourceX) * 4 + 3
-        ];
-      }
-    }
+    copyScaledAlphaNearest({
+      sourcePixels: image.pixels,
+      sourceWidth: image.width,
+      sourceHeight: image.height,
+      outputPixels,
+      outputWidth,
+      outputHeight,
+      scale,
+    });
     if (!isCurrent() || isCancelled()) {
       throw createNamedError('AbortError', 'Super-resolution request was cancelled');
     }
@@ -530,8 +601,8 @@ function validateInitManifest(manifest) {
     && (!Array.isArray(manifest.executionProviders)
       || manifest.executionProviders.length === 0
       || new Set(manifest.executionProviders).size !== manifest.executionProviders.length
-      || manifest.executionProviders.some((provider) => ![WEBGL_BACKEND, WASM_BACKEND].includes(provider)))) {
-    throw createNamedError('ProtocolError', 'init executionProviders must contain unique WebGL/WASM backends');
+      || manifest.executionProviders.some((provider) => provider !== WEBGPU_BACKEND))) {
+    throw createNamedError('ProtocolError', 'init executionProviders must contain only the WebGPU backend');
   }
 }
 
@@ -579,10 +650,9 @@ async function writeCachedModel(cache, url, bytes) {
   await cache.put(url, new globalThis.Response(bytes.slice(0)));
 }
 
-function describeSessionAttempt(backend, error) {
-  const label = backend === WEBGL_BACKEND ? 'WebGL' : 'WASM';
-  if (error) return `${label} session failed: ${toErrorDetails(error).message}`;
-  return `${label} session factory returned no session`;
+function describeSessionAttempt(error) {
+  if (error) return `WebGPU session failed: ${toErrorDetails(error).message}`;
+  return 'WebGPU session factory returned no session';
 }
 
 export function createSuperResolutionWorkerHandler(dependencies = {}) {
@@ -600,6 +670,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
   let activeManifest = null;
   let disposed = false;
   let generation = 0;
+  let inferenceChain = Promise.resolve();
   const staleRequestIds = new Set();
 
   function isCurrentGeneration(initGeneration) {
@@ -672,7 +743,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
       }
     }
 
-    const providers = manifest.executionProviders ?? [WEBGL_BACKEND, WASM_BACKEND];
+    const providers = manifest.executionProviders ?? [WEBGPU_BACKEND];
     const sessionErrors = new Map();
     let nextSession = null;
     let selectedBackend = null;
@@ -692,7 +763,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
     if (!nextSession) {
       throw createNamedError(
         'SessionInitializationError',
-        providers.map((provider) => describeSessionAttempt(provider, sessionErrors.get(provider))).join('; '),
+        providers.map((provider) => describeSessionAttempt(sessionErrors.get(provider))).join('; '),
       );
     }
 
@@ -755,8 +826,8 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
             const processProcessor = processor;
             const processBackend = backend;
             const processManifest = message.manifest ?? activeManifest;
-            if (processManifest?.engine === 'realcugan-tfjs') {
-              return await processPixelProcessorBlob({
+            const runInference = processManifest?.engine === 'realcugan-tfjs'
+              ? () => processPixelProcessorBlob({
                 blob: message.blob,
                 manifest: processManifest,
                 processor: processProcessor,
@@ -768,22 +839,24 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
                 isCancelled: () => staleRequestIds.delete(requestId),
                 decodeImage,
                 encodeImage,
+              }).then((result) => ({ ...result, backend: processBackend }))
+              : () => processBlobImage({
+                blob: message.blob,
+                manifest: processManifest,
+                session: processSession,
+                requestId,
+                isCurrent: () => !disposed
+                  && generation === processGeneration
+                  && session === processSession
+                  && backend === processBackend,
+                isCancelled: () => staleRequestIds.delete(requestId),
+                decodeImage,
+                encodeImage,
+                tensorFactory,
               }).then((result) => ({ ...result, backend: processBackend }));
-            }
-            return await processBlobImage({
-              blob: message.blob,
-              manifest: processManifest,
-              session: processSession,
-              requestId,
-              isCurrent: () => !disposed
-                && generation === processGeneration
-                && session === processSession
-                && backend === processBackend,
-              isCancelled: () => staleRequestIds.delete(requestId),
-              decodeImage,
-              encodeImage,
-              tensorFactory,
-            }).then((result) => ({ ...result, backend: processBackend }));
+            const result = inferenceChain.then(runInference, runInference);
+            inferenceChain = result.catch(() => {});
+            return await result;
           }
         case 'cancel':
           if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');

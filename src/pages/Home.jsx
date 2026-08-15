@@ -491,6 +491,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const [archiveRefreshPhase, dispatchArchiveRefresh] = useReducer(reduceArchiveRefreshPhase, 'idle');
   const [presets, setPresets] = useState(readFilterPresets);
   const [showPresets, setShowPresets] = useState(false);
+  const [presetsClosing, setPresetsClosing] = useState(false);
   const [presetNameDialog, setPresetNameDialog] = useState(null);
   const [editingPreset, setEditingPreset] = useState('');
   const [presetDeleteTarget, setPresetDeleteTarget] = useState('');
@@ -533,6 +534,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   });
   const [randomsRefreshing, setRandomsRefreshing] = useState(false);
   const [watchlistOverflow, setWatchlistOverflow] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const coldRestoreRef = useRef(coldRestoreBoot);
   const navigationRestoreRef = useRef(!!navSnapshot && !!homeSnapshot);
   const verticalScrollRestoredRef = useRef(false);
@@ -565,9 +567,25 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+
+  useEffect(() => {
+    const handleHomeScroll = () => {
+      setShowBackToTop(window.scrollY > 320);
+    };
+    handleHomeScroll();
+    window.addEventListener('scroll', handleHomeScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleHomeScroll);
+  }, []);
+
+  const handleBackToTop = useCallback(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+  }, []);
+
   const suggestActiveRef = useRef(false);
   const filterInputRef = useRef(null);
   const filterControlsRef = useRef(null);
+  const presetMenuRef = useRef(null);
+  const presetToggleRef = useRef(null);
   const settingsTriggerRef = useRef(null);
   const settingsDialogRef = useRef(null);
   const settingsPaneRef = useRef(null);
@@ -577,6 +595,49 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const getHistoryScrollerNode = historyScroller.getNode;
   const getWatchlistScrollerNode = watchlistScroller.getNode;
   const getRandomScrollerNode = randomScroller.getNode;
+
+  const requestPresetMenuClose = useCallback(() => {
+    if (!showPresets || presetsClosing) return;
+    setPresetsClosing(true);
+    setEditingPreset('');
+  }, [presetsClosing, showPresets]);
+
+  const togglePresetMenu = useCallback(() => {
+    if (showPresets && !presetsClosing) {
+      requestPresetMenuClose();
+      return;
+    }
+    setPresetsClosing(false);
+    setShowPresets(true);
+  }, [presetsClosing, requestPresetMenuClose, showPresets]);
+
+  const handlePresetMenuAnimationEnd = useCallback((event) => {
+    if (event.target !== event.currentTarget || !presetsClosing) return;
+    setPresetsClosing(false);
+    setShowPresets(false);
+  }, [presetsClosing]);
+
+  const presetsOpen = showPresets && !presetsClosing;
+
+  useEffect(() => {
+    if (!showPresets) return undefined;
+    const close = (event) => {
+      if (event.type === 'keydown') {
+        if (event.key === 'Escape') requestPresetMenuClose();
+        return;
+      }
+      if (presetMenuRef.current?.contains(event.target) || presetToggleRef.current?.contains(event.target)) return;
+      requestPresetMenuClose();
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('focusin', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('focusin', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [requestPresetMenuClose, showPresets]);
 
   const buildHomeStateSnapshot = useCallback((overrides = {}) => ({
     archives: archivesRef.current,
@@ -962,9 +1023,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         .reduce((total, property) => total + (Number.parseFloat(paneStyle[property]) || 0), 0);
       const contentStyle = getComputedStyle(activeContent);
       const contentGap = Number.parseFloat(contentStyle.rowGap) || 0;
-      const contentHeight = Array.from(activeContent.children)
+      const childrenHeight = Array.from(activeContent.children)
         .reduce((total, child) => total + child.scrollHeight, 0)
         + contentGap * Math.max(0, activeContent.children.length - 1);
+      const contentHeight = Math.max(activeContent.scrollHeight, childrenHeight);
       const tabsStyle = getComputedStyle(tabs);
       const stacked = tabsStyle.flexDirection === 'row';
       const paneHeight = getSettingsPaneNaturalHeight({
@@ -1899,7 +1961,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, [archivePageInput, goArchivePage]);
 
   const handleManualRefreshArchives = useCallback(async () => {
-    setShowPresets(false);
+    requestPresetMenuClose();
     dispatchArchiveRefresh('start');
     const refreshed = await doFetch(true, { background: true, force: true, clearSearchCache: true });
     if (!refreshed) {
@@ -1908,7 +1970,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     }
     dispatchArchiveRefresh('replace');
     requestAnimationFrame(() => dispatchArchiveRefresh('finish'));
-  }, [doFetch]);
+  }, [doFetch, requestPresetMenuClose]);
 
   useEffect(() => {
     if (didApplyUrlFilterRef.current) return;
@@ -1973,6 +2035,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   };
 
   const handleKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      requestPresetMenuClose();
+      return;
+    }
     if (e.key === 'Enter') {
       filterInputRef.current?.blur();
       if (suggestActiveRef.current) return;
@@ -1984,7 +2050,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   const loadPreset = (p) => {
     applyFilter(p.query, p.sortBy, p.order, selectedCategory);
-    setShowPresets(false);
+    requestPresetMenuClose();
   };
 
   const filteredHistory = useMemo(() => {
@@ -2403,7 +2469,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 placeholder={filter.active ? `筛选: ${filter.query}` : '搜索标签或标题… 按回车筛选'}
                 value={filter.query}
                 onChange={(e) => {
-                  if (showPresets) setShowPresets(false);
+                  requestPresetMenuClose();
                   const val = e.target.value;
                   if (val === '' && filter.active) {
                     clearFilter();
@@ -2423,14 +2489,15 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               <button
                 type="button"
                 className="btn btn-quiet btn-icon input-clear-btn archive-search-preset-toggle"
+                ref={presetToggleRef}
                 onClick={() => {
                   suggestActiveRef.current = false;
-                  setShowPresets(v => !v);
+                  togglePresetMenu();
                 }}
-                title={showPresets ? '关闭筛选预设' : '打开筛选预设'}
+                title={presetsOpen ? '关闭筛选预设' : '打开筛选预设'}
                 aria-label="筛选预设"
               >
-                <svg className="archive-search-preset-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style={{ transform: showPresets ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                <svg className="archive-search-preset-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style={{ transform: presetsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                   <path d="M6 9l6 6 6-6z" />
                 </svg>
               </button>
@@ -2443,7 +2510,13 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                 />
               )}
               {showPresets && (
-                <div className="archive-search-presets dropdown-animate">
+                <div
+                  className={`archive-search-presets dropdown-animate${presetsClosing ? ' is-closing' : ''}`}
+                  ref={presetMenuRef}
+                  aria-hidden={presetsClosing}
+                  inert={presetsClosing ? '' : undefined}
+                  onAnimationEnd={handlePresetMenuAnimationEnd}
+                >
                   <div className="archive-search-preset-heading">
                     <span>已保存的筛选方案</span>
                     <button className="btn btn-secondary" onClick={savePreset}>
@@ -2601,6 +2674,15 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         </div>
       </section>
     </div>
+    <button
+      type="button"
+      aria-label="返回顶部"
+      title="返回顶部"
+      className={`btn btn-secondary btn-icon home-back-to-top${showBackToTop ? ' is-visible' : ''}`}
+      onClick={handleBackToTop}
+    >
+      ↑
+    </button>
     {showConfig && createPortal(
       <div className="settings-overlay" role="presentation" onClick={() => setShowConfig(false)}>
         <form ref={settingsDialogRef} className="surface settings-panel settings-panel-form settings-panel-height-animate" style={{ height: settingsPanelHeight == null ? 'auto' : `${settingsPanelHeight}px` }} role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {

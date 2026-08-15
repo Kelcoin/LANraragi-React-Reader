@@ -117,7 +117,7 @@ test('global UI copy and selection styles use the archive terminology consistent
   assert.match(css, /body\s*\{[^}]*user-select:\s*none;/s);
   assert.match(css, /input,[\s\S]*textarea,[\s\S]*\[contenteditable="true"\][^{]*\{[^}]*user-select:\s*text;/s);
   assert.match(metadata, /className="metadata-field-label">标签</);
-  assert.match(css, /\.metadata-field-label\s*\{[^}]*font-weight:\s*650;/s);
+  assert.match(css, /\.metadata-field-label\s*\{[^}]*font-weight:\s*var\(--font-weight-semibold\);/s);
   assert.match(home, /style=\{\{ flex:\s*'1\.35 1 0'/);
   assert.doesNotMatch(home, /全部归档|待看归档|上传归档|重复归档检测/);
 });
@@ -196,6 +196,8 @@ test('home lazy route keeps archive skeleton visible during chunk loading', () =
   const css = read('src/index.css');
   assert.match(app, /function HomeRouteFallback\(\)[\s\S]*className="home-route-fallback"/);
   assert.match(app, /className="home-route-fallback-grid"/);
+  assert.match(app, /className="home-route-fallback-action home-route-fallback-theme-action shimmer-strip"/);
+  assert.match(css, /\.home-route-fallback-theme-action\s*\{[^}]*width:\s*32px;/s);
   assert.match(app, /function getRouteFallback\(route\)[\s\S]*case 'home':[\s\S]*<HomeRouteFallback \/>/);
   assert.match(app, /case 'reader':[\s\S]*<AppRouteFallback \/>/);
   assert.match(app, /case 'metadata':[\s\S]*<MetadataRouteFallback \/>/);
@@ -206,6 +208,35 @@ test('home lazy route keeps archive skeleton visible during chunk loading', () =
   assert.match(app, /<Suspense fallback=\{getRouteFallback\(route\)\}>/);
   assert.doesNotMatch(app, /ReaderRouteFallback|reader-route-fallback/);
   assert.doesNotMatch(css, /reader-route-fallback/);
+});
+
+test('archive search preset menu animates out before unmounting', () => {
+  const search = read('src/components/ArchiveSearchBox.jsx');
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  for (const source of [search, home]) {
+    assert.match(source, /const presetMenuRef = useRef\(null\)/);
+    assert.match(source, /const presetToggleRef = useRef\(null\)/);
+    assert.match(source, /const \[presetsClosing, setPresetsClosing\] = useState\(false\)/);
+    assert.match(source, /const requestPresetMenuClose = useCallback\(\(\) => \{/);
+    assert.match(source, /setPresetsClosing\(true\)/);
+    assert.match(source, /const handlePresetMenuAnimationEnd = useCallback\(\(event\) => \{/);
+    assert.match(source, /event\.target !== event\.currentTarget/);
+    assert.match(source, /presetMenuRef\.current\?\.contains\(event\.target\)/);
+    assert.match(source, /presetToggleRef\.current\?\.contains\(event\.target\)/);
+    assert.match(source, /document\.addEventListener\('pointerdown', close/);
+    assert.match(source, /document\.addEventListener\('focusin', close/);
+    assert.match(source, /document\.addEventListener\('keydown', close/);
+    assert.match(source, /event\.type === 'keydown'/);
+    assert.match(source, /event\.key === 'Escape'/);
+    assert.match(source, /setShowPresets\(false\)/);
+    assert.match(source, /is-closing/);
+    assert.match(source, /onAnimationEnd=\{handlePresetMenuAnimationEnd\}/);
+    assert.match(source, /aria-hidden=\{presetsClosing\}/);
+  }
+  assert.match(css, /@keyframes presetMenuExit/);
+  assert.match(css, /\.archive-search-presets\.is-closing\s*\{[^}]*animation:\s*presetMenuExit 140ms[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.archive-search-presets\.is-closing[^}]*animation-duration:\s*1ms;/s);
 });
 
 test('history and watchlist keep skeletons while async local state hydrates', () => {
@@ -416,7 +447,7 @@ test('reader setting hints escape the scroll container and size to their content
   assert.match(hint, /<Tooltip\.Portal>/);
   assert.match(hint, /settings-hint-bubble-portal/);
   assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed;[^}]*inline-size:\s*max-content;/s);
-  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px, calc\(100vw - 48px\)\)/s);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px, calc\(100vw - 32px\)\)/s);
   assert.match(reader, /width: 'min\(440px, calc\(100vw - 32px\)\)'/);
 });
 
@@ -638,12 +669,13 @@ test('dedupe bulk group toggle lives below scan stats and its context menu stays
   const css = read('src/index.css');
   assert.match(page, /function StatsPanel\([\s\S]*aria-pressed=\{allGroupsSelected\}[\s\S]*全选分组/);
   assert.match(page, /<StatsPanel[\s\S]*allGroupsSelected=\{allGroupsSelected\}/);
+  assert.match(page, /onToggleAllGroups=\{\(\) => \{[\s\S]*setManuallyTouchedGroupKeys\(\(prev\) => new Set\(\[\.\.\.prev, \.\.\.allGroupKeys\]\)\)/);
   assert.match(page, /\['选中档案', selectedArchiveCount\]/);
   assert.match(page, /\['选中分组', selectedGroupCount\]/);
   assert.match(page, /function StatsPanel\([\s\S]*智能选择[\s\S]*>\s*执行\s*</);
   assert.doesNotMatch(page, />\s*删除选中\s*<|>\s*标记分组不重复\s*</);
   assert.match(page, /function DateRangePanel\([\s\S]*检测范围[\s\S]*>重置</);
-  assert.match(page, /<h2 style=\{\{ margin: 0, fontWeight: 800, fontSize: '16px'[^}]*\}\}>检测范围<\/h2>/);
+  assert.match(page, /<h2 style=\{\{ margin: 0, fontWeight: 'var\(--font-weight-bold\)', fontSize: 'var\(--font-size-lg\)'[^}]*\}\}>检测范围<\/h2>/);
   assert.doesNotMatch(page, /按档案入库日期筛选，默认范围包含全部档案/);
   assert.match(page, /function DateRangePanel\([\s\S]*\{running \? '处理中…' : '开始检测'\}/);
   assert.doesNotMatch(page, /<header[\s\S]*智能选择[\s\S]*<\/header>/);
@@ -827,11 +859,15 @@ test('Reader super-resolution processes only visible pages and preserves origina
   assert.match(reader, /commitPageImage\(originalResolved, originalDecoded,[\s\S]{0,800}processSuperResolutionImageSource/);
   assert.match(reader, /commitImmersiveImage\(originalDecoded,[\s\S]{0,240}startSuperResolutionUpgrade/);
   assert.match(reader, /keepAlive: true/);
-  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread,[^\n]+true, getSuperResolutionForPage\)/);
-  assert.doesNotMatch(reader, /loadSpread\(\[img(?:Left|Right)Ref,[^\n]+activeSuperResolution/);
-  assert.match(reader, /function getSuperResolutionForPage\(pageIndex\)/);
-  assert.match(reader, /superResolution=\{getSuperResolutionForPage\(index\)\}/);
-  assert.doesNotMatch(reader, /superResolution=\{index === currentIndex \? activeSuperResolution : null\}/);
+  assert.match(reader, /getForegroundSuperResolutionPageIndices\(\{/);
+  assert.match(reader, /activeSpread,[\s\S]{0,180}foregroundSuperResolutionPageIndices\.has\(pageIndex\)/);
+  assert.match(reader, /loadSpread\(\[imgLeftRef, imgLeftSecondRef\], leftSpread, IMAGE_LOAD_PRIORITY\.ADJACENT\)/);
+  assert.match(reader, /loadSpread\(\[imgRightRef, imgRightSecondRef\], rightSpread, IMAGE_LOAD_PRIORITY\.ADJACENT\)/);
+  assert.match(reader, /function getSuperResolutionForPage\(pageIndex, foreground = true\)/);
+  assert.match(reader, /superResolution=\{getSuperResolutionForPage\([\s\S]{0,100}foregroundSuperResolutionPageIndices\.has\(/);
+  assert.doesNotMatch(reader, /superResolution=\{getSuperResolutionForPage\(index\)\}/);
+  assert.match(reader, /reader-webtoon-flow-immersive[\s\S]{0,1000}priority=\{index === currentIndex\s*\? IMAGE_LOAD_PRIORITY\.CRITICAL\s*:\s*\(Math\.abs\(index - currentIndex\) === 1\s*\? IMAGE_LOAD_PRIORITY\.ADJACENT\s*:\s*IMAGE_LOAD_PRIORITY\.PRELOAD\)\}/);
+  assert.match(reader, /fullPrecision: true,/);
   assert.match(reader, /decodeTickets\.forEach\(\(ticket\) => ticket\.cancel\(\)\)/);
 });
 
@@ -840,25 +876,23 @@ test('Reader snapshots do not persist immersive mode or image transforms', () =>
   assert.doesNotMatch(reader, /viewMode: viewModeSnapshotRef\.current/);
   assert.doesNotMatch(reader, /showHeader:/);
   assert.doesNotMatch(reader, /zoomScale: zoomScaleRef\.current/);
-  assert.doesNotMatch(reader, /panX: panRef\.current\.x/);
-  assert.doesNotMatch(reader, /panY: panRef\.current\.y/);
+  const snapshotCall = reader.match(/saveReaderSnapshot\(\{([\s\S]*?)\}\);/)?.[1] || '';
+  assert.doesNotMatch(snapshotCall, /(?:viewMode|zoomScale|panX|panY):/);
   assert.match(reader, /const \[viewMode, setViewMode\] = useState\('normal'\)/);
   assert.match(reader, /const \[zoomScale, setZoomScale\] = useState\(1\.0\)/);
   assert.match(reader, /const \[panX, setPanX\] = useState\(0\)/);
   assert.match(reader, /const \[panY, setPanY\] = useState\(0\)/);
 });
 
-test('Reader reuses derived image cache entries and cancels adjacent super-resolution preloads', () => {
+test('Reader reuses derived image cache entries without processing hidden adjacent pages', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /import \{[^}]*putImage[^}]*\} from '\.\.\/lib\/imageCache';/s);
   assert.match(reader, /getSuperResolutionCacheKey/);
   assert.match(reader, /cacheKey:\s*getSuperResolutionCacheKey\(/);
   assert.match(reader, /getCachedSource:\s*getCachedImage/);
   assert.match(reader, /cacheResult:\s*putImage/);
-  assert.match(reader, /for \(const idx of indices\.slice\(0, settings\.preloadCount\)\)[\s\S]*ticket = scheduleSuperResolutionPreload\([\s\S]*await ticket\.promise/);
-  assert.match(reader, /function scheduleSuperResolutionPreload[\s\S]*readerImageDecodeQueue\.schedule\([\s\S]*IMAGE_LOAD_PRIORITY\.PRELOAD/);
-  assert.match(reader, /cancelled = true;\s*ticket\?\.cancel\(\)/);
-  assert.doesNotMatch(reader, /indices\.slice\(0, settings\.preloadCount\)\.map\(/);
+  assert.doesNotMatch(reader, /scheduleSuperResolutionPreload/);
+  assert.doesNotMatch(reader, /super-resolution:\$\{cacheKey\}/);
 });
 
 test('Reader preview decoding uses super-resolution output dimensions', () => {
@@ -887,6 +921,32 @@ test('super-resolution output dimensions never replace original page dimensions'
   assert.match(reader, /if \(recordSourceSize\) onNaturalSize\?\.\(pageIndex, resolvedNaturalSize\);/);
   assert.match(reader, /commitPageImage\(originalResolved, originalDecoded, null, `\$\{precision\}:original`, true, true\)/);
   assert.match(reader, /commitImmersiveImage\(originalDecoded, `\$\{precision\}:original`, null, true\)/);
+});
+
+test('Reader queues a manual super-resolution enable while the runtime is still initializing', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /if \(next && !srRuntimeContext && srRuntimeError\)/);
+  assert.match(reader, /srArchiveManualRef\.current = \{[\s\S]*enabled: next/);
+  assert.match(reader, /超分模型仍在初始化，初始化完成后将自动启用。/);
+  assert.match(reader, /if \(!settings\.srEnabled\) \{\s*srArchiveManualRef\.current = null;/);
+  assert.match(reader, /srArchiveManualRef\.current = null;\s*setSrArchiveEnabled\(false\);/);
+});
+
+test('Waifu2x model is served locally and Real-CUGAN requires WebGPU', () => {
+  const sr = read('src/lib/superResolution.js');
+  const real = read('src/lib/realCugan.js');
+  assert.match(sr, /url: '\/models\/waifu2x-cunet-art-scale2x\/scale2x\.onnx'/);
+  assert.match(real, /tfjs-backend-webgpu/);
+  assert.doesNotMatch(real, /tfjs-backend-(?:webgl|wasm)/);
+});
+
+test('Reader resets zoom and pan whenever immersive mode is exited', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const exitImmersiveMode = useCallback\(\(\) => \{/);
+  assert.match(reader, /zoomScaleRef\.current = 1\.0;/);
+  assert.match(reader, /panRef\.current = \{ x: 0, y: 0, startX: 0, startY: 0, originX: 0, originY: 0 \};/);
+  assert.match(reader, /onClick=\{exitImmersiveMode\} title="退出沉浸模式"/);
+  assert.doesNotMatch(reader, /onClick=\{\(\) => \{ setViewMode\('normal'\); hideImmersiveControls\(\); \}\}/);
 });
 
 test('build and proxy hardening are reproducible', () => {
@@ -981,7 +1041,7 @@ test('history page header has ordered narrow-screen layout hooks', () => {
   assert.match(css, /\.history-section-toolbar\s*\{/);
   assert.match(css, /\.history-summary-part\s*\{/);
   assert.doesNotMatch(css, /\.history-hide-read-toggle/);
-  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*var\(--radius-xs\);/s);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*var\(--font-size-sm\);[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*var\(--font-weight-semibold\);[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*var\(--radius-xs\);/s);
   assert.match(historyTokens, /--surface-subtle:/);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-header\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*align-items:\s*stretch;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-title-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*auto\)\s+minmax\(0,\s*1fr\);[\s\S]*align-items:\s*center;/s);
@@ -989,7 +1049,7 @@ test('history page header has ordered narrow-screen layout hooks', () => {
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-summary-part\s*\{[\s\S]*display:\s*block;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*justify-content:\s*flex-start;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-section-header\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
-  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions \.btn\s*\{[\s\S]*width:\s*auto;[\s\S]*flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);[\s\S]*font-size:\s*13px;[\s\S]*text-align:\s*center;/s);
+  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions \.btn\s*\{[\s\S]*width:\s*auto;[\s\S]*flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);[\s\S]*font-size:\s*var\(--font-size-body\);[\s\S]*text-align:\s*center;/s);
 });
 
 test('home archive toolbar count is styled and empty cold restore fetches archives', () => {
@@ -1003,7 +1063,7 @@ test('home archive toolbar count is styled and empty cold restore fetches archiv
   assert.match(home, /const hasHydratedArchives = homeSnapshot && Array\.isArray\(homeSnapshot\.archives\) && homeSnapshot\.archives\.length > 0;/);
   assert.match(home, /if \(coldRestoreRef\.current && hasHydratedArchives\) return;/);
   assert.match(home, /if \(!archiveCatalogDirty && navigationRestoreRef\.current && hasHydratedArchives\)/);
-  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*999px;/s);
+  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*var\(--font-size-sm\);[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*var\(--font-weight-semibold\);[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*999px;/s);
   assert.match(pages, /\.archive-toolbar-summary\s*\{[\s\S]*align-items:\s*center;/s);
   assert.match(css, /\.archive-toolbar-summary h2,[\s\S]*\.archive-toolbar-summary h2 > span\s*\{[\s\S]*white-space:\s*nowrap;/s);
 });
@@ -1021,15 +1081,23 @@ test('archive title uses one cross-platform two-line geometry contract', () => {
   assert.doesNotMatch(card, /height:\s*`\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`/);
   assert.match(read('src/styles/pages.css'), /\.archive-title-slot\s*\{[^}]*height:\s*43\.7px;/s);
   const pages = read('src/styles/pages.css');
-  assert.match(pages, /\.archive-title\s*\{[^}]*font-size:\s*13px;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*font-size:\s*var\(--font-size-body\);/s);
   assert.match(pages, /\.archive-title\s*\{[^}]*line-height:\s*1\.5;/s);
   assert.match(pages, /\.archive-title\s*\{[^}]*-webkit-line-clamp:\s*2;/s);
   assert.match(pages, /\.archive-title\s*\{[^}]*height:\s*3em;/s);
   assert.match(pages, /\.archive-title\s*\{[^}]*padding-bottom:\s*3px;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(read('src/styles/pages.css'), /\.archive-card-meta\s*\{[^}]*height:\s*14\.85px;/s);
   assert.doesNotMatch(card, /document\.createRange\(\)/);
   assert.doesNotMatch(card, /titleLayoutIndex|titleMeasurementKeyRef|fontRevision/);
   assert.match(workflow, /getWebView\(\)\.getSettings\(\)\.setTextZoom\(100\)/);
+});
+
+test('long archive text wraps inside dialogs and operation feedback', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.confirm-dialog-title\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(css, /\.confirm-dialog-message\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(css, /\.dedupe-failure-message\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/s);
 });
 
 test('mobile wrapper sends system back through web history before exiting', () => {
@@ -1154,6 +1222,7 @@ test('configuration transfer warning and settings layers stay concise and isolat
   assert.doesNotMatch(dialog, /message=\{isExport/);
   assert.match(dialog, /className="config-transfer-warning"/);
   assert.match(css, /\.confirm-dialog-title\s*\{[^}]*text-align:\s*center;/s);
+  assert.match(css, /\.confirm-dialog\s*\{[^}]*position:\s*fixed;[^}]*translate:\s*-50% -50%;[^}]*z-index:\s*200000;/s);
   assert.doesNotMatch(css, /\.confirm-dialog:has\(\.config-transfer-field\)\s+\.confirm-dialog-title/);
   assert.match(css, /\.config-transfer-warning\s*\{[^}]*background:[^}]*text-align:\s*center;/s);
   assert.match(home, /className="settings-panel-footer"/);
@@ -1360,9 +1429,55 @@ test('Reader sticky flow owns secondary panels and keeps their requests mounted 
 test('normal Reader holds old spread geometry until every target slot is decoded', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /getPendingSpreadRenderState/);
-  assert.match(reader, /normalSpreadRenderState\.units\.map/);
+  assert.match(reader, /normalSpreadRenderState\.units\.forEach/);
   assert.match(reader, /slotIndex < normalSpreadRenderState\.visibleSlotCount/);
   assert.match(reader, /handleNormalSpreadUnitReady/);
+});
+
+test('settings tooltips keep viewport collision positioning and compact home actions share one height', () => {
+  const primitives = read('src/styles/primitives.css');
+  const pages = read('src/styles/pages.css');
+  const css = read('src/index.css');
+  assert.doesNotMatch(primitives, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*relative/s);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px,\s*calc\(100vw - 32px\)\)/s);
+  assert.match(pages, /\.home-actions \.btn\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*6px 10px;[^}]*line-height:\s*1\.2;/s);
+  assert.match(pages, /\.home-compact-action\s*\{[^}]*min-height:\s*32px;[^}]*padding:\s*5px 10px;[^}]*line-height:\s*1\.25;/s);
+  assert.match(css, /\.theme-mode-btn\s*\{[^}]*width:\s*34px;[^}]*min-width:\s*34px;[^}]*height:\s*34px;/s);
+  assert.match(css, /\.settings-row-title\s*\{[^}]*font-size:\s*var\(--font-size-md\);[^}]*font-weight:\s*var\(--font-weight-semibold\)/s);
+  assert.match(primitives, /\.custom-select-value\s*\{[^}]*font-size:\s*var\(--font-size-md\);[^}]*font-weight:\s*var\(--font-weight-semibold\)/s);
+});
+
+test('home and recommendation actions share compact typography and centered theme icon', () => {
+  const pages = read('src/styles/pages.css');
+  const css = read('src/index.css');
+  assert.match(pages, /\.home-actions \.btn\s*\{[^}]*font-size:\s*var\(--font-size-body\);[^}]*font-weight:\s*var\(--font-weight-semibold\)/s);
+  assert.match(pages, /\.recommendation-refresh\s*\{[^}]*min-height:\s*32px;[^}]*padding:\s*5px 10px;[^}]*font-size:\s*var\(--font-size-sm\);[^}]*line-height:\s*1\.25;/s);
+  assert.match(css, /\.theme-mode-btn\s*\{[^}]*min-height:\s*34px;[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+});
+
+test('dedupe route fallback mirrors the initial page without post-scan sections', () => {
+  const app = read('src/App.jsx');
+  const css = read('src/index.css');
+  assert.match(app, /dedupe-route-fallback-header/);
+  assert.match(app, /dedupe-route-fallback-scope/);
+  assert.match(app, /dedupe-route-fallback-empty/);
+  assert.match(app, /Array\.from\(\{ length: 4 \}/);
+  assert.match(app, /Array\.from\(\{ length: 2 \}/);
+  assert.doesNotMatch(app, /dedupe-route-fallback-progress/);
+  assert.doesNotMatch(app, /dedupe-route-fallback-scan/);
+  assert.doesNotMatch(app, /<RouteSkeletonCards count=\{6\}/);
+  assert.match(css, /\.dedupe-route-fallback-header\s*\{/);
+  assert.match(css, /\.dedupe-route-fallback-scope\s*\{/);
+  assert.match(css, /\.dedupe-route-fallback-empty\s*\{/);
+});
+
+test('operational archive pages use compact buttons and category states never shift', () => {
+  const pages = read('src/styles/pages.css');
+  const css = read('src/index.css');
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  assert.match(pages, /\.dedupe-page \.btn:not\(\.btn-icon\),\s*\.history-page \.btn:not\(\.btn-icon\)\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*6px 10px;[^}]*font-size:\s*var\(--font-size-body\);[^}]*line-height:\s*1\.2;/s);
+  assert.match(css, /\.archive-category-button:hover:not\(:disabled\),\s*\.archive-category-button:active:not\(:disabled\),\s*\.archive-category-button\.is-active\s*\{[^}]*transform:\s*none;/s);
+  assert.doesNotMatch(dedupe, /onClick=\{onReset\}[^>]*style=\{\{/);
 });
 
 test('Home paginates archive searches without periodic list replacement', () => {
@@ -1500,6 +1615,7 @@ test('dedupe operation feedback uses shared progress and failure components', ()
   assert.equal(fs.existsSync(failureUrl), true, 'shared deletion failure dialog is missing');
 
   const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const css = read('src/index.css');
   const progress = fs.readFileSync(progressUrl, 'utf8');
   const failure = fs.readFileSync(failureUrl, 'utf8');
   assert.match(dedupe, /import ExecutionProgressPanel from '\.\.\/components\/ExecutionProgressPanel'/);
@@ -1507,6 +1623,7 @@ test('dedupe operation feedback uses shared progress and failure components', ()
   assert.doesNotMatch(dedupe, /function ExecutionProgressPanel/);
   assert.doesNotMatch(dedupe, /copyEhFailureUrls|copyStatus/);
   assert.match(progress, /dedupe-execution-progress-track/);
+  assert.match(css, /\.dedupe-execution-progress-detail\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(failure, /E-Hentai 收藏夹删除失败/);
   assert.match(failure, /LANraragi 删除失败/);
   assert.match(failure, /report\?\.lrrHeading \|\| 'LANraragi 删除失败'/);
@@ -1624,6 +1741,15 @@ test('dedupe, deletion reports, and random recommendations use shared toast feed
   assert.doesNotMatch(failureDialog, /copyStatus|setCopyStatus|dedupe-failure-copy-status/);
   assert.match(home, /if \(!background && !silent\)\s*showToast\(`随机推荐获取失败：\$\{e\?\.message \|\| '未知错误'\}`, 'error'\)/);
   assert.doesNotMatch(home, /console\.error\('随机推荐获取失败'/);
+});
+
+test('dedupe cards use one shared selection mark and no item divider', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const css = read('src/styles/pages.css');
+  const index = read('src/index.css');
+  assert.doesNotMatch(page, /className="dedupe-card-selected-mark"/);
+  assert.doesNotMatch(css, /\.dedupe-card-item\s*\{[^}]*border-bottom:/s);
+  assert.doesNotMatch(index, /\.dedupe-card-selected-mark\s*\{/);
 });
 
 test('active categories remain selected while applying and clearing text filters', () => {
@@ -1801,9 +1927,9 @@ test('dark theme uses the warm archive atelier palette and an independent overla
   const css = read('src/index.css');
   const darkTheme = tokens.match(/:root,\s*:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\s*\}/)?.[1] || '';
 
-  assert.match(darkTheme, /--canvas:\s*#121310/i);
-  assert.match(darkTheme, /--surface:\s*#1b1c18/i);
-  assert.match(darkTheme, /--surface-subtle:\s*#171815/i);
+  assert.match(darkTheme, /--canvas:\s*#0b0c0a/i);
+  assert.match(darkTheme, /--surface:\s*#11120f/i);
+  assert.match(darkTheme, /--surface-subtle:\s*#0d0e0b/i);
   assert.match(darkTheme, /--accent:\s*#d16a57/i);
   assert.match(darkTheme, /--overlay:\s*rgba\(0,\s*0,\s*0,\s*0\.72\)/i);
   assert.match(darkTheme, /--reader-stage:\s*var\(--surface-inset\)/i);
@@ -1895,10 +2021,10 @@ test('EH comments use semantic theme tokens without fixed uploader colors', () =
   assert.match(tokens, /--comment-positive:\s*var\(--positive\);/);
   assert.match(tokens, /--comment-uploader-border:\s*var\(--secondary\);/);
   assert.match(comments, /const scoreClass = c\.score > 0 \? 'var\(--comment-positive\)'/);
-  assert.match(comments, /style=\{\{ color: scoreClass, fontWeight: 'bold', fontSize: '12px' \}\}/);
+  assert.match(comments, /style=\{\{ color: scoreClass, fontWeight: 'var\(--font-weight-bold\)', fontSize: 'var\(--font-size-sm\)' \}\}/);
   assert.match(comments, /borderLeftColor: c\.isUploader \? 'var\(--comment-uploader-border\)' : 'var\(--comment-card-border\)'/);
   assert.match(comments, /color: c\.isEditable \? 'var\(--comment-user-self\)' : 'var\(--comment-user\)'/);
-  assert.match(comments, /fontSize: '14px', lineHeight: '1\.7', color: 'var\(--comment-text\)'/);
+  assert.match(comments, /fontSize: 'var\(--font-size-md\)', lineHeight: '1\.7', color: 'var\(--comment-text\)'/);
   assert.doesNotMatch(comments, /eh-comment-card-header|eh-comment-content|eh-comment-time|eh-comment-score|eh-vote-button is-up/);
   assert.match(comments, /M8 11L3 3H13L8 11Z/);
   assert.match(css, /\.eh-comment-input::-webkit-resizer[^}]*background:\s*transparent;/s);
@@ -1960,6 +2086,19 @@ test('custom color picker accepts canonical hex values and converts between RGB/
   assert.equal(parseHexColor('#12xz45'), null);
   assert.deepEqual(rgbToHsl({ r: 255, g: 0, b: 0 }), { h: 0, s: 100, l: 50 });
   assert.equal(hslToHex({ h: 120, s: 100, l: 50 }), '#00ff00');
+});
+
+test('custom color picker hue slider follows captured pointer drags', () => {
+  const picker = read('src/components/ThemeColorPicker.jsx');
+  assert.match(picker, /const hueRef = useRef\(null\)/);
+  assert.match(picker, /const hueDraggingRef = useRef\(false\)/);
+  assert.match(picker, /const updateHue = useCallback\(\(event\) => \{/);
+  assert.match(picker, /hueRef\.current\?\.getBoundingClientRect\(\)/);
+  assert.match(picker, /const handleHuePointerDown = \(event\) => \{[\s\S]{0,240}hueDraggingRef\.current = true;[\s\S]{0,240}setPointerCapture\?\.\(event\.pointerId\)[\s\S]{0,240}updateHue\(event\)/);
+  assert.match(picker, /onPointerMove=\{\(event\) => \{ if \(hueDraggingRef\.current\) updateHue\(event\); \}\}/);
+  assert.match(picker, /onPointerUp=\{stopHueDragging\}/);
+  assert.match(picker, /onPointerCancel=\{stopHueDragging\}/);
+  assert.match(picker, /onLostPointerCapture=\{stopHueDragging\}/);
 });
 
 test('config transfer includes and validates the split custom theme palette', () => {
@@ -2060,8 +2199,8 @@ test('catalog edge controls expose semantic picker controls and class-driven ver
   assert.match(picker, /style=\{\{ left: `\$\{\(hsl\.h \/ 359\) \* 100\}%` \}\}/);
   assert.doesNotMatch(version, /style=\{\{ fontSize:/);
   assert.match(version, /className=\{`app-version-link\$\{compact \? ' is-compact' : ''\}`\}/);
-  assert.match(pages, /\.app-version-link\s*\{[^}]*font-size:\s*12px;/s);
-  assert.match(pages, /\.app-version-link\.is-compact\s*\{[^}]*font-size:\s*11px;/s);
+  assert.match(pages, /\.app-version-link\s*\{[^}]*font-size:\s*var\(--font-size-sm\);/s);
+  assert.match(pages, /\.app-version-link\.is-compact\s*\{[^}]*font-size:\s*var\(--font-size-xs\);/s);
 });
 
 test('sync data survives scope switches and failed flushes', () => {

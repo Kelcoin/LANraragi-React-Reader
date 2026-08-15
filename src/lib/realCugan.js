@@ -1,7 +1,9 @@
 import { createTilePlan } from './superResolutionTiling.js';
 
 const INPUT_SIZE = 64;
-const PADDING = 18;
+// The converted graph performs its own 18px REFLECT pad before the first
+// convolution. Feed the full model tile; an outer pad creates block seams.
+const PADDING = 0;
 const TILE_CORE = INPUT_SIZE - PADDING * 2;
 const SCALE = 2;
 const OUTPUT_SIZE = INPUT_SIZE * SCALE;
@@ -58,9 +60,45 @@ function disposeOutput(output) {
   } else output?.dispose?.();
 }
 
+function bilinearChannel(pixels, topLeft, topRight, bottomLeft, bottomRight, channel, xWeight, yWeight) {
+  const topValue = pixels[topLeft + channel]
+    + (pixels[topRight + channel] - pixels[topLeft + channel]) * xWeight;
+  const bottomValue = pixels[bottomLeft + channel]
+    + (pixels[bottomRight + channel] - pixels[bottomLeft + channel]) * xWeight;
+  return topValue + (bottomValue - topValue) * yWeight;
+}
+
 function clampByte(value) {
-  if (!Number.isFinite(value)) throw new Error('Real-CUGAN output contains a non-finite value');
-  return Math.round(Math.max(0, Math.min(1, value)) * 255);
+  return Math.round(Math.max(0, Math.min(255, value)));
+}
+
+function writeWithSourceChroma(output, target, red, green, blue, pixels, width, height, outputX, outputY) {
+  if (!Number.isFinite(red) || !Number.isFinite(green) || !Number.isFinite(blue)) {
+    throw new Error('Real-CUGAN output contains a non-finite value');
+  }
+  const sourceX = Math.max(0, Math.min(width - 1, (outputX + 0.5) / SCALE - 0.5));
+  const sourceY = Math.max(0, Math.min(height - 1, (outputY + 0.5) / SCALE - 0.5));
+  const left = Math.floor(sourceX);
+  const top = Math.floor(sourceY);
+  const right = Math.min(width - 1, left + 1);
+  const bottom = Math.min(height - 1, top + 1);
+  const xWeight = sourceX - left;
+  const yWeight = sourceY - top;
+  const topLeft = (top * width + left) * 4;
+  const topRight = (top * width + right) * 4;
+  const bottomLeft = (bottom * width + left) * 4;
+  const bottomRight = (bottom * width + right) * 4;
+  const sourceRed = bilinearChannel(pixels, topLeft, topRight, bottomLeft, bottomRight, 0, xWeight, yWeight);
+  const sourceGreen = bilinearChannel(pixels, topLeft, topRight, bottomLeft, bottomRight, 1, xWeight, yWeight);
+  const sourceBlue = bilinearChannel(pixels, topLeft, topRight, bottomLeft, bottomRight, 2, xWeight, yWeight);
+  const cb = 128 - sourceRed * 0.168736 - sourceGreen * 0.331264 + sourceBlue * 0.5;
+  const cr = 128 + sourceRed * 0.5 - sourceGreen * 0.418688 - sourceBlue * 0.081312;
+  const luma = (red * 299 + green * 587 + blue * 114) * 0.255;
+  const cbDelta = Math.abs(cb - 128) < 1e-6 ? 0 : cb - 128;
+  const crDelta = Math.abs(cr - 128) < 1e-6 ? 0 : cr - 128;
+  output[target] = clampByte(luma + 1.402 * crDelta);
+  output[target + 1] = clampByte(luma - 0.344136 * cbDelta - 0.714136 * crDelta);
+  output[target + 2] = clampByte(luma + 1.772 * cbDelta);
 }
 
 function bytesToHex(bytes) {
@@ -142,11 +180,22 @@ export function createRealCuganProcessor({ tf, model } = {}) {
         throwIfCancelled(isCancelled);
         for (let y = 0; y < tile.core.height * SCALE; y += 1) {
           for (let x = 0; x < tile.core.width * SCALE; x += 1) {
-            const source = (((y + PADDING * SCALE) * OUTPUT_SIZE) + x + PADDING * SCALE) * 3;
-            const target = (((tile.core.y * SCALE + y) * outputWidth) + tile.core.x * SCALE + x) * 4;
-            outputPixels[target] = clampByte(data[source]);
-            outputPixels[target + 1] = clampByte(data[source + 1]);
-            outputPixels[target + 2] = clampByte(data[source + 2]);
+            const source = ((y * OUTPUT_SIZE) + x) * 3;
+            const outputX = tile.core.x * SCALE + x;
+            const outputY = tile.core.y * SCALE + y;
+            const target = (outputY * outputWidth + outputX) * 4;
+            writeWithSourceChroma(
+              outputPixels,
+              target,
+              data[source],
+              data[source + 1],
+              data[source + 2],
+              pixels,
+              width,
+              height,
+              outputX,
+              outputY,
+            );
           }
         }
       } finally {
@@ -175,32 +224,23 @@ export function createRealCuganProcessor({ tf, model } = {}) {
 }
 
 export async function initializeRealCuganBackend(tf) {
-  const errors = [];
-  for (const backend of ['webgl', 'wasm']) {
-    try {
-      if (await tf.setBackend(backend)) {
-        await tf.ready();
-        return tf.getBackend?.() || backend;
-      }
-    } catch (error) {
-      errors.push(`${backend}: ${error?.message || String(error)}`);
+  try {
+    if (await tf.setBackend('webgpu')) {
+      await tf.ready();
+      return tf.getBackend?.() || 'webgpu';
     }
+  } catch (error) {
+    throw new Error(`Real-CUGAN WebGPU initialization failed: ${error?.message || String(error)}`);
   }
-  throw new Error(`Real-CUGAN backend initialization failed${errors.length ? ` (${errors.join('; ')})` : ''}`);
+  throw new Error('Real-CUGAN WebGPU initialization failed: backend unavailable');
 }
 
 export async function createProductionRealCuganProcessor(manifest) {
-  const [tf, converter, wasm] = await Promise.all([
+  const [tf, converter] = await Promise.all([
     import('@tensorflow/tfjs-core'),
     import('@tensorflow/tfjs-converter'),
-    import('@tensorflow/tfjs-backend-wasm'),
-    import('@tensorflow/tfjs-backend-webgl'),
+    import('@tensorflow/tfjs-backend-webgpu'),
   ]);
-  wasm.setWasmPaths({
-    'tfjs-backend-wasm.wasm': new URL('../../node_modules/@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm.wasm', import.meta.url).href,
-    'tfjs-backend-wasm-simd.wasm': new URL('../../node_modules/@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-simd.wasm', import.meta.url).href,
-    'tfjs-backend-wasm-threaded-simd.wasm': new URL('../../node_modules/@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm-threaded-simd.wasm', import.meta.url).href,
-  });
   const backend = await initializeRealCuganBackend(tf);
   const resolveUrl = (url) => new URL(url, globalThis.location?.origin ?? import.meta.url).href;
   const model = await converter.loadGraphModel(createRealCuganModelIOHandler({

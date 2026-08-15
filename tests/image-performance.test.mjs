@@ -18,6 +18,16 @@ test('super-resolution display budget preserves aspect ratio', () => {
   assert.equal(cachePolicy.SUPER_RESOLUTION_MAX_INFERENCE_PIXELS, 64_000_000);
 });
 
+test('Waifu2x RGB tile stitching uses a dedicated allocation-free copy path', () => {
+  const worker = read('src/lib/superResolution.worker.js');
+  assert.match(worker, /function copyRgbTensorTileToOutput\s*\(/);
+  assert.match(worker, /copyRgbTensorTileToOutput\(\s*outputTensor,/);
+  const copyHelper = worker.match(/function copyRgbTensorTileToOutput\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(copyHelper, 'missing Waifu2x RGB copy helper');
+  assert.doesNotMatch(copyHelper[1], /readTensorRgb\(/);
+  assert.doesNotMatch(copyHelper[1], /\[[^\]]*red[^\]]*green[^\]]*blue[^\]]*\]/i);
+});
+
 test('reader preloads remote pages as blobs without decoding throwaway images', () => {
   const source = read('src/pages/Reader.jsx');
   assert.match(source, /import \{[^}]*primeImage[^}]*\} from '\.\.\/lib\/imageCache';/s);
@@ -37,7 +47,11 @@ test('decode window includes current spread and one spread on each side', () => 
 test('normal paged reader keeps adjacent decode-window images mounted offscreen', () => {
   const source = read('src/pages/Reader.jsx');
   assert.match(source, /const adjacentDecodePageIndices =/);
-  assert.match(source, /adjacentDecodePageIndices\.map\([\s\S]*?<PageImage[\s\S]*?serializedDecode/);
+  assert.match(source, /const decodeWindowUnits =/);
+  assert.match(source, /reader-page:\$\{unit\.pageIndex\}:\$\{unit\.splitPart\}/);
+  assert.match(source, /aria-hidden=\{visible \? undefined : 'true'\}/);
+  assert.match(source, /onReady=\{visible \? handleNormalSpreadUnitReady : undefined\}/);
+  assert.match(source, /if \(preserveReadySource\) \{\s*setShowLoadingStatus\(false\);[\s\S]*onReady\?\.\(pageIndex\)/);
 });
 
 test('image decode queue reserves one of two slots for critical work', async () => {
@@ -107,6 +121,24 @@ test('image decode queue cancels stale queued and active work', async () => {
   await Promise.allSettled([active.promise, stale.promise]);
   assert.equal(activeSignal.aborted, true);
   assert.equal(staleStarted, false);
+});
+
+test('image decode queue can cancel only background super-resolution work', async () => {
+  const queue = imageLoadQueue.createImageDecodeQueue({ maxConcurrent: 2 });
+  let backgroundSignal;
+  let foregroundStarted = false;
+  const background = queue.schedule('super-resolution:adjacent', async (signal) => {
+    backgroundSignal = signal;
+    await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+  }, imageLoadQueue.IMAGE_LOAD_PRIORITY.PRELOAD);
+  const foreground = queue.schedule('immersive-super-resolution:current', async () => {
+    foregroundStarted = true;
+  }, imageLoadQueue.IMAGE_LOAD_PRIORITY.CRITICAL);
+  await new Promise((resolve) => setImmediate(resolve));
+  queue.cancelWhere((key) => String(key).startsWith('super-resolution:'));
+  await Promise.allSettled([background.promise, foreground.promise]);
+  assert.equal(backgroundSignal?.aborted, true);
+  assert.equal(foregroundStarted, true);
 });
 
 test('image decode queue supports one slot and applies runtime limit changes', async () => {
@@ -297,11 +329,11 @@ test('image sources decode offscreen before replacing a visible bitmap', async (
 
 test('paged readers retain the visible frame until the replacement spread is decoded', () => {
   const reader = read('src/pages/Reader.jsx');
-  assert.match(reader, /normalSpreadRenderState\.units\.map\(\(unit, slotIndex\) =>/);
   assert.match(reader, /getPendingSpreadRenderState\(currentSpread, displayedSpread, targetPending\)/);
-  assert.match(reader, /key=\{`spread-slot:\$\{slotIndex\}`\}/);
+  assert.match(reader, /normalSpreadRenderState\.units\.forEach\(\(unit, slotIndex\) =>/);
+  assert.match(reader, /key=\{`reader-page:\$\{unit\.pageIndex\}:\$\{unit\.splitPart\}`\}/);
   assert.match(reader, /const decoded = await decodeImageSource\(resolved\.src/);
-  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread, IMAGE_LOAD_PRIORITY\.CRITICAL, true, getSuperResolutionForPage\)/);
+  assert.match(reader, /loadSpread\([\s\S]{0,120}activeSpread,[\s\S]{0,120}IMAGE_LOAD_PRIORITY\.CRITICAL,[\s\S]{0,40}true,[\s\S]{0,140}foregroundSuperResolutionPageIndices\.has\(pageIndex\)/);
   assert.match(reader, /const commits = await Promise\.all/);
   assert.match(reader, /commits\.forEach\(\(commit\) =>[\s\S]{0,80}commit\(\)/);
 });

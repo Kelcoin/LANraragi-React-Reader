@@ -157,10 +157,17 @@ export function createImageDecodeQueue({ maxConcurrent = 3 } = {}) {
     [...queued].forEach((job) => job.cancel());
   }
 
+  function cancelWhere(predicate) {
+    if (typeof predicate !== 'function') return;
+    [...active, ...queued].forEach((job) => {
+      if (predicate(job.key, job.priority)) job.cancel();
+    });
+  }
+
   function setMaxConcurrent(value) {
     limit = Math.max(1, Math.floor(Number(value) || 1));
     pump();
   }
 
-  return { schedule, cancelAll, setMaxConcurrent };
+  return { schedule, cancelAll, cancelWhere, setMaxConcurrent };
 }

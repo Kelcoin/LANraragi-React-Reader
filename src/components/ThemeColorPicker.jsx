@@ -29,6 +29,8 @@ export default function ThemeColorPicker({ label, value, onChange }) {
   const popoverRef = useRef(null);
   const saturationRef = useRef(null);
   const draggingRef = useRef(false);
+  const hueRef = useRef(null);
+  const hueDraggingRef = useRef(false);
   const [popoverPosition, setPopoverPosition] = useState(null);
 
   useEffect(() => {
@@ -114,6 +116,23 @@ export default function ThemeColorPicker({ label, value, onChange }) {
     draggingRef.current = true;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     updateSaturationLightness(event);
+  };
+
+  const updateHue = useCallback((event) => {
+    const bounds = hueRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0) return;
+    const nextHue = clamp(((event.clientX - bounds.left) / bounds.width) * 359, 0, 359);
+    emitHsl({ ...hsl, h: nextHue });
+  }, [emitHsl, hsl]);
+
+  const handleHuePointerDown = (event) => {
+    hueDraggingRef.current = true;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateHue(event);
+  };
+
+  const stopHueDragging = () => {
+    hueDraggingRef.current = false;
   };
 
   const handleHexCommit = () => {
@@ -217,6 +236,7 @@ export default function ThemeColorPicker({ label, value, onChange }) {
         </div>
         <div className="theme-color-picker-hue-row">
           <div
+            ref={hueRef}
             className="theme-color-picker-hue"
             role="slider"
             tabIndex={0}
@@ -225,11 +245,11 @@ export default function ThemeColorPicker({ label, value, onChange }) {
             aria-valuemax="359"
             aria-valuenow={Math.round(hsl.h)}
             style={{ background: hueBackground }}
-            onPointerDown={(event) => {
-              const bounds = event.currentTarget.getBoundingClientRect();
-              const nextHue = clamp(((event.clientX - bounds.left) / bounds.width) * 359, 0, 359);
-              emitHsl({ ...hsl, h: nextHue });
-            }}
+            onPointerDown={handleHuePointerDown}
+            onPointerMove={(event) => { if (hueDraggingRef.current) updateHue(event); }}
+            onPointerUp={stopHueDragging}
+            onPointerCancel={stopHueDragging}
+            onLostPointerCapture={stopHueDragging}
             onKeyDown={(event) => {
               if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
               event.preventDefault();

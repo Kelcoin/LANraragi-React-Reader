@@ -212,29 +212,38 @@ test('unsigned reader setting inputs remove non-digit and negative content', () 
   assert.equal(readerSettings.sanitizeUnsignedIntegerInput(''), '');
 });
 
-test('super resolution support allows the WASM fallback without WebGL', () => {
+test('super resolution support requires WebGPU instead of falling back to WebGL or WASM', () => {
   const previous = {
-    document: globalThis.document,
     Worker: globalThis.Worker,
     createImageBitmap: globalThis.createImageBitmap,
     OffscreenCanvas: globalThis.OffscreenCanvas,
   };
-  globalThis.document = { createElement: () => ({ getContext: () => null }) };
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} });
   globalThis.Worker = function Worker() {};
   globalThis.createImageBitmap = function createImageBitmap() {};
   globalThis.OffscreenCanvas = function OffscreenCanvas() {};
   try {
     assert.deepEqual(superResolution.detectSuperResolutionSupport(), {
-      supported: true,
-      reason: '',
-      gpu: false,
+      supported: false,
+      reason: '当前浏览器或设备不支持 WebGPU，无法启用超分。',
     });
   } finally {
+    Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete globalThis[key];
       else globalThis[key] = value;
     }
   }
+});
+
+test('super resolution rejects a WebGPU environment that cannot acquire an adapter', async () => {
+  assert.deepEqual(await superResolution.verifySuperResolutionSupport({
+    requestAdapter: async () => null,
+  }), {
+    supported: false,
+    reason: '未找到可用的 WebGPU 显卡适配器，无法启用超分。',
+  });
 });
 
 test('reader settings keep E-Hentai sorting valid across Home and Reader', () => {
@@ -366,7 +375,7 @@ test('config import normalizes super-resolution reader settings', () => {
     for (const byte of bytes) binary += String.fromCharCode(byte);
     assert.equal(workerConfig.importConfig(btoa(binary)), 1);
     const imported = JSON.parse(values.get('lrr_reader_settings'));
-    assert.equal(imported.srEnabled, true);
+    assert.equal(imported.srEnabled, false);
     assert.equal(imported.srModel, 'waifu2x');
     assert.equal(imported.srAuto, true);
     assert.equal(imported.srAutoThreshold, 640);

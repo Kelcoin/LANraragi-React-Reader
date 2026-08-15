@@ -42,8 +42,8 @@ function themeBlock(css, selector) {
 test('archive atelier exposes layered semantic theme tokens', () => {
   const css = read('src/styles/tokens.css');
   assert.match(css, /@layer tokens/);
-  assert.match(css, /--canvas:\s*#121310/i);
-  assert.match(css, /--surface:\s*#1b1c18/i);
+  assert.match(css, /--canvas:\s*#0b0c0a/i);
+  assert.match(css, /--surface:\s*#11120f/i);
   assert.match(css, /--accent:\s*#d16a57/i);
   assert.match(css, /--positive:\s*#8e9a69/i);
   assert.match(css, /--reader-stage:\s*var\(--surface-inset\)/i);
@@ -54,6 +54,39 @@ test('archive atelier exposes layered semantic theme tokens', () => {
   assert.match(css, /--radius-xs:\s*4px/);
   assert.match(css, /--radius-sm:\s*6px/);
   assert.match(css, /--radius-md:\s*8px/);
+});
+
+test('typography uses the shared size and weight scale', () => {
+  const tokens = read('src/styles/tokens.css');
+  for (const token of [
+    '--font-size-2xs', '--font-size-xs', '--font-size-sm', '--font-size-body', '--font-size-md',
+    '--font-size-lg', '--font-size-xl', '--font-size-2xl', '--font-size-3xl', '--font-size-4xl',
+    '--font-weight-regular', '--font-weight-medium', '--font-weight-semibold', '--font-weight-bold',
+  ]) {
+    assert.match(tokens, new RegExp(`${token}:`));
+  }
+
+  assert.match(tokens, /--font-size-3xl:\s*22px;/);
+  assert.match(tokens, /--font-size-4xl:\s*26px;/);
+  const pages = read('src/styles/pages.css');
+  assert.match(pages, /\.home-brand-title\s*\{[^}]*font-size:\s*var\(--font-size-3xl\);[^}]*font-weight:\s*var\(--font-weight-bold\);/s);
+  assert.doesNotMatch(pages, /font-size:\s*var\(--font-size-4xl\)[^}]*font-weight:\s*var\(--font-weight-semibold\)/s);
+
+  const sourceRoot = new URL('../src/', import.meta.url);
+  const collectSourceFiles = (directory, prefix = 'src/') => fs.readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => entry.isDirectory()
+      ? collectSourceFiles(new URL(`${entry.name}/`, directory), `${prefix}${entry.name}/`)
+      : (/\.(?:css|jsx|js)$/.test(entry.name) ? [`${prefix}${entry.name}`] : []));
+  for (const file of collectSourceFiles(sourceRoot).filter((name) => name !== 'src/styles/tokens.css')) {
+    const source = read(file);
+    assert.doesNotMatch(source, /font-size:\s*\d+(?:\.\d+)?px/i, `${file} has a raw font size`);
+    assert.doesNotMatch(source, /fontSize:\s*['"]\d+(?:\.\d+)?px['"]/, `${file} has a raw inline font size`);
+    assert.doesNotMatch(
+      source,
+      /font-weight:\s*(?:[124-9]\d\d|3\d[1-9]|bold)|fontWeight:\s*(?:['"](?:bold|[124-9]\d\d|3\d[1-9])['"]|\d{3,})/i,
+      `${file} has a non-standard weight`,
+    );
+  }
 });
 
 test('index css imports archive atelier layers in stable order', () => {
@@ -166,6 +199,7 @@ test('task4 owned surfaces use semantic controls and class-driven presentation',
   assert.match(pages, /\.recommendation-panel\s*\{/);
   assert.match(pages, /\.recommendation-panel\.is-collapsed\s*\{/);
   assert.match(pages, /\.recommendation-content\.is-loading\s*\{/);
+  assert.match(pages, /\.recommendation-tab\s*\{[^}]*min-height:\s*32px;[^}]*padding:\s*4px 12px;[^}]*line-height:\s*1\.3;/s);
 });
 
 test('task4 Home surfaces use semantic controls and page-owned settings styles', () => {
@@ -203,6 +237,13 @@ test('task4 Home surfaces use semantic controls and page-owned settings styles',
   }
   assert.match(home, /server-status-button\$\{serverProbeRunning/);
   assert.match(home, /history-view-all-btn/);
+  assert.match(home, /const \[showBackToTop, setShowBackToTop\] = useState\(false\)/);
+  assert.match(home, /window\.addEventListener\('scroll', handleHomeScroll, \{ passive: true \}\)/);
+  assert.match(home, /window\.scrollTo\(\{ top: 0, left: 0, behavior: 'smooth' \}\)/);
+  assert.match(home, /aria-label="返回顶部"/);
+  assert.match(home, /home-back-to-top\$\{showBackToTop \? ' is-visible' : ''\}/);
+  assert.match(pages, /\.home-back-to-top\s*\{[^}]*position:\s*fixed;[^}]*opacity:\s*0;[^}]*transform:\s*translateY\(10px\) scale\(\.94\);/s);
+  assert.match(pages, /\.home-back-to-top\.is-visible\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*translateY\(0\) scale\(1\);/s);
   assert.match(home, /archive-search-clear/);
   assert.match(home, /archive-search-preset-toggle/);
   assert.match(home, /className="surface archive-workspace section-reveal/);
@@ -263,7 +304,7 @@ test('built-in and custom themes expose the complete semantic token contract', (
   assert.deepEqual(DEFAULT_THEME_PALETTES.dark, {
     accent: '#d16a57',
     secondary: '#b8a58f',
-    background: '#121310',
+    background: '#0b0c0a',
   });
   assert.notEqual(DEFAULT_THEME_PALETTES.light.secondary, '#66734a');
 
@@ -427,7 +468,7 @@ test('ArchiveCard uses semantic surfaces and keeps only approved runtime inline 
   assert.match(card, /'--archive-wide-card-width': `\$\{wideCardWidth\}px`/);
   assert.match(card, /'--tag-ns-color': group\.color/);
   assert.match(pages, /\.archive-title-slot\s*\{[^}]*height:\s*43\.7px;/s);
-  assert.match(pages, /\.archive-title\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.5;[^}]*padding-bottom:\s*3px;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*font-size:\s*var\(--font-size-body\);[^}]*line-height:\s*1\.5;[^}]*padding-bottom:\s*3px;/s);
   assert.match(pages, /\.archive-card-meta\s*\{[^}]*height:\s*14\.85px;/s);
 
   for (const selector of [
@@ -460,8 +501,8 @@ test('catalog edge controls use semantic classes and retain approved picker runt
   assert.match(picker, /style=\{\{ left: `\$\{\(hsl\.h \/ 359\) \* 100\}%` \}\}/);
   assert.doesNotMatch(version, /style=\{\{ fontSize:/);
   assert.match(version, /className=\{`app-version-link\$\{compact \? ' is-compact' : ''\}`\}/);
-  assert.match(pages, /\.app-version-link\s*\{[^}]*font-size:\s*12px;/s);
-  assert.match(pages, /\.app-version-link\.is-compact\s*\{[^}]*font-size:\s*11px;/s);
+  assert.match(pages, /\.app-version-link\s*\{[^}]*font-size:\s*var\(--font-size-sm\);/s);
+  assert.match(pages, /\.app-version-link\.is-compact\s*\{[^}]*font-size:\s*var\(--font-size-xs\);/s);
   assert.match(pages, /\.theme-color-picker-trigger,\s*\.theme-color-picker-eyedropper\s*\{[^}]*min-width:\s*32px;[^}]*min-height:\s*32px;/s);
 });
 
@@ -506,7 +547,8 @@ test('workbench queues and duplicate candidates use dividers instead of nested c
   const progress = read('src/components/ExecutionProgressPanel.jsx');
   assert.match(progress, /workbench-section/);
   assert.match(pages, /\.upload-task-row\s*\{[^}]*border-radius:\s*0;[^}]*border-width:\s*0 0 1px/s);
-  assert.match(pages, /\.dedupe-card-item\s*\{[^}]*border-radius:\s*0;[^}]*border-bottom:\s*1px solid var\(--border-subtle\)/s);
+  assert.match(pages, /\.dedupe-card-item\s*\{[^}]*border-radius:\s*0;/s);
+  assert.doesNotMatch(pages, /\.dedupe-card-item\s*\{[^}]*border-bottom:\s*1px solid var\(--border-subtle\)/s);
   assert.match(pages, /@media \(max-width:\s*720px\)[\s\S]*\.workbench-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
   assert.doesNotMatch(pages, /border-radius:\s*(?:[9]|1[0-9]|[2-9][0-9])px/);
 });
@@ -557,7 +599,7 @@ test('theme self-check validates approved semantic colors and browser chrome', (
   assert.match(check, /#000/i);
   assert.match(check, /THEME_COLORS/);
   assert.match(check, /theme-color/);
-  assert.match(check, /#121310/i);
+  assert.match(check, /#0b0c0a/i);
 });
 
 test('settings categories animate measured panel height', () => {
@@ -587,7 +629,9 @@ test('immersive controls use safe-area bottom corners without fixed tall-screen 
   const reader = read('src/pages/Reader.jsx');
   assert.match(css, /\.reader-immersive-trigger\s*\{[^}]*width:\s*clamp\([^}]*height:\s*clamp\(/s);
   assert.match(css, /\.reader-immersive-controls\s*\{[^}]*bottom:\s*calc\(var\(--app-safe-area-bottom\)\s*\+\s*16px\)/s);
-  assert.match(reader, /data-indicator-position=\{pageIndicatorShouldShow \? \(isMobile \? 'center' : 'right'\) : 'none'\}/);
+  assert.match(reader, /data-indicator-position=\{immersiveIndicatorPosition\}/);
+  assert.match(reader, /immersiveIndicatorAnchorRef\.current \|\| \(pageIndicatorShouldShow \? \(isMobile \? 'center' : 'right'\) : 'none'\)/);
+  assert.match(reader, /if \(!immersiveIndicatorAnchorRef\.current\) \{[\s\S]*pageIndicatorShouldShowRef\.current/);
   assert.match(css, /\.reader-immersive-controls\[data-indicator-position="center"\]/);
   assert.match(css, /\.reader-immersive-controls\[data-side="right"\]\[data-indicator-position="right"\]/);
   assert.doesNotMatch(css, /reader-immersive-(?:trigger|controls)[\s\S]{0,500}(?:274px|\+\s*52px)/);

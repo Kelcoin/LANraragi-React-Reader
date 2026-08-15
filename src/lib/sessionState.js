@@ -95,6 +95,17 @@ function getNavigationType() {
   return 'navigate';
 }
 
+export function shouldRestoreColdRoute({
+  navigationType = 'navigate',
+  wasDiscarded = false,
+  isPwaUpdateReload = false,
+  hasResumeCandidate = false,
+  hasRouteSnapshot = false,
+} = {}) {
+  if (isPwaUpdateReload || (!wasDiscarded && navigationType !== 'reload')) return false;
+  return hasResumeCandidate || hasRouteSnapshot;
+}
+
 function createBootState() {
   if (typeof window === 'undefined') {
     return { isFreshRuntime: false, shouldColdRestore: false, isPwaUpdateReload: false };
@@ -129,18 +140,22 @@ function createBootState() {
   // On mobile PWAs, a backgrounded app can be discarded and later restored
   // through a same-context reload where sessionStorage survives. In that case
   // `isFreshRuntime` is false even though we do need a cold restore path.
-  const shouldColdRestore =
-    !isPwaUpdateReload &&
-    (
-      !!validResumeCandidate ||
-      (!!routeSnapshot && (wasDiscarded || navigationType === 'reload'))
-    );
+  const shouldColdRestore = shouldRestoreColdRoute({
+    navigationType,
+    wasDiscarded,
+    isPwaUpdateReload,
+    hasResumeCandidate: !!validResumeCandidate,
+    hasRouteSnapshot: !!routeSnapshot,
+  });
 
   // Resume markers are one-shot hints for the next fresh runtime only.
   // Consume them immediately so stale background state cannot leak into
   // later explicit launches.
   if (shouldColdRestore) {
     safeRemove(localStorage, RESUME_KEY);
+  } else if (navigationType === 'navigate' && !wasDiscarded) {
+    safeRemove(localStorage, RESUME_KEY);
+    safeRemove(localStorage, ROUTE_KEY);
   }
 
   return {

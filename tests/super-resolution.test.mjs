@@ -84,13 +84,14 @@ function createDeferred() {
 
 const workerModuleUrl = new URL('../src/lib/superResolution.worker.js', import.meta.url);
 
-test('production Worker loads the registered WebGL build and Vite-managed WASM assets', async () => {
+test('production Worker loads the WebGPU build without WebGL or WASM fallbacks', async () => {
   const workerSource = await readFile(workerModuleUrl, 'utf8');
   const runtimeSource = await readFile(
     new URL('../src/lib/superResolutionRuntime.js', import.meta.url),
     'utf8',
   );
   const viteSource = await readFile(new URL('../vite.config.js', import.meta.url), 'utf8');
+  const nginxSource = await readFile(new URL('../nginx.conf.template', import.meta.url), 'utf8');
   const ortSource = await readFile(
     new URL('../src/lib/superResolutionOrt.js', import.meta.url),
     'utf8',
@@ -98,12 +99,17 @@ test('production Worker loads the registered WebGL build and Vite-managed WASM a
 
   assert.match(workerSource, /import \{ loadOrtBackend \} from '\.\/superResolutionOrt\.js';/);
   assert.doesNotMatch(workerSource, /import\('\.\/superResolutionOrt\.js'\)/);
-  assert.match(ortSource, /import\('onnxruntime-web\/webgl'\)/);
-  assert.match(ortSource, /import\('onnxruntime-web\/wasm'\)/);
-  assert.match(ortSource, /new URL\('\.\.\/\.\.\/node_modules\/onnxruntime-web\/dist\/ort-wasm-simd-threaded\.mjs', import\.meta\.url\)/);
-  assert.match(ortSource, /new URL\('\.\.\/\.\.\/node_modules\/onnxruntime-web\/dist\/ort-wasm-simd-threaded\.wasm', import\.meta\.url\)/);
+  assert.match(ortSource, /import\('onnxruntime-web\/webgpu'\)/);
+  assert.doesNotMatch(ortSource, /onnxruntime-web\/(?:webgl|wasm)/);
+  assert.match(ortSource, /ort-wasm-simd-threaded\.asyncify\.mjs/);
+  assert.match(ortSource, /ort-wasm-simd-threaded\.asyncify\.wasm/);
   assert.match(ortSource, /ort\.env\.wasm\.wasmPaths\s*=\s*\{[\s\S]*mjs:[\s\S]*wasm:/);
   assert.match(viteSource, /worker:\s*\{\s*format:\s*'es',?\s*\}/);
+  assert.match(viteSource, /'Cross-Origin-Opener-Policy':\s*'same-origin'/);
+  assert.match(viteSource, /'Cross-Origin-Embedder-Policy':\s*'require-corp'/);
+  assert.match(viteSource, /preview:\s*\{\s*headers:\s*isolationHeaders\s*\}/);
+  assert.match(nginxSource, /add_header Cross-Origin-Opener-Policy "same-origin" always;/);
+  assert.match(nginxSource, /add_header Cross-Origin-Embedder-Policy "require-corp" always;/);
   assert.match(runtimeSource, /new Worker\(new URL\('\.\/superResolution\.worker\.js', import\.meta\.url\)/);
   assert.doesNotMatch(runtimeSource, /new globalThis\.Worker\(new URL/);
 });
@@ -114,6 +120,7 @@ test('Real-CUGAN reflects tile edges and disposes every inference tensor', async
 
   const disposed = [];
   let inputShape;
+  let inferenceCount = 0;
   const tf = {
     tensor4d(data, shape) {
       inputShape = shape;
@@ -123,6 +130,7 @@ test('Real-CUGAN reflects tile edges and disposes every inference tensor', async
   };
   const model = {
     async executeAsync() {
+      inferenceCount += 1;
       return {
         shape: [1, 128, 128, 3],
         async data() { return new Float32Array(128 * 128 * 3).fill(0.5); },
@@ -132,30 +140,88 @@ test('Real-CUGAN reflects tile edges and disposes every inference tensor', async
     dispose: () => disposed.push('model'),
   };
   const processor = createRealCuganProcessor({ tf, model });
-  const result = await processor.process(new Uint8ClampedArray(28 * 28 * 4).fill(255), 28, 28);
+  const result = await processor.process(new Uint8ClampedArray(64 * 64 * 4).fill(255), 64, 64);
 
   assert.deepEqual(inputShape, [1, 64, 64, 3]);
-  assert.equal(result.width, 56);
-  assert.equal(result.height, 56);
+  assert.equal(result.width, 128);
+  assert.equal(result.height, 128);
+  assert.equal(inferenceCount, 1);
   assert.equal(result.pixels[0], 128);
   assert.deepEqual(disposed, ['output', 'input']);
   processor.dispose();
   assert.deepEqual(disposed, ['output', 'input', 'model']);
 });
 
-test('Real-CUGAN backend initialization falls back from WebGL to WASM', async () => {
-  const { initializeRealCuganBackend } = await import('../src/lib/realCugan.js');
-  const attempts = [];
-  const tf = {
-    async setBackend(backend) {
-      attempts.push(backend);
-      return backend === 'wasm';
+test('Real-CUGAN cannot introduce chroma into a grayscale source page', async () => {
+  const { createRealCuganProcessor } = await import('../src/lib/realCugan.js');
+  const source = new Uint8ClampedArray(28 * 28 * 4);
+  for (let index = 0; index < source.length; index += 4) {
+    source[index] = 120;
+    source[index + 1] = 120;
+    source[index + 2] = 120;
+    source[index + 3] = 255;
+  }
+  const corrupted = new Float32Array(128 * 128 * 3);
+  for (let index = 0; index < corrupted.length; index += 3) {
+    corrupted[index] = 1;
+    corrupted[index + 1] = 0;
+    corrupted[index + 2] = 0;
+  }
+  const processor = createRealCuganProcessor({
+    tf: {
+      tensor4d: () => ({ dispose() {} }),
     },
-    async ready() {},
-    getBackend: () => attempts.at(-1),
+    model: {
+      async executeAsync() {
+        return {
+          shape: [1, 128, 128, 3],
+          async data() { return corrupted; },
+          dispose() {},
+        };
+      },
+      dispose() {},
+    },
+  });
+
+  const result = await processor.process(source, 28, 28);
+
+  for (let index = 0; index < result.pixels.length; index += 4) {
+    assert.ok(Math.max(
+      result.pixels[index],
+      result.pixels[index + 1],
+      result.pixels[index + 2],
+    ) - Math.min(
+      result.pixels[index],
+      result.pixels[index + 1],
+      result.pixels[index + 2],
+    ) <= 1);
+  }
+  processor.dispose();
+});
+
+test('Real-CUGAN backend initialization accepts only WebGPU', async () => {
+  const { initializeRealCuganBackend } = await import('../src/lib/realCugan.js');
+  const createTf = (workingBackend) => {
+    const attempts = [];
+    return {
+      attempts,
+      tf: {
+        async setBackend(backend) {
+          attempts.push(backend);
+          return backend === workingBackend;
+        },
+        async ready() {},
+        getBackend: () => workingBackend,
+      },
+    };
   };
-  assert.equal(await initializeRealCuganBackend(tf), 'wasm');
-  assert.deepEqual(attempts, ['webgl', 'wasm']);
+  const webgpu = createTf('webgpu');
+  const unavailable = createTf('webgl');
+
+  assert.equal(await initializeRealCuganBackend(webgpu.tf), 'webgpu');
+  assert.deepEqual(webgpu.attempts, ['webgpu']);
+  await assert.rejects(initializeRealCuganBackend(unavailable.tf), /WebGPU/);
+  assert.deepEqual(unavailable.attempts, ['webgpu']);
 });
 
 test('Real-CUGAN loads verified local weights through a TensorFlow.js IOHandler', async () => {
@@ -293,30 +359,30 @@ test('exports a testable Worker session handler factory', async () => {
   assert.equal(typeof factory, 'function');
 });
 
-test('initializes verified model bytes with WebGL and reports the actual backend', async () => {
+test('initializes verified model bytes with WebGPU and reports the actual backend', async () => {
   const fixture = createWorkerDependencies();
   const handler = await createWorkerHandler(fixture.dependencies);
 
   const response = await handler.handleMessage({
     type: 'init',
-    requestId: 'init-webgl',
+    requestId: 'init-webgpu',
     manifest: workerManifest,
   });
 
   assert.deepEqual(response, {
     type: 'ready',
-    requestId: 'init-webgl',
-    backend: 'webgl',
+    requestId: 'init-webgpu',
+    backend: 'webgpu',
   });
   assert.deepEqual(fixture.calls.fetch, [workerManifest.url]);
   assert.equal(fixture.calls.digest.length, 1);
   assert.deepEqual(Array.from(new Uint8Array(fixture.calls.digest[0])), [1, 2, 3, 4]);
   assert.equal(fixture.calls.session.length, 1);
-  assert.equal(fixture.calls.session[0].backend, 'webgl');
+  assert.equal(fixture.calls.session[0].backend, 'webgpu');
   assert.deepEqual(Array.from(new Uint8Array(fixture.calls.session[0].bytes)), [1, 2, 3, 4]);
 });
 
-test('honors a model manifest that requires the WASM execution provider', async () => {
+test('rejects a model manifest that requests a retired execution provider', async () => {
   const fixture = createWorkerDependencies();
   const handler = await createWorkerHandler(fixture.dependencies);
 
@@ -326,12 +392,9 @@ test('honors a model manifest that requires the WASM execution provider', async 
     manifest: { ...workerManifest, executionProviders: ['wasm'] },
   });
 
-  assert.deepEqual(response, {
-    type: 'ready',
-    requestId: 'init-wasm-only',
-    backend: 'wasm',
-  });
-  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['wasm']);
+  assert.equal(response.type, 'error');
+  assert.match(response.error.message, /WebGPU/);
+  assert.equal(fixture.calls.session.length, 0);
 });
 
 test('dispatches Real-CUGAN manifests to its TensorFlow.js processor', async () => {
@@ -342,7 +405,7 @@ test('dispatches Real-CUGAN manifests to its TensorFlow.js processor', async () 
     dispose() {},
   };
   const fixture = createWorkerDependencies({
-    realCuganFactory: async () => ({ processor, backend: 'wasm' }),
+    realCuganFactory: async () => ({ processor, backend: 'webgpu' }),
     decodeImage: async () => ({
       width: 2,
       height: 2,
@@ -360,7 +423,7 @@ test('dispatches Real-CUGAN manifests to its TensorFlow.js processor', async () 
 
   const ready = await handler.handleMessage({ type: 'init', requestId: 'cugan-init', manifest });
   assert.equal(ready.type, 'ready');
-  assert.equal(ready.backend, 'wasm');
+  assert.equal(ready.backend, 'webgpu');
   assert.equal(fixture.calls.fetch.length, 0);
   const result = await handler.handleMessage({
     type: 'process',
@@ -373,6 +436,47 @@ test('dispatches Real-CUGAN manifests to its TensorFlow.js processor', async () 
   assert.equal(result.height, 4);
 });
 
+test('serializes worker inference requests through one model at a time', async () => {
+  let active = 0;
+  let peak = 0;
+  const completed = [];
+  let processCount = 0;
+  const processor = {
+    async process(_pixels, width, height) {
+      active += 1;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      processCount += 1;
+      completed.push(processCount);
+      active -= 1;
+      return { pixels: new Uint8ClampedArray(width * height * 16), width: width * 2, height: height * 2 };
+    },
+    dispose() {},
+  };
+  const fixture = createWorkerDependencies({
+    realCuganFactory: async () => ({ processor, backend: 'webgpu' }),
+    decodeImage: async () => ({
+      width: 2,
+      height: 2,
+      pixels: new Uint8ClampedArray(16),
+      close() {},
+    }),
+    encodeImage: async (image) => new Blob([String(image.width)], { type: 'image/png' }),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, engine: 'realcugan-tfjs' };
+  await handler.handleMessage({ type: 'init', requestId: 'cugan-serial-init', manifest });
+
+  const responses = await Promise.all([
+    handler.handleMessage({ type: 'process', requestId: 'first', manifest, blob: new Blob(['first']) }),
+    handler.handleMessage({ type: 'process', requestId: 'second', manifest, blob: new Blob(['second']) }),
+  ]);
+
+  assert.equal(peak, 1);
+  assert.deepEqual(completed, [1, 2]);
+  assert.deepEqual(responses.map((response) => response.type), ['result', 'result']);
+});
+
 test('rejects unsupported manifest execution providers before creating a session', async () => {
   const fixture = createWorkerDependencies();
   const handler = await createWorkerHandler(fixture.dependencies);
@@ -380,7 +484,7 @@ test('rejects unsupported manifest execution providers before creating a session
   const response = await handler.handleMessage({
     type: 'init',
     requestId: 'init-invalid-provider',
-    manifest: { ...workerManifest, executionProviders: ['webgpu'] },
+    manifest: { ...workerManifest, executionProviders: ['wasm'] },
   });
 
   assert.equal(response.type, 'error');
@@ -521,28 +625,24 @@ test('does not cache fetched bytes that fail HTTP or checksum validation', async
   assert.equal(httpCache.entries.has(workerManifest.url), false);
 });
 
-test('falls back to WASM only after a real WebGL session initialization failure', async () => {
+test('does not fall back when the WebGPU session cannot initialize', async () => {
   const fixture = createWorkerDependencies({
     sessionFactory: async (bytes, backend) => {
       fixture.calls.session.push({ bytes, backend });
-      if (backend === 'webgl') throw new Error('WebGL session unavailable');
-      return fixture.session;
+      throw new Error('WebGPU session unavailable');
     },
   });
   const handler = await createWorkerHandler(fixture.dependencies);
 
   const response = await handler.handleMessage({
     type: 'init',
-    requestId: 'init-wasm',
+    requestId: 'init-webgpu-failure',
     manifest: workerManifest,
   });
 
-  assert.deepEqual(response, {
-    type: 'ready',
-    requestId: 'init-wasm',
-    backend: 'wasm',
-  });
-  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgl', 'wasm']);
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'SessionInitializationError');
+  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgpu']);
 });
 
 test('accepts a trimmed case-insensitive SHA-256 algorithm and uppercase 64-hex digest', async () => {
@@ -566,7 +666,7 @@ test('accepts a trimmed case-insensitive SHA-256 algorithm and uppercase 64-hex 
   assert.deepEqual(response, {
     type: 'ready',
     requestId: 'init-normalized-checksum',
-    backend: 'webgl',
+    backend: 'webgpu',
   });
 });
 
@@ -590,30 +690,27 @@ test('rejects a checksum manifest unless its digest is exactly 64 hexadecimal ch
   }
 });
 
-test('falls back to WASM when the WebGL factory returns null and reports the actual backend', async () => {
+test('returns an initialization error when the WebGPU factory returns null', async () => {
   const fixture = createWorkerDependencies({
     sessionFactory: async (bytes, backend) => {
       fixture.calls.session.push({ bytes, backend });
-      return backend === 'webgl' ? null : fixture.session;
+      return null;
     },
   });
   const handler = await createWorkerHandler(fixture.dependencies);
 
   const response = await handler.handleMessage({
     type: 'init',
-    requestId: 'init-null-webgl',
+    requestId: 'init-null-webgpu',
     manifest: workerManifest,
   });
 
-  assert.deepEqual(response, {
-    type: 'ready',
-    requestId: 'init-null-webgl',
-    backend: 'wasm',
-  });
-  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgl', 'wasm']);
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'SessionInitializationError');
+  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgpu']);
 });
 
-test('returns SessionInitializationError when both backend factories return null', async () => {
+test('returns SessionInitializationError when the WebGPU factory returns null', async () => {
   const fixture = createWorkerDependencies({
     sessionFactory: async (bytes, backend) => {
       fixture.calls.session.push({ bytes, backend });
@@ -630,7 +727,7 @@ test('returns SessionInitializationError when both backend factories return null
 
   assert.equal(response.type, 'error');
   assert.equal(response.error.name, 'SessionInitializationError');
-  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgl', 'wasm']);
+  assert.deepEqual(fixture.calls.session.map(({ backend }) => backend), ['webgpu']);
 });
 
 test('returns a structured checksum error without creating a session', async () => {
@@ -676,7 +773,7 @@ test('returns structured fetch failures from init', async () => {
   assert.equal(fixture.calls.session.length, 0);
 });
 
-test('returns a structured error when both backend session initializations fail', async () => {
+test('returns a structured error when WebGPU session initialization fails', async () => {
   const fixture = createWorkerDependencies({
     sessionFactory: async (_, backend) => {
       const error = new Error(`${backend} session failed`);
@@ -695,8 +792,7 @@ test('returns a structured error when both backend session initializations fail'
   assert.equal(response.type, 'error');
   assert.equal(response.requestId, 'init-session-error');
   assert.equal(response.error.name, 'SessionInitializationError');
-  assert.match(response.error.message, /WebGL session failed/);
-  assert.match(response.error.message, /WASM session failed/);
+  assert.match(response.error.message, /WebGPU session failed/);
 });
 
 test('returns a not-initialized protocol error for process before init', async () => {
@@ -871,7 +967,7 @@ test('releases a session from an older init when a later init installs a newer s
   assert.deepEqual(secondResponse, {
     type: 'ready',
     requestId: 'init-new-generation',
-    backend: 'webgl',
+    backend: 'webgpu',
   });
 
   firstSessionGate.resolve();
@@ -1003,7 +1099,7 @@ test('processes an RGBA blob through an NCHW session and preserves nearest alpha
   assert.equal(response.requestId, 'process-nchw');
   assert.equal(response.width, 2);
   assert.equal(response.height, 2);
-  assert.equal(response.backend, 'webgl');
+  assert.equal(response.backend, 'webgpu');
   assert.equal(response.blob.type, 'image/png');
   assert.deepEqual(Array.from(encoded[0].pixels), [
     255, 128, 0, 64,
@@ -1630,32 +1726,33 @@ test('ships a pinned Waifu2x CUNet x2 manifest with cropped-output geometry', ()
   assert.equal(model.outputName, 'y');
   assert.equal(model.inputLayout, 'nchw');
   assert.equal(model.outputLayout, 'nchw');
-  assert.equal(model.inputWidth, 224);
-  assert.equal(model.inputHeight, 224);
-  assert.equal(model.tileCore, 152);
+  assert.equal(model.inputWidth, 384);
+  assert.equal(model.inputHeight, 384);
+  assert.equal(model.tileCore, 312);
   assert.equal(model.padding, 36);
   assert.equal(model.outputInset, 18);
+  assert.deepEqual(model.executionProviders, ['webgpu']);
   assert.equal(model.checksum.digest, '0966d74dd0739a20de358de88c8fa4eb6cb8c3489bb0e941da9751ad4dcdf495');
   assert.equal(validateManifest(model), true);
 });
 
-test('accepts the production Waifu2x 224px input and 376px output geometry', async () => {
+test('accepts the production Waifu2x 384px input and 696px output geometry', async () => {
   const model = superResolution.getSuperResolutionModel('waifu2x');
   const session = {
     inputNames: ['x'],
     outputNames: ['y'],
     async run(feeds) {
-      assert.deepEqual(feeds.x.dims, [1, 3, 224, 224]);
-      return { y: { dims: [1, 3, 376, 376], data: new Float32Array(3 * 376 * 376).fill(0.5) } };
+      assert.deepEqual(feeds.x.dims, [1, 3, 384, 384]);
+      return { y: { dims: [1, 3, 696, 696], data: new Float32Array(3 * 696 * 696).fill(0.5) } };
     },
     async release() {},
   };
   const fixture = createWorkerDependencies({
     sessionFactory: async () => session,
     decodeImage: async () => ({
-      width: 152,
-      height: 152,
-      pixels: new Uint8ClampedArray(152 * 152 * 4).fill(255),
+      width: 312,
+      height: 312,
+      pixels: new Uint8ClampedArray(312 * 312 * 4).fill(255),
       close() {},
     }),
     tensorFactory: (data, dims) => ({ data, dims }),
@@ -1673,7 +1770,7 @@ test('accepts the production Waifu2x 224px input and 376px output geometry', asy
     padding: model.padding,
     outputInset: model.outputInset,
     scale: model.scale,
-    executionProviders: ['wasm'],
+    executionProviders: ['webgpu'],
   };
   await handler.handleMessage({ type: 'init', requestId: 'init-production-waifu2x', manifest });
   const response = await handler.handleMessage({
@@ -1683,8 +1780,17 @@ test('accepts the production Waifu2x 224px input and 376px output geometry', asy
     manifest,
   });
   assert.equal(response.type, 'result', response.error?.message);
-  assert.equal(response.width, 304);
-  assert.equal(response.height, 304);
+  assert.equal(response.width, 624);
+  assert.equal(response.height, 624);
+});
+
+test('Waifu2x RGB NCHW output uses branch-light tile and alpha blitters', async () => {
+  const workerSource = await readFile(workerModuleUrl, 'utf8');
+  assert.match(workerSource, /function blitNchwRgbTile\(/);
+  assert.match(workerSource, /function copyScaledAlphaNearest\(/);
+  assert.match(workerSource, /colorSpace === 'rgb'\s*&&\s*outputLayout === 'nchw'/);
+  assert.match(workerSource, /blitNchwRgbTile\(\{/);
+  assert.match(workerSource, /copyScaledAlphaNearest\(\{/);
 });
 
 test('accepts cropped model outputs and stitches the remaining core', async () => {
@@ -1755,11 +1861,11 @@ test('rejects fixed model inputs that cannot contain the configured core and pad
   }), false);
 });
 
-test('builds a stable derived image cache key from the model identity and source URL', () => {
+test('invalidates derived images produced by the retired super-resolution pipeline', () => {
   assert.equal(typeof superResolution.getSuperResolutionCacheKey, 'function');
   assert.equal(
     superResolution.getSuperResolutionCacheKey('https://reader.example.test/page/1?size=full', productionManifest),
-    `sr:v1:anime4k-x2:2:${'a'.repeat(64)}:https://reader.example.test/page/1?size=full`,
+    `sr:v4:anime4k-x2:2:${'a'.repeat(64)}:https://reader.example.test/page/1?size=full`,
   );
 });
 
@@ -1888,6 +1994,44 @@ test('shares a keep-alive visible-page inference across renderer switches', asyn
 
   await assert.rejects(first, { name: 'AbortError' });
   assert.equal((await second).src, 'blob:cached-shared-visible-page');
+  assert.equal(processCount, 1);
+});
+
+test('cancelVisibleSuperResolutionJobs aborts keep-alive inference and its waiters', async () => {
+  assert.equal(typeof superResolution.cancelVisibleSuperResolutionJobs, 'function');
+  let processCount = 0;
+  const started = createDeferred();
+  const runtime = {
+    async processBlob(blob, { signal }) {
+      processCount += 1;
+      started.resolve();
+      await new Promise((_, reject) => {
+        signal.addEventListener('abort', () => {
+          const error = new Error('cancelled');
+          error.name = 'AbortError';
+          reject(error);
+        }, { once: true });
+      });
+    },
+  };
+  const options = {
+    runtime,
+    manifest: productionManifest,
+    cacheKey: 'cancel-visible-page',
+    keepAlive: true,
+    getCachedSource: async () => null,
+    cacheResult: () => null,
+    fetcher: async () => ({ ok: true, blob: async () => new Blob(['source']) }),
+  };
+
+  const first = superResolution.processSuperResolutionImageSource('blob:cancel', options);
+  await started.promise;
+  const second = superResolution.processSuperResolutionImageSource('blob:cancel', options);
+  await Promise.resolve();
+  superResolution.cancelVisibleSuperResolutionJobs();
+
+  await assert.rejects(first, { name: 'AbortError' });
+  await assert.rejects(second, { name: 'AbortError' });
   assert.equal(processCount, 1);
 });
 
@@ -2060,11 +2204,15 @@ test('accepts only runtime-supported nchw and nhwc tensor layouts', () => {
   }
 });
 
-test('accepts only non-empty WebGL/WASM execution provider lists', () => {
-  assert.equal(validateManifest({ ...productionManifest, executionProviders: ['wasm'] }), true);
-  assert.equal(validateManifest({ ...productionManifest, executionProviders: ['webgl', 'wasm'] }), true);
+test('accepts WebGPU as the preferred browser execution provider', () => {
+  assert.equal(validateManifest({
+    ...productionManifest,
+    executionProviders: ['webgpu'],
+  }), true);
+});
 
-  for (const executionProviders of [[], ['webgpu'], ['wasm', 'wasm'], 'wasm']) {
+test('accepts only the WebGPU execution provider', () => {
+  for (const executionProviders of [[], ['webgl'], ['wasm'], ['webgpu', 'wasm'], ['webgpu', 'webgpu'], 'webgpu']) {
     assert.equal(validateManifest({ ...productionManifest, executionProviders }), false);
   }
 });

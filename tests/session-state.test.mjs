@@ -16,6 +16,25 @@ globalThis.sessionStorage = memoryStorage();
 
 const sessionState = await import(`../src/lib/sessionState.js?test=${Date.now()}`);
 
+test('ordinary navigation never consumes a background Reader candidate', () => {
+  assert.equal(typeof sessionState.shouldRestoreColdRoute, 'function');
+  assert.equal(sessionState.shouldRestoreColdRoute({
+    navigationType: 'navigate',
+    hasResumeCandidate: true,
+    hasRouteSnapshot: true,
+  }), false);
+  assert.equal(sessionState.shouldRestoreColdRoute({
+    navigationType: 'reload',
+    hasResumeCandidate: true,
+    hasRouteSnapshot: true,
+  }), true);
+  assert.equal(sessionState.shouldRestoreColdRoute({
+    navigationType: 'navigate',
+    wasDiscarded: true,
+    hasResumeCandidate: true,
+  }), true);
+});
+
 test('home navigation stores only a marker and consumes the canonical home snapshot', () => {
   sessionState.saveHomeNavigationSnapshot({
     archives: [{ id: 'archive-1', page: 4 }],

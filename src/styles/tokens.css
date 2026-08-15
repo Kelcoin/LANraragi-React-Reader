@@ -2,17 +2,17 @@
   :root,
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --canvas: #121310;
-    --surface: #1b1c18;
-    --surface-subtle: #171815;
-    --surface-raised: #23241f;
-    --surface-hover: #292a25;
-    --surface-inset: #0d0e0c;
+    --canvas: #0b0c0a;
+    --surface: #11120f;
+    --surface-subtle: #0d0e0b;
+    --surface-raised: #161713;
+    --surface-hover: #1b1c17;
+    --surface-inset: #060706;
     --text-primary: #eeeae0;
     --text-secondary: #c6c0b4;
     --text-muted: #858176;
-    --border-subtle: #292a25;
-    --border-strong: #3c3d36;
+    --border-subtle: #1e1f19;
+    --border-strong: #2d2e26;
     --accent: #d16a57;
     --accent-strong: #e17a65;
     --accent-soft: #42231d;
@@ -30,6 +30,20 @@
     --focus-ring: #d16a57;
     --overlay: rgba(0, 0, 0, 0.72);
     --reader-stage: var(--surface-inset);
+    --font-size-2xs: 10px;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    --font-size-body: 13px;
+    --font-size-md: 14px;
+    --font-size-lg: 16px;
+    --font-size-xl: 18px;
+    --font-size-2xl: 20px;
+    --font-size-3xl: 22px;
+    --font-size-4xl: 26px;
+    --font-weight-regular: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
     --radius-xs: 4px;
     --radius-sm: 6px;
     --radius-md: 8px;
@@ -44,8 +58,8 @@
     --motion-base: 200ms;
     --motion-slow: 260ms;
     --motion-curve: cubic-bezier(.32, .72, 0, 1);
-    --scrollbar-thumb: #3c3d36;
-    --scrollbar-thumb-hover: #5a5b52;
+    --scrollbar-thumb: #2d2e26;
+    --scrollbar-thumb-hover: #48493f;
     --reader-toolbar-bg: var(--surface);
     --reader-control-bg: var(--surface-raised);
     --reader-control-hover-bg: var(--surface-hover);

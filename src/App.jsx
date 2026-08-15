@@ -44,6 +44,7 @@ function HomeRouteFallback() {
       <div className="home-route-fallback-topbar">
         <div className="home-route-fallback-brand shimmer-strip" />
         <div className="home-route-fallback-actions">
+          <span className="home-route-fallback-action home-route-fallback-theme-action shimmer-strip" />
           <span className="home-route-fallback-action shimmer-strip" />
           <span className="home-route-fallback-action shimmer-strip" />
         </div>
@@ -111,18 +112,33 @@ function ArchiveListRouteFallback({ title }) {
 
 function DedupeRouteFallback() {
   return (
-    <main className="route-fallback-shell dedupe-route-fallback" role="status" aria-label="正在加载重复检测">
-      <section className="route-fallback-panel dedupe-route-fallback-panel">
+    <main className="dedupe-route-fallback dedupe-page workbench-page" role="status" aria-label="正在加载重复检测">
+      <header className="workbench-header dedupe-page-header dedupe-route-fallback-header">
         <div className="route-fallback-heading shimmer-strip" />
-        <div className="dedupe-route-fallback-controls">
-          <span className="dedupe-route-fallback-control shimmer-strip" />
-          <span className="dedupe-route-fallback-control shimmer-strip" />
-          <span className="dedupe-route-fallback-control shimmer-strip" />
+        <div className="dedupe-route-fallback-header-actions">
+          {Array.from({ length: 4 }, (_, index) => <span className="dedupe-route-fallback-header-action shimmer-strip" key={`dedupe-fallback-action-${index}`} />)}
         </div>
-        <div className="archive-list-loading-grid">
-          <RouteSkeletonCards count={6} />
+      </header>
+      <section className="surface workbench-section dedupe-scope-section dedupe-route-fallback-scope">
+        <div className="dedupe-route-fallback-scope-header">
+          <div className="dedupe-route-fallback-scope-heading shimmer-strip" />
+          <div className="dedupe-route-fallback-scope-actions">
+            {Array.from({ length: 2 }, (_, index) => <span className="dedupe-route-fallback-scope-action shimmer-strip" key={`dedupe-fallback-scope-action-${index}`} />)}
+          </div>
+        </div>
+        <div className="dedupe-route-fallback-scope-fields">
+          {Array.from({ length: 2 }, (_, index) => (
+            <div className="dedupe-route-fallback-scope-field" key={`dedupe-fallback-scope-${index}`}>
+              <span className="dedupe-route-fallback-field-label shimmer-strip" />
+              <span className="dedupe-route-fallback-field-control shimmer-strip" />
+            </div>
+          ))}
         </div>
       </section>
+      <div className="dedupe-route-fallback-empty">
+        <span className="dedupe-route-fallback-empty-title shimmer-strip" />
+        <span className="dedupe-route-fallback-empty-detail shimmer-strip" />
+      </div>
     </main>
   );
 }

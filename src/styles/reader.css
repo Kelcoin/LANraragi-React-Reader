@@ -105,6 +105,7 @@ body .settings-panel:has(.settings-layout) .settings-panel-footer {
 
   .settings-section-tools > .settings-section-inner {
     height: 100%;
+    min-height: 96px;
     align-content: center;
   }
 }

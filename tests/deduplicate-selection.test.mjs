@@ -41,6 +41,51 @@ test('smart selection deletes rough translations before every keep-quality rule'
   ]), ['rough']);
 });
 
+test('smart selection preserves manually touched groups while selecting untouched groups', () => {
+  assert.equal(typeof deduplicate.mergeSmartDuplicateSelection, 'function');
+  const groups = [
+    [
+      { arcid: 'manual-rough', tags: 'other:rough translation', size: 10 },
+      { arcid: 'manual-clean', tags: '', size: 20 },
+    ],
+    [
+      { arcid: 'auto-rough', tags: 'other:rough translation', size: 10 },
+      { arcid: 'auto-clean', tags: '', size: 20 },
+    ],
+  ];
+  const manualKey = 'manual-clean|manual-rough';
+  const result = deduplicate.mergeSmartDuplicateSelection(
+    groups,
+    new Set([manualKey]),
+    ['manual-rough'],
+    [],
+  );
+  assert.deepEqual(result.archiveIds, ['manual-rough', 'auto-rough']);
+  assert.deepEqual(result.groupKeys, []);
+});
+
+test('smart selection preserves manually selected whole groups', () => {
+  const groups = [
+    [
+      { arcid: 'manual-a', tags: '', size: 10 },
+      { arcid: 'manual-b', tags: '', size: 20 },
+    ],
+    [
+      { arcid: 'auto-rough', tags: 'other:rough translation', size: 10 },
+      { arcid: 'auto-clean', tags: '', size: 20 },
+    ],
+  ];
+  const manualKey = 'manual-a|manual-b';
+  const result = deduplicate.mergeSmartDuplicateSelection(
+    groups,
+    new Set([manualKey]),
+    [],
+    [manualKey],
+  );
+  assert.deepEqual(result.archiveIds, ['auto-rough']);
+  assert.deepEqual(result.groupKeys, [manualKey]);
+});
+
 test('smart selection signals normalize the three visible priority tags', () => {
   assert.equal(typeof deduplicate.getDedupeSmartSelectionSignals, 'function');
   assert.deepEqual(deduplicate.getDedupeSmartSelectionSignals({
