@@ -1543,6 +1543,53 @@ test('runtime forwards blobs and maps AbortSignal to worker cancellation', async
   runtime.dispose();
 });
 
+test('runtime recycles the worker after the configured page threshold', async () => {
+  const first = createWorkerHarness();
+  const second = createWorkerHarness();
+  const workers = [first.worker, second.worker];
+  let factoryCalls = 0;
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => workers[Math.min(factoryCalls += 1, workers.length) - 1],
+    recycleAfterPages: 2,
+  });
+
+  const initPromise = runtime.init(productionManifest);
+  const initMessage = first.messages[0].message;
+  first.emit({ type: 'ready', requestId: initMessage.requestId, backend: 'webgpu' });
+  assert.deepEqual(await initPromise, { backend: 'webgpu' });
+
+  const runPage = async (harness, label) => {
+    const pagePromise = runtime.processBlob(new Blob([label]), { manifest: productionManifest });
+    const processMessage = harness.messages.at(-1).message;
+    assert.equal(processMessage.type, 'process');
+    harness.emit({ type: 'result', requestId: processMessage.requestId, blob: new Blob(['ok']) });
+    await pagePromise;
+  };
+  await runPage(first, 'a');
+  await runPage(first, 'b');
+  assert.equal(first.terminated, false);
+
+  // Page 3 crosses the threshold: the old worker is disposed and terminated,
+  // a fresh worker boots, and the manifest is re-initialized before processing.
+  const pagePromise = runtime.processBlob(new Blob(['c']), { manifest: productionManifest });
+  assert.equal(first.terminated, true);
+  assert.equal(
+    first.messages.some((entry) => entry.message.type === 'dispose'),
+    true,
+  );
+  const reinitMessage = second.messages[0].message;
+  assert.equal(reinitMessage.type, 'init');
+  assert.deepEqual(reinitMessage.manifest, productionManifest);
+  second.emit({ type: 'ready', requestId: reinitMessage.requestId, backend: 'webgpu' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const processMessage = second.messages[1].message;
+  assert.equal(processMessage.type, 'process');
+  second.emit({ type: 'result', requestId: processMessage.requestId, blob: new Blob(['ok']) });
+  const result = await pagePromise;
+  assert.equal(result.blob.size, 2);
+  runtime.dispose();
+});
+
 test('dispose rejects all pending requests and terminates the worker', async () => {
   const harness = createWorkerHarness();
   const runtime = superResolution.createSuperResolutionRuntime({

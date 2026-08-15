@@ -70,6 +70,7 @@ function isBlobLike(value) {
 export function createSuperResolutionRuntime({
   workerFactory = createProductionWorker,
   manifestValidator,
+  recycleAfterPages = 6,
 } = {}) {
   if (typeof workerFactory !== 'function') {
     throw new TypeError('workerFactory must be a function');
@@ -77,14 +78,20 @@ export function createSuperResolutionRuntime({
   if (typeof manifestValidator !== 'function') {
     throw new TypeError('manifestValidator must be a function');
   }
-
-  const worker = workerFactory();
-  if (!worker || typeof worker.postMessage !== 'function') {
-    throw new TypeError('workerFactory must return a Worker-like object');
+  if (!Number.isInteger(recycleAfterPages) || recycleAfterPages < 1) {
+    throw new TypeError('recycleAfterPages must be a positive integer');
   }
 
   const pending = new Map();
   let disposed = false;
+  let worker = workerFactory();
+  if (!worker || typeof worker.postMessage !== 'function') {
+    throw new TypeError('workerFactory must return a Worker-like object');
+  }
+
+  let initializedManifest = null;
+  let completedPages = 0;
+  let recycling = null;
 
   function handleMessage(event) {
     const data = event?.data;
@@ -108,6 +115,12 @@ export function createSuperResolutionRuntime({
     }
 
     pending.delete(data.requestId);
+    if (expectedType === 'ready') {
+      initializedManifest = request.manifest;
+      completedPages = 0;
+    } else {
+      completedPages += 1;
+    }
     request.resolve(getResponsePayload(data));
   }
 
@@ -118,12 +131,16 @@ export function createSuperResolutionRuntime({
     );
   }
 
-  if (typeof worker.addEventListener !== 'function') {
-    throw new TypeError('workerFactory must return a Worker with addEventListener');
+  function bindWorker(nextWorker) {
+    if (typeof nextWorker.addEventListener !== 'function') {
+      throw new TypeError('workerFactory must return a Worker with addEventListener');
+    }
+    nextWorker.addEventListener('message', handleMessage);
+    nextWorker.addEventListener('error', handleWorkerError);
+    nextWorker.addEventListener('messageerror', handleWorkerError);
   }
-  worker.addEventListener('message', handleMessage);
-  worker.addEventListener('error', handleWorkerError);
-  worker.addEventListener('messageerror', handleWorkerError);
+
+  bindWorker(worker);
 
   function postRequest(type, payload = {}, transfer = []) {
     if (disposed) return Promise.reject(new Error('Super-resolution runtime is disposed'));
@@ -135,7 +152,7 @@ export function createSuperResolutionRuntime({
     const message = { ...payload, type, requestId };
 
     return new Promise((resolve, reject) => {
-      pending.set(requestId, { type, resolve, reject });
+      pending.set(requestId, { type, manifest: payload.manifest, resolve, reject });
       try {
         if (transfer.length > 0) worker.postMessage(message, transfer);
         else worker.postMessage(message);
@@ -153,7 +170,30 @@ export function createSuperResolutionRuntime({
     return postRequest('init', { manifest });
   }
 
-  function processPixels(request = {}) {
+  // Rebuilding the worker periodically releases the ORT WebGPU session, the
+  // worker's WebGPU device, and its wasm heap. Without this, devices with tight
+  // per-process GPU memory budgets (iOS WKWebView) accumulate memory until the
+  // web content process is killed and the page reloads mid-read.
+  function recycleWorker() {
+    if (disposed || !initializedManifest || completedPages < recycleAfterPages || pending.size > 0) {
+      return null;
+    }
+    if (recycling) return recycling;
+    completedPages = 0;
+    recycling = (async () => {
+      try { worker.postMessage({ type: 'dispose' }); } catch {}
+      worker.terminate?.();
+      if (disposed) throw new Error('Super-resolution runtime is disposed');
+      worker = workerFactory();
+      bindWorker(worker);
+      return await init(initializedManifest);
+    })().finally(() => {
+      recycling = null;
+    });
+    return recycling;
+  }
+
+  async function processPixels(request = {}) {
     const { requestId, pixels, width, height } = request ?? {};
     if (!isPixelBuffer(pixels)) {
       return Promise.reject(new TypeError('pixels must be an ArrayBuffer or ArrayBuffer view'));
@@ -161,6 +201,8 @@ export function createSuperResolutionRuntime({
     if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
       return Promise.reject(new TypeError('width and height must be positive integers'));
     }
+    const recyclePromise = recycleWorker();
+    if (recyclePromise) await recyclePromise.catch(() => {});
     const transferBuffer = getTransferBuffer(pixels);
     return postRequest(
       'process',
@@ -169,7 +211,7 @@ export function createSuperResolutionRuntime({
     );
   }
 
-  function processBlob(blob, options = {}) {
+  async function processBlob(blob, options = {}) {
     const { manifest, requestId, signal } = options ?? {};
     if (!isBlobLike(blob)) {
       return Promise.reject(new TypeError('blob must be a Blob'));
@@ -180,6 +222,8 @@ export function createSuperResolutionRuntime({
     const id = requestId ?? createRequestId();
     if (signal?.aborted) return Promise.reject(createAbortError());
 
+    const recyclePromise = recycleWorker();
+    if (recyclePromise) await recyclePromise.catch(() => {});
     const promise = postRequest('process', { requestId: id, blob, manifest });
     if (!signal || typeof signal.addEventListener !== 'function') return promise;
 
