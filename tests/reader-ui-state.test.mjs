@@ -175,3 +175,14 @@ test('super-resolution failures fall back per page without disabling the archive
     disable: false, notify: true,
   });
 });
+
+test('WebGPU shader compile failures disable super resolution for the archive', () => {
+  const ortRunError = new Error(
+    'failed to call OrtRun(). ERROR_CODE: 1, ERROR_MESSAGE: Non-zero status code returned while running Conv node.'
+      + ' Status Message: Failed to create a WebGPU compute pipeline:'
+      + ' [Invalid ShaderModule "Conv2dMM"] is invalid due to a previous error.',
+  );
+  assert.deepEqual(readerUiState.resolveSuperResolutionFailure(ortRunError), {
+    disable: true, notify: true, webgpuShader: true,
+  });
+});

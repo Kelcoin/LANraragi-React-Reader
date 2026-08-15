@@ -1310,7 +1310,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       };
       setSrArchiveEnabled(false);
     }
-    const message = error?.message || '未知错误';
+    const message = failure.webgpuShader
+      ? '此设备的 WebGPU 无法编译超分卷积着色器（onnxruntime-web Conv2dMM），已关闭超分。请更新系统 WebView 或浏览器后重试，或在阅读器设置中切换其他超分模型（如 Real-CUGAN）。'
+      : error?.message || '未知错误';
     if (srErrorToastKeyRef.current === message) return;
     srErrorToastKeyRef.current = message;
     showToast(`超分失败，已关闭并显示原图：${message}`, 'error');

@@ -196,8 +196,13 @@ export function resolveImmersiveZoomPan({
   };
 }
 
+const WEBGPU_SHADER_FAILURE_PATTERN = /Failed to create a WebGPU (?:compute|render) pipeline|Invalid ShaderModule/i;
+
 export function resolveSuperResolutionFailure(error) {
   if (error?.name === 'AbortError') return { disable: false, notify: false };
+  if (typeof error?.message === 'string' && WEBGPU_SHADER_FAILURE_PATTERN.test(error.message)) {
+    return { disable: true, notify: true, webgpuShader: true };
+  }
   return { disable: false, notify: true };
 }
 
