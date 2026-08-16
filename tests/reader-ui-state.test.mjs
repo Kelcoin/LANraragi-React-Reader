@@ -264,6 +264,18 @@ test('watchlist insertion detection returns only a newly added archive', () => {
   assert.equal(readerUiState.getNewlyAddedWatchlistId([{ id: 'existing' }], []), '');
 });
 
+test('watchlist removal detection returns only archives missing from the next list', () => {
+  assert.deepEqual(readerUiState.getRemovedWatchlistIds(
+    [{ id: 'removed' }, { id: 'kept', title: 'Old title' }],
+    [{ id: 'kept', title: 'New title' }, { id: 'added' }],
+  ), ['removed']);
+  assert.deepEqual(readerUiState.getRemovedWatchlistIds(
+    [{ id: 'kept', title: 'Old title' }],
+    [{ id: 'kept', title: 'New title' }],
+  ), []);
+  assert.deepEqual(readerUiState.getRemovedWatchlistIds([], [{ id: 'added' }]), []);
+});
+
 test('WebGPU shader compile failures disable super resolution for the archive', () => {
   const ortRunError = new Error(
     'failed to call OrtRun(). ERROR_CODE: 1, ERROR_MESSAGE: Non-zero status code returned while running Conv node.'

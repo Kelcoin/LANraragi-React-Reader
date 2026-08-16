@@ -253,6 +253,13 @@ export function getNewlyAddedWatchlistId(previousItems = [], nextItems = []) {
     .find((id) => id && !previousIds.has(id)) || '';
 }
 
+export function getRemovedWatchlistIds(previousItems = [], nextItems = []) {
+  const nextIds = new Set(nextItems.map((item) => String(item?.id || item?.arcid || '')).filter(Boolean));
+  return previousItems
+    .map((item) => String(item?.id || item?.arcid || ''))
+    .filter((id) => id && !nextIds.has(id));
+}
+
 export function getDrawerRowStride(gridWidth) {
   const gap = 12;
   const itemWidth = gridWidth > 0 ? Math.max(72, (gridWidth - (2 * gap)) / 3) : 110;

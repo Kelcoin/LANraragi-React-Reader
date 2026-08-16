@@ -70,3 +70,18 @@
 - [ ] Mark only the newly inserted card and clear the marker after the animation.
 - [ ] Add the 280ms fade/rise/scale animation and disable it for reduced motion.
 - [ ] Re-run focused and full verification.
+
+### Task 5: Home watchlist card exit
+
+**Files:**
+- Modify: `src/lib/readerUiState.js`
+- Modify: `src/pages/Home.jsx`
+- Modify: `src/index.css`
+- Test: `tests/reader-ui-state.test.mjs`
+- Test: `tests/regression-contracts.test.mjs`
+
+- [ ] Add failing tests for removed-ID detection and delayed card removal.
+- [ ] Confirm the focused tests fail because removal state and styles are absent.
+- [ ] Retain successfully removed cards for a 220ms non-interactive exit animation.
+- [ ] Bypass the delay under reduced motion and leave failed removals visible.
+- [ ] Run focused and full verification before commit and push.

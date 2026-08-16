@@ -1478,6 +1478,20 @@ test('home animates only a newly inserted watchlist card and respects reduced mo
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-watchlist-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
 });
 
+test('home keeps successfully removed watchlist cards until their exit animation completes', () => {
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  assert.match(home, /getRemovedWatchlistIds/);
+  assert.match(home, /watchlistExitIds/);
+  assert.match(home, /matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/);
+  assert.match(home, /setTimeout\([\s\S]{0,500}, 220\)/);
+  assert.match(home, /className=\{[^}]*home-watchlist-card-exit/);
+  assert.doesNotMatch(home, /await removeWatchlistItem\(archiveId\);\s*setWatchlist\(\(prev\) => prev\.filter/);
+  assert.match(css, /\.home-watchlist-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-watchlist-card-exit 220ms/s);
+  assert.match(css, /@keyframes home-watchlist-card-exit\s*\{[\s\S]*translateY\(0\) scale\(1\)[\s\S]*translateY\(8px\) scale\(0\.98\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-watchlist-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
+});
+
 test('settings tooltips keep viewport collision positioning and compact home actions share one height', () => {
   const primitives = read('src/styles/primitives.css');
   const pages = read('src/styles/pages.css');

@@ -2914,6 +2914,20 @@ html[data-theme="light"] .archive-tag-namespace {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+.home-watchlist-card-exit {
+  pointer-events: none;
+}
+
+.home-watchlist-card-exit .archive-card-shell {
+  transform-origin: center top;
+  animation: home-watchlist-card-exit 220ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes home-watchlist-card-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
 .reader-root { color: var(--text-primary); }
 .reader-stage-frame { background: var(--reader-stage) !important; border-color: var(--reader-stage-border) !important; }
 .reader-webtoon-page {
@@ -4989,6 +5003,10 @@ html[data-theme="light"] .shimmer-strip {
   }
 
   .home-watchlist-card-enter .archive-card-shell {
+    animation: none !important;
+  }
+
+  .home-watchlist-card-exit .archive-card-shell {
     animation: none !important;
   }
 }
