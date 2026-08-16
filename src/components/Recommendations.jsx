@@ -141,6 +141,36 @@ export default function Recommendations({ currentArchive }) {
     return new Set(currentArchive.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
   }, [currentArchive?.tags]);
 
+  // 间歇性布局诊断：推荐栏滚动到最右侧时曾出现远超 padding 的大片空白。
+  // 桌面与真机实测均为 20px（恰好 padding），无法稳定复现；这里在滚动稳定后
+  // 检测尾随空白，超过阈值时把现场布局数据打到 console（logcat 可见）。
+  const recBlankTimerRef = useRef(null);
+  const reportRecTrailingBlank = useCallback(() => {
+    const scrollerEl = scroller.getNode();
+    const contentEl = scrollerEl?.querySelector('.recommendation-content');
+    const cards = contentEl ? Array.from(contentEl.children) : [];
+    const lastCard = cards[cards.length - 1];
+    if (!scrollerEl || !lastCard) return;
+    const scrollerRect = scrollerEl.getBoundingClientRect();
+    const trailingBlank = scrollerEl.scrollWidth - Math.round(lastCard.getBoundingClientRect().right - scrollerRect.left);
+    if (trailingBlank > 80) {
+      console.info(`[REC-BLANK] trailing=${trailingBlank}px scrollW=${scrollerEl.scrollWidth} clientW=${scrollerEl.clientWidth} cards=${cards.length} lastW=${Math.round(lastCard.getBoundingClientRect().width)} scrollLeft=${scrollerEl.scrollLeft} vw=${window.innerWidth}`);
+    }
+  }, [scroller]);
+  useEffect(() => {
+    const scrollerEl = scroller.getNode();
+    if (!scrollerEl || typeof scrollerEl.addEventListener !== 'function') return undefined;
+    const scheduleReport = () => {
+      clearTimeout(recBlankTimerRef.current);
+      recBlankTimerRef.current = setTimeout(reportRecTrailingBlank, 400);
+    };
+    scrollerEl.addEventListener('scroll', scheduleReport, { passive: true });
+    return () => {
+      clearTimeout(recBlankTimerRef.current);
+      scrollerEl.removeEventListener('scroll', scheduleReport);
+    };
+  }, [scroller, reportRecTrailingBlank, loading]);
+
   const noCrop = useMemo(() => !getCropCover(), [currentArchive?.arcid]);
 
   useEffect(() => subscribeReadingProgressChanged(({ archiveId, page }) => {
