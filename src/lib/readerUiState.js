@@ -1,4 +1,5 @@
 import { shouldAutoEnableSuperResolution } from './superResolution.js';
+import { SUPER_RESOLUTION_MAX_INFERENCE_PIXELS } from './cachePolicy.js';
 
 const DESKTOP_TOOLBAR = Object.freeze({
   left: Object.freeze(['← 返回', '快速跳转']),
@@ -234,7 +235,22 @@ export function resolveSuperResolutionFailure(error) {
   if (typeof error?.message === 'string' && WEBGPU_SHADER_FAILURE_PATTERN.test(error.message)) {
     return { disable: true, notify: true, webgpuShader: true };
   }
-  return { disable: false, notify: true };
+  return { disable: true, notify: true };
+}
+
+export function isSuperResolutionPageTooLarge(sourceSize, scale) {
+  const width = Number(sourceSize?.width);
+  const height = Number(sourceSize?.height);
+  const outputScale = Number(scale);
+  if (![width, height, outputScale].every((value) => Number.isFinite(value) && value > 0)) return false;
+  return width * height * outputScale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS;
+}
+
+export function getNewlyAddedWatchlistId(previousItems = [], nextItems = []) {
+  const previousIds = new Set(previousItems.map((item) => String(item?.id || item?.arcid || '')).filter(Boolean));
+  return nextItems
+    .map((item) => String(item?.id || item?.arcid || ''))
+    .find((id) => id && !previousIds.has(id)) || '';
 }
 
 export function getDrawerRowStride(gridWidth) {

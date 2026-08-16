@@ -10,7 +10,6 @@ import { translateTag, categorizeTags } from '../lib/tags';
 import { getCachedImage, getImage, primeImage, putImage, deleteImageKeys, IMAGE_LOAD_PRIORITY } from '../lib/imageCache';
 import { createImageDecodeQueue } from '../lib/imageLoadQueue';
 import { decodeImageSource, getReaderPreviewSource } from '../lib/readerPreviewDecode';
-import { SUPER_RESOLUTION_MAX_INFERENCE_PIXELS } from '../lib/cachePolicy';
 import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange, sanitizeUnsignedIntegerInput } from '../lib/readerSettings';
 import {
   SUPER_RESOLUTION_MODELS,
@@ -45,6 +44,7 @@ import {
   getContentLanguage,
   isIosWebKitPlatform,
   isReaderMobileViewport,
+  isSuperResolutionPageTooLarge,
   IMMERSIVE_DOUBLE_TAP_MS,
   resolveImmersiveClickZone,
   resolveImmersiveDoubleTapScale,
@@ -1201,6 +1201,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [srInteractionGeneration, setSrInteractionGeneration] = useState(0);
   const [srRuntimeContext, setSrRuntimeContext] = useState(null);
   const [srRuntimeError, setSrRuntimeError] = useState('');
+  const [srOversizedConfirmOpen, setSrOversizedConfirmOpen] = useState(false);
   const srInitToastRequestedRef = useRef(false);
   const srArchiveManualRef = useRef(null);
   const srErrorToastKeyRef = useRef('');
@@ -1344,30 +1345,28 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       runtime.dispose();
     };
   }, [settings.srEnabled, showToast, srManifest, srSupport.checking, srSupport.supported]);
+  const disableArchiveSuperResolution = useCallback(() => {
+    srArchiveManualRef.current = {
+      archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
+      enabled: false,
+    };
+    cancelVisibleSuperResolutionJobs();
+    setSrArchiveEnabled(false);
+  }, [archive, archiveId]);
+
   const handleSuperResolutionError = useCallback((error) => {
     const failure = resolveSuperResolutionFailure(error);
     if (!failure.notify) return;
-    if (failure.disable) {
-      srArchiveManualRef.current = {
-        archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
-        enabled: false,
-      };
-      setSrArchiveEnabled(false);
-    }
+    if (failure.disable) disableArchiveSuperResolution();
     const message = failure.webgpuShader
       ? '此设备的 WebGPU 无法编译超分卷积着色器（onnxruntime-web Conv2dMM），已关闭超分。请更新系统 WebView 或浏览器后重试，或在阅读器设置中切换其他超分模型（如 Real-CUGAN）。'
       : error?.message || '未知错误';
     if (srErrorToastKeyRef.current === message) return;
     srErrorToastKeyRef.current = message;
     showToast(`超分失败，已关闭并显示原图：${message}`, 'error');
-  }, [archive, archiveId, showToast]);
+  }, [disableArchiveSuperResolution, showToast]);
   const currentPageSize = pageSizes[currentIndex];
-  const currentPageTooLargeForSuperResolution = Boolean(
-    currentPageSize?.width
-    && currentPageSize?.height
-    && srManifest?.scale
-    && currentPageSize.width * currentPageSize.height * srManifest.scale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS,
-  );
+  const currentPageTooLargeForSuperResolution = isSuperResolutionPageTooLarge(currentPageSize, srManifest?.scale);
   const scheduledSrRuntimeContext = useMemo(() => (
     srRuntimeContext ? { ...srRuntimeContext, interactionGeneration: srInteractionGeneration } : null
   ), [srInteractionGeneration, srRuntimeContext]);
@@ -1377,8 +1376,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   function getSuperResolutionForPage(pageIndex, foreground = true) {
     if (!foreground || !srArchiveEnabled || !scheduledSrRuntimeContext) return null;
     const size = pageSizes[pageIndex];
-    if (size?.width && size?.height && srManifest?.scale
-      && size.width * size.height * srManifest.scale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS) {
+    if (isSuperResolutionPageTooLarge(size, srManifest?.scale)) {
       return null;
     }
     return scheduledSrRuntimeContext;
@@ -1981,8 +1979,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     setPanY(0);
     setZoomScale(1.0);
     hideImmersiveControls();
+    disableArchiveSuperResolution();
     setViewMode('normal');
-  }, [hideImmersiveControls, scheduleZoomTransform]);
+  }, [disableArchiveSuperResolution, hideImmersiveControls, scheduleZoomTransform]);
 
   const applyZoomAtPoint = useCallback((
     nextScale,
@@ -3852,7 +3851,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     updateSettings((s) => ({ ...s, srEnabled: enabled }));
   }, [showToast, srManifest, srSupport, updateSettings]);
 
-  const handleToggleArchiveSuperResolution = useCallback(() => {
+  const handleToggleArchiveSuperResolution = useCallback((allowOversized = false) => {
     const next = !srArchiveEnabled;
     if (next && !srManifest) {
       showToast('当前模型尚未配置可验证的模型文件。', 'error');
@@ -3862,11 +3861,20 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       showToast(`超分不可用：${srRuntimeError}`, 'error');
       return;
     }
+    if (next && currentPageTooLargeForSuperResolution && !allowOversized) {
+      setSrOversizedConfirmOpen(true);
+      return;
+    }
+    if (!next) {
+      disableArchiveSuperResolution();
+      srErrorToastKeyRef.current = '';
+      showToast('已关闭当前档案超分', 'info');
+      return;
+    }
     srArchiveManualRef.current = {
       archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
       enabled: next,
     };
-    if (!next) cancelVisibleSuperResolutionJobs();
     srErrorToastKeyRef.current = '';
     setSrArchiveEnabled(next);
     if (next && !srRuntimeContext) {
@@ -3874,7 +3882,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return;
     }
     showToast(next ? '已为当前档案启用超分' : '已关闭当前档案超分', 'info');
-  }, [archive, archiveId, showToast, srArchiveEnabled, srManifest, srRuntimeContext, srRuntimeError]);
+  }, [archive, archiveId, currentPageTooLargeForSuperResolution, disableArchiveSuperResolution, showToast, srArchiveEnabled, srManifest, srRuntimeContext, srRuntimeError]);
 
   // 自动超分：当每页平均体积低于阈值时，自动启用当前档案的超分
   useEffect(() => {
@@ -4565,7 +4573,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate || coverSetting} onClick={() => { if (canNavigate && !coverSetting) handleSetCover(); revealImmersiveControls(side); }} title="设为封面" aria-label="设为封面">
                   <ToolbarGlyph name="cover" size={20} />
                 </button>
-                {settings.srEnabled && !currentPageTooLargeForSuperResolution && (
+                {settings.srEnabled && (
                   <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { handleToggleArchiveSuperResolution(); revealImmersiveControls(side); }} title={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'} aria-label={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'}>
                     <ToolbarGlyph name={srArchiveEnabled ? 'superResolution' : 'superResolutionOff'} size={20} />
                   </button>
@@ -4998,6 +5006,18 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           </div>
           </div>
         </div>, document.body)}
+      <ConfirmDialog
+        open={srOversizedConfirmOpen}
+        title="当前页面尺寸过大"
+        message="当前页超分后将超过安全处理上限，因此会继续显示原图；档案内尺寸合适的页面仍可使用超分。仍要为当前档案启用超分吗？"
+        confirmLabel="仍然启用"
+        cancelLabel="取消"
+        onConfirm={() => {
+          setSrOversizedConfirmOpen(false);
+          handleToggleArchiveSuperResolution(true);
+        }}
+        onCancel={() => setSrOversizedConfirmOpen(false)}
+      />
       <ConfirmDialog
         open={!!historyDeleteTarget}
         title="确认删除阅读历史"

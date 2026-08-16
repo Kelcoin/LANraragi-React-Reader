@@ -64,7 +64,7 @@ import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, 
 import { getArchiveSearchTotal, hasArchiveSearchQuery } from '../lib/archiveSearch';
 import { filterRandomArchives, getRandomHideRead, setRandomHideRead } from '../lib/randomArchiveFilter';
 import { DEFAULT_THEME_PALETTES, readStoredThemePalettes } from '../lib/theme';
-import { getSettingsPaneNaturalHeight } from '../lib/readerUiState';
+import { getNewlyAddedWatchlistId, getSettingsPaneNaturalHeight } from '../lib/readerUiState';
 
 const FILTER_KEY = 'lrr_filter';
 const RANDOMS_RECENT_KEY = 'lrr_random_recent_v1';
@@ -388,6 +388,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   })();
   const [history, setHistory] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
+  const [watchlistEntranceId, setWatchlistEntranceId] = useState('');
+  const watchlistRef = useRef(watchlist);
+  watchlistRef.current = watchlist;
+  const watchlistEntranceTimerRef = useRef(null);
   const [hideRead, setHideReadState] = useState(getHideRead);
   const [randomHideRead, setRandomHideReadState] = useState(getRandomHideRead);
   const [cropCover, setCropCoverState] = useState(getCropCover);
@@ -1181,9 +1185,24 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, []);
 
   useEffect(() => {
-    const refreshWatchlist = () => setWatchlist(getWatchlist());
+    const refreshWatchlist = () => {
+      const next = getWatchlist();
+      const addedId = getNewlyAddedWatchlistId(watchlistRef.current, next);
+      if (addedId) {
+        if (watchlistEntranceTimerRef.current) clearTimeout(watchlistEntranceTimerRef.current);
+        setWatchlistEntranceId(addedId);
+        watchlistEntranceTimerRef.current = setTimeout(() => {
+          watchlistEntranceTimerRef.current = null;
+          setWatchlistEntranceId('');
+        }, 320);
+      }
+      setWatchlist(next);
+    };
     window.addEventListener('lrr:watchlist-changed', refreshWatchlist);
-    return () => window.removeEventListener('lrr:watchlist-changed', refreshWatchlist);
+    return () => {
+      window.removeEventListener('lrr:watchlist-changed', refreshWatchlist);
+      if (watchlistEntranceTimerRef.current) clearTimeout(watchlistEntranceTimerRef.current);
+    };
   }, []);
 
   // Fetch randoms — but only if not already hydrated from page-state cache
@@ -2333,7 +2352,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="home-carousel-collapse" style={{ maxHeight: watchlistCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
             <div ref={watchlistScroller.ref} onWheelCapture={watchlistScroller.onWheelCapture} onScroll={watchlistScroller.onScroll} onMouseDown={watchlistScroller.onMouseDown} onClickCapture={watchlistScroller.onClickCapture} onDragStart={watchlistScroller.onDragStart} style={{ gap: isNarrow ? '10px' : '16px', padding: getHomeCarouselPadding(isNarrow), ...watchlistScroller.getTouchScrollStyle(), ...watchlistScroller.getMouseScrollStyle() }} className="no-scrollbar home-carousel-scroller">
               {watchlistWithProgress.map(item => (
-                <ArchiveCard key={`watch-${item.id || item.arcid}`} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showWatchlistArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
+                <ArchiveCard key={`watch-${item.id || item.arcid}`} className={watchlistEntranceId === String(item.id || item.arcid) ? 'home-watchlist-card-enter' : undefined} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showWatchlistArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
               {watchlistOverflow && (
                 <button

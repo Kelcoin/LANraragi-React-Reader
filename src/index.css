@@ -725,7 +725,7 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 0;
   overflow: hidden;
 }
 
@@ -2904,6 +2904,16 @@ html[data-theme="light"] .archive-tag-namespace {
   border-bottom: 1px solid var(--reader-control-border) !important;
 }
 
+.home-watchlist-card-enter .archive-card-shell {
+  transform-origin: center top;
+  animation: home-watchlist-card-enter 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes home-watchlist-card-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .reader-root { color: var(--text-primary); }
 .reader-stage-frame { background: var(--reader-stage) !important; border-color: var(--reader-stage-border) !important; }
 .reader-webtoon-page {
@@ -4975,6 +4985,10 @@ html[data-theme="light"] .shimmer-strip {
   .theme-color-picker-preview,
   .theme-color-picker-popover {
     transition: none !important;
+    animation: none !important;
+  }
+
+  .home-watchlist-card-enter .archive-card-shell {
     animation: none !important;
   }
 }

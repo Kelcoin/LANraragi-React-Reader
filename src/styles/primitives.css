@@ -1,6 +1,6 @@
 @layer primitives {
   .btn {
-    font-family: inherit;
+    font: inherit;
     min-height: 38px;
     padding: 8px 12px;
     border: 1px solid var(--border-strong);
@@ -11,6 +11,8 @@
     cursor: pointer;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
+    text-align: center;
     white-space: nowrap;
     transition: color var(--motion-base) var(--motion-curve), background-color var(--motion-base) var(--motion-curve), border-color var(--motion-base) var(--motion-curve), box-shadow var(--motion-base) var(--motion-curve), transform var(--motion-fast) var(--motion-curve);
   }

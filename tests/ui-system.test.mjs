@@ -647,7 +647,8 @@ test('summary badges inherit the shared language-aware font stack', () => {
 test('shared text buttons inherit the language-aware font and palette tabs use semantic text colors', () => {
   const primitives = read('src/styles/primitives.css');
   const css = read('src/index.css');
-  assert.match(primitives, /\.btn\s*\{[^}]*font-family:\s*inherit/s);
+  assert.match(primitives, /\.btn\s*\{[^}]*font:\s*inherit;[^}]*line-height:\s*1\.2;[^}]*text-align:\s*center/s);
+  assert.match(css, /\.eh-comment-action\s*\{[^}]*gap:\s*0;/s);
   assert.match(css, /\.theme-palette-mode-tab\s*\{[^}]*color:\s*var\(--text-secondary\)/s);
   assert.match(css, /\.theme-palette-mode-tab\.is-active\s*\{[^}]*color:\s*var\(--text-primary\)/s);
   assert.doesNotMatch(css, /\.theme-palette-mode-tab(?:\.is-active)?\s*\{[^}]*color:\s*#fff/s);

@@ -862,11 +862,14 @@ test('Reader model selector explains each super-resolution option', () => {
   assert.match(select, /SettingHint/);
 });
 
-test('Reader hides immersive super-resolution for oversized pages and explains why', () => {
+test('Reader confirms archive super-resolution for oversized pages and keeps those pages original', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /currentPageTooLargeForSuperResolution/);
   assert.match(reader, /图片过大、不适合超分时/);
-  assert.match(reader, /settings\.srEnabled && !currentPageTooLargeForSuperResolution/);
+  assert.doesNotMatch(reader, /settings\.srEnabled && !currentPageTooLargeForSuperResolution/);
+  assert.match(reader, /open=\{srOversizedConfirmOpen\}[\s\S]{0,500}仍然启用/);
+  assert.match(reader, /currentPageTooLargeForSuperResolution && !allowOversized/);
+  assert.match(reader, /isSuperResolutionPageTooLarge\(size, srManifest\?\.scale\)/);
 });
 
 test('Reader super-resolution processes only visible pages and preserves original fallback', () => {
@@ -933,8 +936,14 @@ test('Reader disposes immersive super-resolution URLs after image refs detach', 
 test('Reader silently falls back for unsupported super-resolution images', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /resolveSuperResolutionFailure/);
-  assert.match(reader, /setSrArchiveEnabled\(false\)/);
+  assert.match(reader, /disableArchiveSuperResolution\(\)/);
   assert.match(reader, /超分失败，已关闭并显示原图/);
+});
+
+test('Reader disables archive super-resolution when immersive mode exits', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const disableArchiveSuperResolution = useCallback/);
+  assert.match(reader, /const exitImmersiveMode = useCallback\(\(\) => \{[\s\S]{0,600}disableArchiveSuperResolution\(\)/);
 });
 
 test('super-resolution output dimensions never replace original page dimensions', () => {
@@ -1457,6 +1466,16 @@ test('normal Reader holds old spread geometry until every target slot is decoded
   assert.match(reader, /normalSpreadRenderState\.units\.forEach/);
   assert.match(reader, /slotIndex < normalSpreadRenderState\.visibleSlotCount/);
   assert.match(reader, /handleNormalSpreadUnitReady/);
+});
+
+test('home animates only a newly inserted watchlist card and respects reduced motion', () => {
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  assert.match(home, /getNewlyAddedWatchlistId/);
+  assert.match(home, /className=\{[^}]*home-watchlist-card-enter/);
+  assert.match(css, /\.home-watchlist-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-watchlist-card-enter 280ms/s);
+  assert.match(css, /@keyframes home-watchlist-card-enter\s*\{[\s\S]*translateY\(10px\) scale\(0\.98\)[\s\S]*translateY\(0\) scale\(1\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-watchlist-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
 });
 
 test('settings tooltips keep viewport collision positioning and compact home actions share one height', () => {

@@ -234,16 +234,34 @@ test('immersive zoom keeps the requested focal point stable while panned', () =>
   }), { x: 150, y: 200 });
 });
 
-test('super-resolution failures fall back per page without disabling the archive', () => {
+test('super-resolution failures disable the archive except for cancellation', () => {
   assert.deepEqual(readerUiState.resolveSuperResolutionFailure({ name: 'AbortError' }), {
     disable: false, notify: false,
   });
   assert.deepEqual(readerUiState.resolveSuperResolutionFailure(new Error('inference failed')), {
-    disable: false, notify: true,
+    disable: true, notify: true,
   });
   assert.deepEqual(readerUiState.resolveSuperResolutionFailure({ name: 'NotSupportedError' }), {
-    disable: false, notify: true,
+    disable: true, notify: true,
   });
+});
+
+test('super-resolution oversized confirmation uses the inference output limit', () => {
+  assert.equal(readerUiState.isSuperResolutionPageTooLarge({ width: 4000, height: 4000 }, 2), false);
+  assert.equal(readerUiState.isSuperResolutionPageTooLarge({ width: 4001, height: 4000 }, 2), true);
+  assert.equal(readerUiState.isSuperResolutionPageTooLarge({ width: 0, height: 4000 }, 2), false);
+});
+
+test('watchlist insertion detection returns only a newly added archive', () => {
+  assert.equal(readerUiState.getNewlyAddedWatchlistId(
+    [{ id: 'existing', title: 'Old title' }],
+    [{ id: 'new' }, { id: 'existing', title: 'New title' }],
+  ), 'new');
+  assert.equal(readerUiState.getNewlyAddedWatchlistId(
+    [{ id: 'existing', title: 'Old title' }],
+    [{ id: 'existing', title: 'New title' }],
+  ), '');
+  assert.equal(readerUiState.getNewlyAddedWatchlistId([{ id: 'existing' }], []), '');
 });
 
 test('WebGPU shader compile failures disable super resolution for the archive', () => {
