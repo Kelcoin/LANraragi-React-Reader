@@ -2081,7 +2081,7 @@ test('resolves a super-resolution model by its value', () => {
 
 test('does not ship the test-only ONNX sub-pixel model', () => {
   assert.equal(superResolution.getSuperResolutionModel('onnx-subpixel-x3'), null);
-  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((model) => model.value), ['waifu2x', 'waifu2x-upconv7', 'realcugan']);
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((model) => model.value), ['waifu2x-upconv7', 'waifu2x', 'realcugan']);
 });
 
 test('describes every selectable super-resolution model', () => {

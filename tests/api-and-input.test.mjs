@@ -170,7 +170,7 @@ test('reader settings normalize super-resolution fields', () => {
 
   // 纯函数库可加载；Node 环境（无 document/WebGL）安全降级为不支持
   assert.equal(typeof superResolution.detectSuperResolutionSupport, 'function');
-  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((m) => m.value), ['waifu2x', 'waifu2x-upconv7', 'realcugan']);
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((m) => m.value), ['waifu2x-upconv7', 'waifu2x', 'realcugan']);
   const fallback = superResolution.detectSuperResolutionSupport();
   assert.equal(fallback.supported, false);
   assert.ok(fallback.reason);

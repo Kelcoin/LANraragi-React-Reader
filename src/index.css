@@ -1186,7 +1186,6 @@ html[data-theme="light"] .app-version-link a {
 }
 
 .settings-hint-bubble-portal {
-  position: fixed;
   z-index: 100200;
   inline-size: max-content;
   max-inline-size: min(320px, calc(100vw - 32px));

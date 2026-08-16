@@ -105,8 +105,8 @@ export function cancelVisibleSuperResolutionJobs(cacheKey) {
 
 // 超分能力检测与模型选项（引擎：onnxruntime-web WebGPU 与 realcugan-tfjs）
 export const SUPER_RESOLUTION_MODELS = Object.freeze([
-  WAIFU2X_FP32_MANIFEST,
   WAIFU2X_UPCONV7_MANIFEST,
+  WAIFU2X_FP32_MANIFEST,
   {
     value: 'realcugan',
     label: 'Real-CUGAN',

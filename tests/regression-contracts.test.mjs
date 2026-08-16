@@ -440,13 +440,15 @@ test('config export selects whole groups in one flat list', () => {
   assert.doesNotMatch(css, /\.config-export-group\s*\{/);
 });
 
-test('reader setting hints escape the scroll container and size to their content', () => {
+test('reader setting hints escape the scroll container and participate in viewport collision sizing', () => {
   const hint = read('src/components/SettingHint.jsx');
   const css = read('src/index.css');
   const reader = read('src/pages/Reader.jsx');
   assert.match(hint, /<Tooltip\.Portal>/);
   assert.match(hint, /settings-hint-bubble-portal/);
-  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed;[^}]*inline-size:\s*max-content;/s);
+  assert.match(hint, /positionMethod="fixed"/);
+  assert.doesNotMatch(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*inline-size:\s*max-content;/s);
   assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px, calc\(100vw - 32px\)\)/s);
   assert.match(reader, /width: 'min\(440px, calc\(100vw - 32px\)\)'/);
 });
@@ -1528,10 +1530,13 @@ test('home continue-reading cards reuse carousel entrance and successful-exit mo
 });
 
 test('settings tooltips keep viewport collision positioning and compact home actions share one height', () => {
+  const hint = read('src/components/SettingHint.jsx');
   const primitives = read('src/styles/primitives.css');
   const pages = read('src/styles/pages.css');
   const css = read('src/index.css');
   assert.doesNotMatch(primitives, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*relative/s);
+  assert.match(hint, /positionMethod="fixed"/);
+  assert.doesNotMatch(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed/s);
   assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px,\s*calc\(100vw - 32px\)\)/s);
   assert.match(pages, /\.home-actions \.btn\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*6px 10px;[^}]*line-height:\s*1\.2;/s);
   assert.match(pages, /\.home-compact-action\s*\{[^}]*min-height:\s*32px;[^}]*padding:\s*5px 10px;[^}]*line-height:\s*1\.25;/s);
