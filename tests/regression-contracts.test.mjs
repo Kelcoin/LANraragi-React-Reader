@@ -1494,7 +1494,7 @@ test('home keeps successfully removed watchlist cards until their exit animation
 
 test('home continue-reading cards reuse carousel entrance and successful-exit motion', () => {
   const home = read('src/pages/Home.jsx');
-  assert.match(home, /historyEntranceId/);
+  assert.match(home, /historyEntranceIds/);
   assert.match(home, /historyExitIds/);
   assert.match(home, /addEventListener\('lrr:history-changed'/);
   assert.match(home, /historyMotionReadyRef/);

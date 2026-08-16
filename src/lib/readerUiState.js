@@ -246,11 +246,15 @@ export function isSuperResolutionPageTooLarge(sourceSize, scale) {
   return width * height * outputScale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS;
 }
 
-export function getNewlyAddedArchiveId(previousItems = [], nextItems = []) {
+export function getNewlyAddedArchiveIds(previousItems = [], nextItems = []) {
   const previousIds = new Set(previousItems.map((item) => String(item?.id || item?.arcid || '')).filter(Boolean));
   return nextItems
     .map((item) => String(item?.id || item?.arcid || ''))
-    .find((id) => id && !previousIds.has(id)) || '';
+    .filter((id) => id && !previousIds.has(id));
+}
+
+export function getNewlyAddedArchiveId(previousItems = [], nextItems = []) {
+  return getNewlyAddedArchiveIds(previousItems, nextItems)[0] || '';
 }
 
 export function getRemovedArchiveIds(previousItems = [], nextItems = []) {

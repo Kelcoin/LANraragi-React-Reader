@@ -154,7 +154,7 @@ max-width: 100%;
 - 首页通过前后待看列表 ID 差异识别真正新增项，只为新增卡片播放一次 280ms 淡入/上浮动画。
 - 首页同样识别成功移出的 ID，旧卡片保留 220ms 完成淡出/下沉后再提交新列表；删除失败不触发动画。
 - 首页继续阅读复用同一组 280ms 入场与 220ms 退场动画；手动移出、阅读完成及开启“隐藏已读”均在成功更新后退场，首次历史水合不播放动画，减少动态效果时立即更新。
-- 最新验证：`npm test` 502/502，`npm run lint`、`npm run check`、`npm run build`、`git diff --check` 全部通过。
+- 最新验证：`npm test` 503/503，`npm run lint`、`npm run check`、`npm run build`、`git diff --check` 全部通过。
 
 本次调试探针清理已通过：
 

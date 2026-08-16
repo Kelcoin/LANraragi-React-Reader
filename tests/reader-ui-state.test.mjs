@@ -264,6 +264,13 @@ test('watchlist insertion detection returns only a newly added archive', () => {
   assert.equal(readerUiState.getNewlyAddedArchiveId([{ id: 'existing' }], []), '');
 });
 
+test('archive insertion detection returns every newly visible archive', () => {
+  assert.deepEqual(readerUiState.getNewlyAddedArchiveIds(
+    [{ id: 'existing' }],
+    [{ id: 'first' }, { id: 'existing' }, { id: 'second' }],
+  ), ['first', 'second']);
+});
+
 test('watchlist removal detection returns only archives missing from the next list', () => {
   assert.deepEqual(readerUiState.getRemovedArchiveIds(
     [{ id: 'removed' }, { id: 'kept', title: 'Old title' }],

@@ -64,7 +64,7 @@ import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, 
 import { getArchiveSearchTotal, hasArchiveSearchQuery } from '../lib/archiveSearch';
 import { filterRandomArchives, getRandomHideRead, setRandomHideRead } from '../lib/randomArchiveFilter';
 import { DEFAULT_THEME_PALETTES, readStoredThemePalettes } from '../lib/theme';
-import { getNewlyAddedArchiveId, getRemovedArchiveIds, getSettingsPaneNaturalHeight, getVisibleContinueReadingItems } from '../lib/readerUiState';
+import { getNewlyAddedArchiveId, getNewlyAddedArchiveIds, getRemovedArchiveIds, getSettingsPaneNaturalHeight, getVisibleContinueReadingItems } from '../lib/readerUiState';
 
 const FILTER_KEY = 'lrr_filter';
 const RANDOMS_RECENT_KEY = 'lrr_random_recent_v1';
@@ -387,7 +387,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     return cachedKey === snapshotFilterKey ? snapshot : null;
   })();
   const [history, setHistory] = useState([]);
-  const [historyEntranceId, setHistoryEntranceId] = useState('');
+  const [historyEntranceIds, setHistoryEntranceIds] = useState(() => new Set());
   const [historyExitIds, setHistoryExitIds] = useState(() => new Set());
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -1193,13 +1193,13 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   }, []);
 
   useEffect(() => {
-    const showHistoryEntrance = (addedId) => {
-      if (!addedId) return;
+    const showHistoryEntrance = (addedIds) => {
+      if (addedIds.length === 0) return;
       if (historyEntranceTimerRef.current) clearTimeout(historyEntranceTimerRef.current);
-      setHistoryEntranceId(addedId);
+      setHistoryEntranceIds(new Set(addedIds));
       historyEntranceTimerRef.current = setTimeout(() => {
         historyEntranceTimerRef.current = null;
-        setHistoryEntranceId('');
+        setHistoryEntranceIds(new Set());
       }, 320);
     };
     const refreshHistory = () => {
@@ -1227,7 +1227,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           const pending = pendingHistoryRef.current || getHistory();
           const pendingHideRead = pendingHistoryHideReadRef.current;
           pendingHistoryRef.current = null;
-          const addedId = getNewlyAddedArchiveId(
+          const addedIds = getNewlyAddedArchiveIds(
             getVisibleContinueReadingItems(historyRef.current, hideReadRef.current),
             getVisibleContinueReadingItems(pending, pendingHideRead),
           );
@@ -1236,19 +1236,19 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           setHistory(pending);
           setHideReadState(pendingHideRead);
           setHistoryExitIds(new Set());
-          showHistoryEntrance(addedId);
+          showHistoryEntrance(addedIds);
         }, 220);
       } else {
         if (historyExitTimerRef.current) clearTimeout(historyExitTimerRef.current);
         historyExitTimerRef.current = null;
         pendingHistoryRef.current = null;
         setHistoryExitIds(new Set());
-        const addedId = getNewlyAddedArchiveId(previousVisible, nextVisible);
+        const addedIds = getNewlyAddedArchiveIds(previousVisible, nextVisible);
         historyRef.current = next;
         hideReadRef.current = nextHideRead;
         setHistory(next);
         setHideReadState(nextHideRead);
-        showHistoryEntrance(addedId);
+        showHistoryEntrance(addedIds);
       }
     };
     window.addEventListener('lrr:history-changed', refreshHistory);
@@ -2396,7 +2396,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               {filteredHistory.length > 0 ? (
                 <>
                   {filteredHistory.slice(0, 10).map(h => (
-                    <ArchiveCard key={`hist-${h.id}`} className={[watchlistIds.has(h.id) ? 'watchlist-card' : '', historyExitIds.has(String(h.id)) ? 'home-carousel-card-exit' : (historyEntranceId === String(h.id) ? 'home-carousel-card-enter' : '')].filter(Boolean).join(' ') || undefined} archive={h} onClick={() => handleSelectArchive(h.id)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveHistory: true })} longPressTitle="打开菜单" currentPage={h.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
+                    <ArchiveCard key={`hist-${h.id}`} className={[watchlistIds.has(h.id) ? 'watchlist-card' : '', historyExitIds.has(String(h.id)) ? 'home-carousel-card-exit' : (historyEntranceIds.has(String(h.id)) ? 'home-carousel-card-enter' : '')].filter(Boolean).join(' ') || undefined} archive={h} onClick={() => handleSelectArchive(h.id)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveHistory: true })} longPressTitle="打开菜单" currentPage={h.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
                   ))}
                   {filteredHistory.length > 10 && (
                     <button
