@@ -1471,25 +1471,40 @@ test('normal Reader holds old spread geometry until every target slot is decoded
 test('home animates only a newly inserted watchlist card and respects reduced motion', () => {
   const home = read('src/pages/Home.jsx');
   const css = read('src/index.css');
-  assert.match(home, /getNewlyAddedWatchlistId/);
-  assert.match(home, /className=\{[^}]*home-watchlist-card-enter/);
-  assert.match(css, /\.home-watchlist-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-watchlist-card-enter 280ms/s);
-  assert.match(css, /@keyframes home-watchlist-card-enter\s*\{[\s\S]*translateY\(10px\) scale\(0\.98\)[\s\S]*translateY\(0\) scale\(1\)/);
-  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-watchlist-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
+  assert.match(home, /getNewlyAddedArchiveId/);
+  assert.match(home, /className=\{[^}]*home-carousel-card-enter/);
+  assert.match(css, /\.home-carousel-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-carousel-card-enter 280ms/s);
+  assert.match(css, /@keyframes home-carousel-card-enter\s*\{[\s\S]*translateY\(10px\) scale\(0\.98\)[\s\S]*translateY\(0\) scale\(1\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-carousel-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
 });
 
 test('home keeps successfully removed watchlist cards until their exit animation completes', () => {
   const home = read('src/pages/Home.jsx');
   const css = read('src/index.css');
-  assert.match(home, /getRemovedWatchlistIds/);
+  assert.match(home, /getRemovedArchiveIds/);
   assert.match(home, /watchlistExitIds/);
   assert.match(home, /matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/);
   assert.match(home, /setTimeout\([\s\S]{0,500}, 220\)/);
-  assert.match(home, /className=\{[^}]*home-watchlist-card-exit/);
+  assert.match(home, /className=\{[^}]*home-carousel-card-exit/);
   assert.doesNotMatch(home, /await removeWatchlistItem\(archiveId\);\s*setWatchlist\(\(prev\) => prev\.filter/);
-  assert.match(css, /\.home-watchlist-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-watchlist-card-exit 220ms/s);
-  assert.match(css, /@keyframes home-watchlist-card-exit\s*\{[\s\S]*translateY\(0\) scale\(1\)[\s\S]*translateY\(8px\) scale\(0\.98\)/);
-  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-watchlist-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
+  assert.match(css, /\.home-carousel-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-carousel-card-exit 220ms/s);
+  assert.match(css, /@keyframes home-carousel-card-exit\s*\{[\s\S]*translateY\(0\) scale\(1\)[\s\S]*translateY\(8px\) scale\(0\.98\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-carousel-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
+});
+
+test('home continue-reading cards reuse carousel entrance and successful-exit motion', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /historyEntranceId/);
+  assert.match(home, /historyExitIds/);
+  assert.match(home, /addEventListener\('lrr:history-changed'/);
+  assert.match(home, /historyMotionReadyRef/);
+  assert.match(home, /if \(!historyMotionReadyRef\.current\)/);
+  assert.match(home, /getVisibleContinueReadingItems\(historyRef\.current, hideReadRef\.current\)/);
+  assert.match(home, /getVisibleContinueReadingItems\(next, nextHideRead\)/);
+  assert.match(home, /const handleToggleHideRead = useCallback\(\(\) => \{\s*setHideRead\(!hideReadRef\.current\)\.catch/s);
+  assert.match(home, /if \(!historyExitTimerRef\.current\) setHistory\(getHistory\(\)\)/);
+  assert.match(home, /hist-\$\{h\.id\}[\s\S]{0,250}home-carousel-card-exit[\s\S]{0,180}home-carousel-card-enter/);
+  assert.doesNotMatch(home, /await removeHistoryItem\(archiveId\);\s*setHistory\(\(prev\) => prev\.filter/);
 });
 
 test('settings tooltips keep viewport collision positioning and compact home actions share one height', () => {

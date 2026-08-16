@@ -64,7 +64,7 @@ import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, 
 import { getArchiveSearchTotal, hasArchiveSearchQuery } from '../lib/archiveSearch';
 import { filterRandomArchives, getRandomHideRead, setRandomHideRead } from '../lib/randomArchiveFilter';
 import { DEFAULT_THEME_PALETTES, readStoredThemePalettes } from '../lib/theme';
-import { getNewlyAddedWatchlistId, getRemovedWatchlistIds, getSettingsPaneNaturalHeight } from '../lib/readerUiState';
+import { getNewlyAddedArchiveId, getRemovedArchiveIds, getSettingsPaneNaturalHeight, getVisibleContinueReadingItems } from '../lib/readerUiState';
 
 const FILTER_KEY = 'lrr_filter';
 const RANDOMS_RECENT_KEY = 'lrr_random_recent_v1';
@@ -387,6 +387,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     return cachedKey === snapshotFilterKey ? snapshot : null;
   })();
   const [history, setHistory] = useState([]);
+  const [historyEntranceId, setHistoryEntranceId] = useState('');
+  const [historyExitIds, setHistoryExitIds] = useState(() => new Set());
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const historyEntranceTimerRef = useRef(null);
+  const historyExitTimerRef = useRef(null);
+  const pendingHistoryRef = useRef(null);
+  const historyMotionReadyRef = useRef(false);
   const [watchlist, setWatchlist] = useState([]);
   const [watchlistEntranceId, setWatchlistEntranceId] = useState('');
   const [watchlistExitIds, setWatchlistExitIds] = useState(() => new Set());
@@ -396,6 +404,9 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const watchlistExitTimerRef = useRef(null);
   const pendingWatchlistRef = useRef(null);
   const [hideRead, setHideReadState] = useState(getHideRead);
+  const hideReadRef = useRef(hideRead);
+  hideReadRef.current = hideRead;
+  const pendingHistoryHideReadRef = useRef(hideRead);
   const [randomHideRead, setRandomHideReadState] = useState(getRandomHideRead);
   const [cropCover, setCropCoverState] = useState(getCropCover);
   const [archiveBrowseMode, setArchiveBrowseModeState] = useState(() => getArchiveBrowseMode());
@@ -823,7 +834,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setArchives(update);
     setRandoms(update);
     setWatchlist(update);
-    setHistory(getHistory());
+    if (!historyExitTimerRef.current) setHistory(getHistory());
     return result;
   }, []);
 
@@ -834,7 +845,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setArchives(update);
     setRandoms(update);
     setWatchlist(update);
-    setHistory(getHistory());
+    if (!historyExitTimerRef.current) setHistory(getHistory());
   }), []);
 
   const removeDeletedArchiveIds = useCallback((ids) => {
@@ -1157,27 +1168,95 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
   // Load minimal history state, then hydrate display metadata from LANraragi by arcid.
   useEffect(() => {
-    (async () => {
-      setHistory(getHistory());
-      if (!coldRestoreRef.current) {
-        loadHistoryState().then((state) => {
-          setHistory(state.histories);
-          setHideReadState(state.hideRead);
-        }).catch(() => {
-          setHistory(getHistory());
-          setHideReadState(getHideRead());
-        });
-      }
-    })();
+    const initialHistory = getHistory();
+    historyRef.current = initialHistory;
+    setHistory(initialHistory);
+    if (coldRestoreRef.current) {
+      historyMotionReadyRef.current = true;
+      return;
+    }
+    loadHistoryState().then((state) => {
+      historyRef.current = state.histories;
+      hideReadRef.current = state.hideRead;
+      setHistory(state.histories);
+      setHideReadState(state.hideRead);
+    }).catch(() => {
+      const next = getHistory();
+      const nextHideRead = getHideRead();
+      historyRef.current = next;
+      hideReadRef.current = nextHideRead;
+      setHistory(next);
+      setHideReadState(nextHideRead);
+    }).finally(() => {
+      historyMotionReadyRef.current = true;
+    });
   }, []);
 
   useEffect(() => {
+    const showHistoryEntrance = (addedId) => {
+      if (!addedId) return;
+      if (historyEntranceTimerRef.current) clearTimeout(historyEntranceTimerRef.current);
+      setHistoryEntranceId(addedId);
+      historyEntranceTimerRef.current = setTimeout(() => {
+        historyEntranceTimerRef.current = null;
+        setHistoryEntranceId('');
+      }, 320);
+    };
     const refreshHistory = () => {
-      setHistory(getHistory());
-      setHideReadState(getHideRead());
+      const next = getHistory();
+      const nextHideRead = getHideRead();
+      if (!historyMotionReadyRef.current) {
+        historyRef.current = next;
+        hideReadRef.current = nextHideRead;
+        setHistory(next);
+        setHideReadState(nextHideRead);
+        return;
+      }
+      const previousVisible = getVisibleContinueReadingItems(historyRef.current, hideReadRef.current);
+      const nextVisible = getVisibleContinueReadingItems(next, nextHideRead);
+      const removedIds = getRemovedArchiveIds(previousVisible, nextVisible);
+      const reduceMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (removedIds.length > 0 && !reduceMotion) {
+        if (historyExitTimerRef.current) clearTimeout(historyExitTimerRef.current);
+        pendingHistoryRef.current = next;
+        pendingHistoryHideReadRef.current = nextHideRead;
+        setHistoryExitIds(new Set(removedIds));
+        historyExitTimerRef.current = setTimeout(() => {
+          historyExitTimerRef.current = null;
+          const pending = pendingHistoryRef.current || getHistory();
+          const pendingHideRead = pendingHistoryHideReadRef.current;
+          pendingHistoryRef.current = null;
+          const addedId = getNewlyAddedArchiveId(
+            getVisibleContinueReadingItems(historyRef.current, hideReadRef.current),
+            getVisibleContinueReadingItems(pending, pendingHideRead),
+          );
+          historyRef.current = pending;
+          hideReadRef.current = pendingHideRead;
+          setHistory(pending);
+          setHideReadState(pendingHideRead);
+          setHistoryExitIds(new Set());
+          showHistoryEntrance(addedId);
+        }, 220);
+      } else {
+        if (historyExitTimerRef.current) clearTimeout(historyExitTimerRef.current);
+        historyExitTimerRef.current = null;
+        pendingHistoryRef.current = null;
+        setHistoryExitIds(new Set());
+        const addedId = getNewlyAddedArchiveId(previousVisible, nextVisible);
+        historyRef.current = next;
+        hideReadRef.current = nextHideRead;
+        setHistory(next);
+        setHideReadState(nextHideRead);
+        showHistoryEntrance(addedId);
+      }
     };
     window.addEventListener('lrr:history-changed', refreshHistory);
-    return () => window.removeEventListener('lrr:history-changed', refreshHistory);
+    return () => {
+      window.removeEventListener('lrr:history-changed', refreshHistory);
+      if (historyEntranceTimerRef.current) clearTimeout(historyEntranceTimerRef.current);
+      if (historyExitTimerRef.current) clearTimeout(historyExitTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -1199,7 +1278,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       }
     };
     const applyWatchlistChange = (next) => {
-      const removedIds = getRemovedWatchlistIds(watchlistRef.current, next);
+      const removedIds = getRemovedArchiveIds(watchlistRef.current, next);
       const reduceMotion = typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (removedIds.length > 0 && !reduceMotion) {
@@ -1210,7 +1289,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           watchlistExitTimerRef.current = null;
           const pending = pendingWatchlistRef.current || getWatchlist();
           pendingWatchlistRef.current = null;
-          const addedId = getNewlyAddedWatchlistId(watchlistRef.current, pending);
+          const addedId = getNewlyAddedArchiveId(watchlistRef.current, pending);
           watchlistRef.current = pending;
           setWatchlist(pending);
           setWatchlistExitIds(new Set());
@@ -1224,7 +1303,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         pendingWatchlistRef.current = null;
         setWatchlistExitIds(new Set());
       }
-      const addedId = getNewlyAddedWatchlistId(watchlistRef.current, next);
+      const addedId = getNewlyAddedArchiveId(watchlistRef.current, next);
       watchlistRef.current = next;
       setWatchlist(next);
       showWatchlistEntrance(addedId);
@@ -2106,16 +2185,11 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   };
 
   const filteredHistory = useMemo(() => {
-    if (!hideRead) return history;
-    return history.filter(h => !(h.total > 0 && h.page >= h.total));
+    return getVisibleContinueReadingItems(history, hideRead);
   }, [history, hideRead]);
 
   const handleToggleHideRead = useCallback(() => {
-    setHideReadState(v => {
-      const next = !v;
-      setHideRead(next).catch(() => {});
-      return next;
-    });
+    setHideRead(!hideReadRef.current).catch(() => {});
   }, []);
 
   const handleToggleRandomHideRead = useCallback(() => {
@@ -2183,8 +2257,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setHistorySyncing(true);
     try {
       const state = await loadHistoryState({ force: true });
-      setHistory(state.histories);
-      setHideReadState(state.hideRead);
+      if (!historyExitTimerRef.current) {
+        historyRef.current = state.histories;
+        hideReadRef.current = state.hideRead;
+        setHistory(state.histories);
+        setHideReadState(state.hideRead);
+      }
     } finally {
       setHistorySyncing(false);
     }
@@ -2195,7 +2273,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     setWatchlistChecking(true);
     try {
       await runHistoryExistenceCheck({ force: true });
-      setHistory(getHistory());
+      if (!historyExitTimerRef.current) setHistory(getHistory());
       if (!watchlistExitTimerRef.current) setWatchlist(getWatchlist());
     } finally {
       setWatchlistChecking(false);
@@ -2211,7 +2289,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     if (!archiveId) return;
     try {
       await removeHistoryItem(archiveId);
-      setHistory((prev) => prev.filter((item) => item.id !== archiveId));
       setHistoryDeleteTarget(null);
     } catch (error) {
       showToast(`删除历史记录失败：${error?.message || '未知错误'}`, 'error');
@@ -2319,7 +2396,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
               {filteredHistory.length > 0 ? (
                 <>
                   {filteredHistory.slice(0, 10).map(h => (
-                    <ArchiveCard key={`hist-${h.id}`} className={watchlistIds.has(h.id) ? 'watchlist-card' : undefined} archive={h} onClick={() => handleSelectArchive(h.id)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveHistory: true })} longPressTitle="打开菜单" currentPage={h.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
+                    <ArchiveCard key={`hist-${h.id}`} className={[watchlistIds.has(h.id) ? 'watchlist-card' : '', historyExitIds.has(String(h.id)) ? 'home-carousel-card-exit' : (historyEntranceId === String(h.id) ? 'home-carousel-card-enter' : '')].filter(Boolean).join(' ') || undefined} archive={h} onClick={() => handleSelectArchive(h.id)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveHistory: true })} longPressTitle="打开菜单" currentPage={h.page} showProgressBar={showHistoricalArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
                   ))}
                   {filteredHistory.length > 10 && (
                     <button
@@ -2384,7 +2461,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <div className="home-carousel-collapse" style={{ maxHeight: watchlistCollapsed ? '0px' : HOME_CAROUSEL_EXPANDED_HEIGHT }}>
             <div ref={watchlistScroller.ref} onWheelCapture={watchlistScroller.onWheelCapture} onScroll={watchlistScroller.onScroll} onMouseDown={watchlistScroller.onMouseDown} onClickCapture={watchlistScroller.onClickCapture} onDragStart={watchlistScroller.onDragStart} style={{ gap: isNarrow ? '10px' : '16px', padding: getHomeCarouselPadding(isNarrow), ...watchlistScroller.getTouchScrollStyle(), ...watchlistScroller.getMouseScrollStyle() }} className="no-scrollbar home-carousel-scroller">
               {watchlistWithProgress.map(item => (
-                <ArchiveCard key={`watch-${item.id || item.arcid}`} className={watchlistExitIds.has(String(item.id || item.arcid)) ? 'home-watchlist-card-exit' : (watchlistEntranceId === String(item.id || item.arcid) ? 'home-watchlist-card-enter' : undefined)} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showWatchlistArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
+                <ArchiveCard key={`watch-${item.id || item.arcid}`} className={watchlistExitIds.has(String(item.id || item.arcid)) ? 'home-carousel-card-exit' : (watchlistEntranceId === String(item.id || item.arcid) ? 'home-carousel-card-enter' : undefined)} archive={item} onClick={() => handleSelectArchive(item.id || item.arcid)} onArchiveContextMenu={(archive, point, event) => handleOpenArchiveMenu(archive, point, event, { showRemoveWatchlist: true })} longPressTitle="打开菜单" currentPage={item.page} showProgressBar={showWatchlistArchiveProgress} reserveProgressSpace={reserveGlobalProgressSpace} noCrop={!cropCover} cacheOnly={coldRestoreRef.current} eagerThumbnail />
               ))}
               {watchlistOverflow && (
                 <button

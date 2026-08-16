@@ -246,18 +246,24 @@ export function isSuperResolutionPageTooLarge(sourceSize, scale) {
   return width * height * outputScale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS;
 }
 
-export function getNewlyAddedWatchlistId(previousItems = [], nextItems = []) {
+export function getNewlyAddedArchiveId(previousItems = [], nextItems = []) {
   const previousIds = new Set(previousItems.map((item) => String(item?.id || item?.arcid || '')).filter(Boolean));
   return nextItems
     .map((item) => String(item?.id || item?.arcid || ''))
     .find((id) => id && !previousIds.has(id)) || '';
 }
 
-export function getRemovedWatchlistIds(previousItems = [], nextItems = []) {
+export function getRemovedArchiveIds(previousItems = [], nextItems = []) {
   const nextIds = new Set(nextItems.map((item) => String(item?.id || item?.arcid || '')).filter(Boolean));
   return previousItems
     .map((item) => String(item?.id || item?.arcid || ''))
     .filter((id) => id && !nextIds.has(id));
+}
+
+export function getVisibleContinueReadingItems(items = [], hideRead = false) {
+  return hideRead
+    ? items.filter((item) => !(Number(item?.total) > 0 && Number(item?.page) >= Number(item.total)))
+    : items;
 }
 
 export function getDrawerRowStride(gridWidth) {

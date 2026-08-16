@@ -253,27 +253,36 @@ test('super-resolution oversized confirmation uses the inference output limit', 
 });
 
 test('watchlist insertion detection returns only a newly added archive', () => {
-  assert.equal(readerUiState.getNewlyAddedWatchlistId(
+  assert.equal(readerUiState.getNewlyAddedArchiveId(
     [{ id: 'existing', title: 'Old title' }],
     [{ id: 'new' }, { id: 'existing', title: 'New title' }],
   ), 'new');
-  assert.equal(readerUiState.getNewlyAddedWatchlistId(
+  assert.equal(readerUiState.getNewlyAddedArchiveId(
     [{ id: 'existing', title: 'Old title' }],
     [{ id: 'existing', title: 'New title' }],
   ), '');
-  assert.equal(readerUiState.getNewlyAddedWatchlistId([{ id: 'existing' }], []), '');
+  assert.equal(readerUiState.getNewlyAddedArchiveId([{ id: 'existing' }], []), '');
 });
 
 test('watchlist removal detection returns only archives missing from the next list', () => {
-  assert.deepEqual(readerUiState.getRemovedWatchlistIds(
+  assert.deepEqual(readerUiState.getRemovedArchiveIds(
     [{ id: 'removed' }, { id: 'kept', title: 'Old title' }],
     [{ id: 'kept', title: 'New title' }, { id: 'added' }],
   ), ['removed']);
-  assert.deepEqual(readerUiState.getRemovedWatchlistIds(
+  assert.deepEqual(readerUiState.getRemovedArchiveIds(
     [{ id: 'kept', title: 'Old title' }],
     [{ id: 'kept', title: 'New title' }],
   ), []);
-  assert.deepEqual(readerUiState.getRemovedWatchlistIds([], [{ id: 'added' }]), []);
+  assert.deepEqual(readerUiState.getRemovedArchiveIds([], [{ id: 'added' }]), []);
+});
+
+test('continue-reading visibility excludes completed archives only when hide-read is enabled', () => {
+  const items = [
+    { id: 'reading', page: 4, total: 10 },
+    { id: 'finished', page: 10, total: 10 },
+  ];
+  assert.deepEqual(readerUiState.getVisibleContinueReadingItems(items, true), [items[0]]);
+  assert.deepEqual(readerUiState.getVisibleContinueReadingItems(items, false), items);
 });
 
 test('WebGPU shader compile failures disable super resolution for the archive', () => {
