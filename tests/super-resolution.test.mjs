@@ -140,6 +140,16 @@ fn main() {
   assert.equal(patchOrtSegmentedOffsetTypes(patched), patched);
 });
 
+test('ORT shader compatibility wrapper does not retain compile diagnostics', async () => {
+  const source = await readFile(
+    new URL('../src/lib/superResolutionOrt.js', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /patchOrtSegmentedOffsetTypes\(descriptor\.code\)/);
+  assert.doesNotMatch(source, /SR-WGSL|compilationInfo|pushErrorScope|popErrorScope|WithDiagnostics/);
+});
+
 test('Real-CUGAN reflects tile edges and disposes every inference tensor', async () => {
   const { createRealCuganProcessor, reflectIndex } = await import('../src/lib/realCugan.js');
   assert.deepEqual([-2, -1, 0, 3, 4, 5].map((index) => reflectIndex(index, 4)), [2, 1, 0, 3, 2, 1]);

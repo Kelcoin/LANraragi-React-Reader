@@ -43,48 +43,18 @@ export function patchOrtSegmentedOffsetTypes(source) {
 }
 
 // ORT 1.27 的分段 buffer accessor 接收 u32，但 Conv2dMM 会传入 i32；先修补
-// 生成的 WGSL，再创建 shader。诊断仍优先使用 compilationInfo()，缺失时
-// （部分 Android WebView）退回 validation error scope。
+// 生成的 WGSL，再创建 shader。
 function installWebGpuShaderCompatibility() {
   if (webGpuShaderCompatibilityInstalled) return;
   const devicePrototype = globalThis.GPUDevice?.prototype;
-  if (typeof devicePrototype?.createShaderModule !== 'function'
-    || typeof devicePrototype.pushErrorScope !== 'function'
-    || typeof devicePrototype.popErrorScope !== 'function') return;
+  if (typeof devicePrototype?.createShaderModule !== 'function') return;
   webGpuShaderCompatibilityInstalled = true;
   const originalCreateShaderModule = devicePrototype.createShaderModule;
-  const hasCompilationInfo = typeof globalThis.GPUShaderModule?.prototype?.compilationInfo === 'function';
-  devicePrototype.createShaderModule = function createShaderModuleWithDiagnostics(descriptor) {
-    if (!hasCompilationInfo) this.pushErrorScope('validation');
+  devicePrototype.createShaderModule = function createShaderModuleWithCompatibility(descriptor) {
     const patchedDescriptor = typeof descriptor?.code === 'string'
       ? { ...descriptor, code: patchOrtSegmentedOffsetTypes(descriptor.code) }
       : descriptor;
-    const module = originalCreateShaderModule.call(this, patchedDescriptor);
-    const report = (lines) => {
-      if (lines.length > 0) {
-        console.error(
-          `[SR-WGSL] shader compile failed (${descriptor?.label ?? 'unlabeled'}):`,
-          lines.join(' | '),
-        );
-      }
-    };
-    if (hasCompilationInfo) {
-      Promise.resolve(module.compilationInfo()).then((info) => {
-        report((info?.messages ?? [])
-          .filter((message) => message?.type === 'error')
-          .map((message) => `${message.lineNum}:${message.linePos} ${message.message}`));
-      }).catch(() => {});
-    } else {
-      const device = this;
-      Promise.resolve()
-        .then(() => {})
-        .then(() => device.popErrorScope())
-        .then((error) => {
-          if (error) report([error.message ?? 'unknown validation error']);
-        })
-        .catch(() => {});
-    }
-    return module;
+    return originalCreateShaderModule.call(this, patchedDescriptor);
   };
 }
 

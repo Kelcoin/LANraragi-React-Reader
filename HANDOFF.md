@@ -4,7 +4,7 @@
 
 分支：`dev`
 
-报告更新时产品代码 HEAD：`072a33a`（已推送 `origin/dev`）
+报告基于已推送到 `origin/dev` 的修复，并已补充调试代码清理状态。
 
 ## 当前状态
 
@@ -28,7 +28,7 @@ type mismatch for argument 1 in call to 'get_x_by_offset', expected 'u32', got '
 
 ORT 1.27 在大 buffer 分段路径生成 `fn get_*_by_offset(global_offset: u32)`，但部分 Conv2dMM 调用点传入 i32 表达式。桌面 Chromium 151 可运行，Android WebView 150 的 Tint 严格拒绝。
 
-`d414ec3` 在 `src/lib/superResolutionOrt.js` 的 `GPUDevice.createShaderModule` 包装层修补这些分段 accessor 调用，并保留 `[SR-WGSL]` 诊断。该修复消除了 shader 类型错误，但真机继续暴露了第二个 ORT 问题。
+`d414ec3` 在 `src/lib/superResolutionOrt.js` 的 `GPUDevice.createShaderModule` 包装层修补这些分段 accessor 调用。该修复消除了 shader 类型错误，但真机继续暴露了第二个 ORT 问题。定位完成后，临时 shader 编译诊断与 error-scope 探针已清理，兼容性修补保留。
 
 ### 第二阶段：分段 pipeline cache collision
 
@@ -130,7 +130,7 @@ max-width: 100%;
 
 推荐栏内宽幅卡使用确定值 `--archive-wide-card-width` 作为 `flex-basis` 与 `width`，并设 `max-width: none`，不再使用百分比 `min()`。回归合同禁止该局部规则重新引入百分比宽度。
 
-`[REC-BLANK]` 探针仍保留。新版 APK 最终复核标准：含多个宽幅卡的“同作者”栏滑到最右，仅剩正常约 `14-20px` padding；理想情况下 trailing 不超过探针阈值 `80px`。
+用于定位尾随空白的临时滚动监听、定时器与控制台探针已清理。新版 APK 最终复核标准：含多个宽幅卡的“同作者”栏滑到最右，仅剩正常约 `14-20px` padding。
 
 ## 已排除或不要恢复的方案
 
@@ -142,9 +142,9 @@ max-width: 100%;
 
 ## 验证与 Git
 
-`072a33a` 推送前已通过：
+本次调试探针清理已通过：
 
-- `npm test`：481/481
+- `npm test`：483/483
 - `npm run lint`
 - `npm run check`
 - `npm run build`
@@ -152,10 +152,10 @@ max-width: 100%;
 
 GitHub Actions 未从本机会话触发：`gh` Actions API 返回 HTTP 401，但 `git push origin dev` 正常。
 
-主工作区仅 `HANDOFF.md` 为本轮文档变更。临时 Android worktree 与旁装调试产物不属于产品提交。
+本次同时清理 `Recommendations.jsx` 的尾随空白诊断监听，以及 `superResolutionOrt.js` 的 shader 编译诊断；两处均有回归合同防止重新引入。临时 Android worktree 与旁装调试产物不属于产品提交。
 
 ## 后续建议
 
 1. 用正式 CI 生成包含 `072a33a` 的 APK，覆盖安装正式包后再手动确认 Waifu2x 开关体验。
-2. 用含多个宽幅卡的档案复核“同作者”推荐栏 trailing；若仍异常，保存 `[REC-BLANK]` 数据。
+2. 用含多个宽幅卡的档案复核“同作者”推荐栏 trailing；若仍异常，记录档案 ID、卡片数量与屏幕截图后重新诊断。
 3. ORT 上游若修复 segmented pipeline cache key，可评估恢复更大 tile；恢复前必须在 `128 MiB` Adreno 设备回归。

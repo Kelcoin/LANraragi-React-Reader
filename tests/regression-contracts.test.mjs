@@ -2058,6 +2058,12 @@ test('recommendation cards isolate internal overflow from carousel scroll width'
   assert.doesNotMatch(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\.is-wide\s*\{[^}]*min\([^}]*100%/s);
   assert.match(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\s*>\s*\.archive-card-shell\s*\{[\s\S]*overflow:\s*hidden;/s);
 });
+
+test('recommendation carousel does not retain resolved blank-area diagnostics', () => {
+  const recommendations = read('src/components/Recommendations.jsx');
+  assert.doesNotMatch(recommendations, /REC-BLANK|recBlankTimerRef|reportRecTrailingBlank/);
+});
+
 test('custom themes keep independent light and dark palettes and migrate the legacy single palette', () => {
   const theme = read('src/lib/theme.js');
   assert.match(theme, /DEFAULT_THEME_PALETTES/);
