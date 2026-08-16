@@ -85,3 +85,19 @@
 - [ ] Retain successfully removed cards for a 220ms non-interactive exit animation.
 - [ ] Bypass the delay under reduced motion and leave failed removals visible.
 - [ ] Run focused and full verification before commit and push.
+
+### Task 6: Continue-reading card motion reuse
+
+**Files:**
+- Modify: `src/lib/readerUiState.js`
+- Modify: `src/pages/Home.jsx`
+- Modify: `src/index.css`
+- Test: `tests/reader-ui-state.test.mjs`
+- Test: `tests/regression-contracts.test.mjs`
+
+- [ ] Rename the list-difference helpers and animation classes from watchlist-specific to archive-generic names in failing tests.
+- [ ] Add a failing Home contract for continue-reading entrance and successful-exit state.
+- [ ] Confirm focused tests fail because generic names and history animation state are absent.
+- [ ] Reuse the existing 280ms entrance and 220ms exit styles for continue-reading cards without animating initial hydration.
+- [ ] Keep removal failures visible and bypass animation under reduced motion.
+- [ ] Run focused and full verification, update `HANDOFF.md`, commit, and push `dev`.
