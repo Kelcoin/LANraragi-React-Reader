@@ -2054,16 +2054,9 @@ test('recommendation cards isolate internal overflow from carousel scroll width'
   const css = read('src/styles/pages.css');
   assert.match(css, /\.recommendation-content\s*\{[\s\S]*min-width:\s*0;/s);
   assert.match(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\s*\{[\s\S]*flex:\s*0\s*0\s*auto;[\s\S]*min-width:\s*0;/s);
+  assert.match(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\.is-wide\s*\{[\s\S]*flex-basis:\s*var\(--archive-wide-card-width,[^)]+\);[\s\S]*width:\s*var\(--archive-wide-card-width,[^)]+\);[\s\S]*max-width:\s*none;/s);
+  assert.doesNotMatch(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\.is-wide\s*\{[^}]*min\([^}]*100%/s);
   assert.match(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\s*>\s*\.archive-card-shell\s*\{[\s\S]*overflow:\s*hidden;/s);
-});
-
-test('Waifu2x uses the WebGPU fallback adapter only in Android WebView', () => {
-  const worker = read('src/lib/superResolution.worker.js');
-  assert.match(worker, /function shouldUseFallbackWebGpuAdapter\(\)/);
-  assert.match(worker, /Android/);
-  assert.match(worker, /wv/);
-  assert.match(worker, /createProductionSession\(modelBytes, backend\)/);
-  assert.match(worker, /shouldUseFallbackWebGpuAdapter\(\)[\s\S]*forceFallbackAdapter\s*=\s*true/s);
 });
 test('custom themes keep independent light and dark palettes and migrate the legacy single palette', () => {
   const theme = read('src/lib/theme.js');

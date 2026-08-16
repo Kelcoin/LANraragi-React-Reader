@@ -5,6 +5,7 @@ import test from 'node:test';
 import * as imageCache from '../src/lib/imageCache.js';
 import * as superResolution from '../src/lib/superResolution.js';
 import * as tiling from '../src/lib/superResolutionTiling.js';
+import { patchOrtSegmentedOffsetTypes } from '../src/lib/superResolutionOrt.js';
 import { createSuperResolutionRuntime as createRawSuperResolutionRuntime } from '../src/lib/superResolutionRuntime.js';
 
 function createWorkerHarness() {
@@ -112,6 +113,31 @@ test('production Worker loads the WebGPU build without WebGL or WASM fallbacks',
   assert.match(nginxSource, /add_header Cross-Origin-Embedder-Policy "require-corp" always;/);
   assert.match(runtimeSource, /new Worker\(new URL\('\.\/superResolution\.worker\.js', import\.meta\.url\)/);
   assert.doesNotMatch(runtimeSource, /new globalThis\.Worker\(new URL/);
+  assert.doesNotMatch(workerSource, /forceFallbackAdapter/);
+});
+
+test('patches ORT segmented-buffer WGSL offsets to their declared u32 type', () => {
+  const source = `
+fn get_x_by_offset(global_offset: u32) -> f32 { return x[global_offset]; }
+fn get_w_by_offset(global_offset: u32) -> f32 { return w[global_offset]; }
+fn get_other_by_offset(global_offset: i32) -> f32 { return other[global_offset]; }
+fn main() {
+  var xIndex: i32 = 0;
+  let a = get_x_by_offset(xIndex);
+  let b = get_x_by_offset(xIndex + 1);
+  let c = get_w_by_offset(row * i32(uniforms.w_shape[3]) + colIn);
+  let d = get_x_by_offset(u32(xIndex));
+  let e = get_other_by_offset(xIndex);
+}`;
+
+  const patched = patchOrtSegmentedOffsetTypes(source);
+
+  assert.match(patched, /get_x_by_offset\(u32\(xIndex\)\)/);
+  assert.match(patched, /get_x_by_offset\(u32\(xIndex \+ 1\)\)/);
+  assert.match(patched, /get_w_by_offset\(u32\(row \* i32\(uniforms\.w_shape\[3\]\) \+ colIn\)\)/);
+  assert.equal((patched.match(/get_x_by_offset\(u32\(xIndex\)\)/g) || []).length, 2);
+  assert.match(patched, /get_other_by_offset\(xIndex\)/);
+  assert.equal(patchOrtSegmentedOffsetTypes(patched), patched);
 });
 
 test('Real-CUGAN reflects tile edges and disposes every inference tensor', async () => {

@@ -1004,6 +1004,12 @@
     min-width: 0;
   }
 
+  .recommendation-content > .archive-card-wrap.is-wide {
+    flex-basis: var(--archive-wide-card-width, 316px);
+    width: var(--archive-wide-card-width, 316px);
+    max-width: none;
+  }
+
   .recommendation-content > .archive-card-wrap > .archive-card-shell {
     overflow: hidden;
   }
