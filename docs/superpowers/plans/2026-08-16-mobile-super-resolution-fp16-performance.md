@@ -188,7 +188,7 @@ fix(reader): pause SR during interaction
 
 - [ ] **Step 1: Generate and inspect the FP16 graph outside application runtime**
 
-Use a temporary Python environment with `onnx==1.17.0` and `onnxconverter-common==1.14.0`. Call `convert_float_to_float16(model, keep_io_types=True, disable_shape_infer=False)` so browser input/output tensors remain FP32 while eligible internal weights and operators become FP16. Run ONNX checker and shape inference, calculate SHA-256, and record the exact source commit and conversion versions in `NOTICE.md`. Do not add Python packages to application dependencies.
+Use a temporary Python environment with `onnx==1.22.0` and `onnxconverter-common==1.16.0`. Call `convert_float_to_float16(model, keep_io_types=True, disable_shape_infer=False)` so browser input/output tensors remain FP32 while eligible internal weights and operators become FP16. Run ONNX checker and shape inference, calculate SHA-256, and record the exact source commit and conversion versions in `NOTICE.md`. Do not add Python packages to application dependencies.
 
 - [ ] **Step 2: Write failing manifest selection and cache identity tests**
 

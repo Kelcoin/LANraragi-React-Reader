@@ -2111,6 +2111,46 @@ test('ships a pinned Waifu2x CUNet x2 manifest with Android-safe cropped-output 
   assert.equal(validateManifest(model), true);
 });
 
+test('selects FP16 Waifu2x only for capable adapters and falls back after failure', () => {
+  assert.equal(typeof superResolution.selectWaifu2xManifest, 'function');
+  const fp32 = superResolution.getSuperResolutionModel('waifu2x');
+  const adapterInfo = {
+    maxStorageBufferBindingSize: 128 * 1024 * 1024,
+    shaderF16: true,
+  };
+  const fp16 = superResolution.selectWaifu2xManifest(adapterInfo);
+
+  assert.equal(fp16.id, 'waifu2x-cunet-art-scale2x-fp16-20260816');
+  assert.equal(fp16.precision, 'fp16');
+  assert.equal(fp16.url, '/models/waifu2x-cunet-art-scale2x/scale2x-fp16.onnx');
+  assert.equal(fp16.inputWidth, 304);
+  assert.equal(fp16.inputHeight, 304);
+  assert.equal(fp16.tileCoreWidth, 232);
+  assert.equal(fp16.tileCoreHeight, 232);
+  assert.equal(fp16.checksum.digest, '32b9a5f3b4623e13f29a9f98e0fe03bee69d556df0d33be0a2d8a8d77d3a700d');
+  assert.equal(validateManifest(fp16), true);
+
+  assert.equal(superResolution.selectWaifu2xManifest({ ...adapterInfo, shaderF16: false }), fp32);
+  assert.equal(superResolution.selectWaifu2xManifest({
+    ...adapterInfo,
+    maxStorageBufferBindingSize: 127 * 1024 * 1024,
+  }), fp32);
+  assert.equal(superResolution.selectWaifu2xManifest(adapterInfo, new Set([fp16.id])), fp32);
+});
+
+test('FP16 and FP32 Waifu2x use distinct derived cache identities', () => {
+  const fp32 = superResolution.getSuperResolutionModel('waifu2x');
+  const fp16 = superResolution.selectWaifu2xManifest({
+    maxStorageBufferBindingSize: 128 * 1024 * 1024,
+    shaderF16: true,
+  });
+
+  assert.notEqual(
+    superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fp16),
+    superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fp32),
+  );
+});
+
 test('accepts the production Waifu2x 224px input and 376px output geometry', async () => {
   const model = superResolution.getSuperResolutionModel('waifu2x');
   const session = {
@@ -2157,6 +2197,97 @@ test('accepts the production Waifu2x 224px input and 376px output geometry', asy
   assert.equal(response.type, 'result', response.error?.message);
   assert.equal(response.width, 624);
   assert.equal(response.height, 624);
+});
+
+test('accepts FP16 Waifu2x 304px input and 536px cropped output geometry', async () => {
+  const model = superResolution.selectWaifu2xManifest({
+    maxStorageBufferBindingSize: 128 * 1024 * 1024,
+    shaderF16: true,
+  });
+  let encoded;
+  const session = {
+    inputNames: ['x'],
+    outputNames: ['y'],
+    async run(feeds) {
+      assert.deepEqual(feeds.x.dims, [1, 3, 304, 304]);
+      return { y: { dims: [1, 3, 536, 536], data: new Float32Array(3 * 536 * 536).fill(0.5) } };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    digest: async () => model.checksum.digest,
+    decodeImage: async () => ({
+      width: 232,
+      height: 232,
+      pixels: new Uint8ClampedArray(232 * 232 * 4).fill(255),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async (image) => {
+      encoded = image;
+      return new Blob(['waifu2x-fp16'], { type: 'image/png' });
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  await handler.handleMessage({ type: 'init', requestId: 'init-fp16-waifu2x', manifest: model });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-fp16-waifu2x',
+    blob: new Blob(['source']),
+    manifest: model,
+  });
+
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.equal(response.width, 464);
+  assert.equal(response.height, 464);
+  assert.equal(encoded.width, 464);
+  assert.equal(encoded.height, 464);
+});
+
+test('Waifu2x yields an 8ms compositor gap after every tile', async () => {
+  const gaps = [];
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => ({
+      inputNames: ['input'],
+      outputNames: ['output'],
+      async run() {
+        return {
+          output: {
+            dims: [1, 3, 2, 2],
+            data: new Float32Array(12),
+            dispose() {},
+          },
+        };
+      },
+      async release() {},
+    }),
+    decodeImage: async () => ({
+      width: 2,
+      height: 1,
+      pixels: new Uint8ClampedArray(8),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => new Blob(),
+    async yieldControl(delay) {
+      gaps.push(delay);
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-waifu2x-compositor-gap', manifest });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-waifu2x-compositor-gap',
+    blob: new Blob(['source']),
+    manifest,
+  });
+
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.deepEqual(gaps, [8, 8]);
 });
 
 test('Waifu2x RGB NCHW output uses branch-light tile and alpha blitters', async () => {

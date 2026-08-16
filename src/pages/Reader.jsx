@@ -20,6 +20,7 @@ import {
   getSuperResolutionModel,
   processSuperResolutionImageSource,
   scheduleSuperResolutionUpgrade,
+  selectWaifu2xManifest,
   validateSuperResolutionManifest,
   verifySuperResolutionSupport,
 } from '../lib/superResolution';
@@ -1200,6 +1201,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
   const [srRuntimeContext, setSrRuntimeContext] = useState(null);
   const [srRuntimeError, setSrRuntimeError] = useState('');
+  const [srFailedProfileIds, setSrFailedProfileIds] = useState(() => new Set());
   const [srOversizedConfirmOpen, setSrOversizedConfirmOpen] = useState(false);
   const srInitToastRequestedRef = useRef(false);
   const srArchiveManualRef = useRef(null);
@@ -1300,9 +1302,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     return { ...DEFAULT_READER_SETTINGS };
   });
   const srModel = useMemo(() => getSuperResolutionModel(settings.srModel), [settings.srModel]);
-  const srManifest = useMemo(() => (
-    validateSuperResolutionManifest(srModel) ? srModel : null
-  ), [srModel]);
+  const srManifest = useMemo(() => {
+    const candidate = srModel?.value === 'waifu2x'
+      ? selectWaifu2xManifest(srSupport.adapterInfo, srFailedProfileIds)
+      : srModel;
+    return validateSuperResolutionManifest(candidate) ? candidate : null;
+  }, [srFailedProfileIds, srModel, srSupport.adapterInfo]);
   useEffect(() => {
     setSrRuntimeContext(null);
     setSrRuntimeError('');
@@ -1325,6 +1330,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setSrRuntimeContext({ runtime, manifest: srManifest, backend });
     }).catch((error) => {
       if (!active) return;
+      if (srManifest.precision === 'fp16') {
+        setSrFailedProfileIds((current) => {
+          if (current.has(srManifest.id)) return current;
+          const next = new Set(current);
+          next.add(srManifest.id);
+          return next;
+        });
+        return;
+      }
       srArchiveManualRef.current = null;
       setSrArchiveEnabled(false);
       setSettingsState((current) => {
@@ -1356,6 +1370,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const handleSuperResolutionError = useCallback((error) => {
     const failure = resolveSuperResolutionFailure(error);
     if (!failure.notify) return;
+    if (srManifest?.precision === 'fp16') {
+      setSrFailedProfileIds((current) => {
+        if (current.has(srManifest.id)) return current;
+        const next = new Set(current);
+        next.add(srManifest.id);
+        return next;
+      });
+      return;
+    }
     if (failure.disable) disableArchiveSuperResolution();
     const message = failure.webgpuShader
       ? '此设备的 WebGPU 无法编译超分卷积着色器（onnxruntime-web Conv2dMM），已关闭超分。请更新系统 WebView 或浏览器后重试，或在阅读器设置中切换其他超分模型（如 Real-CUGAN）。'
@@ -1363,7 +1386,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (srErrorToastKeyRef.current === message) return;
     srErrorToastKeyRef.current = message;
     showToast(`超分失败，已关闭并显示原图：${message}`, 'error');
-  }, [disableArchiveSuperResolution, showToast]);
+  }, [disableArchiveSuperResolution, showToast, srManifest]);
   const currentPageSize = pageSizes[currentIndex];
   const currentPageTooLargeForSuperResolution = isSuperResolutionPageTooLarge(currentPageSize, srManifest?.scale);
   const scheduledSrRuntimeContext = srRuntimeContext;

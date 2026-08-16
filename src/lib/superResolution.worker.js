@@ -491,7 +491,7 @@ async function processBlobImage({
         disposeTensor(outputTensor);
         disposeTensor(inputTensor);
       }
-      await yieldControl();
+      await yieldControl(8);
       await waitUntilRunnable(isCancelled);
       if (!isCurrent() || isCancelled()) {
         throw createNamedError('AbortError', 'Super-resolution request was cancelled');
@@ -681,7 +681,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
   const tensorFactory = dependencies.tensorFactory ?? createProductionTensor;
   const realCuganFactory = dependencies.realCuganFactory ?? createProductionRealCuganProcessor;
   const yieldControl = dependencies.yieldControl
-    ?? (() => new Promise((resolve) => setTimeout(resolve, 0)));
+    ?? ((delay = 0) => new Promise((resolve) => setTimeout(resolve, delay)));
   let session = null;
   let processor = null;
   let backend = null;

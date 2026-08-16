@@ -9,6 +9,53 @@ import {
 } from './webGpuSupport.js';
 
 const visiblePageJobs = new Map();
+const WAIFU2X_FP16_MIN_BINDING_SIZE = 128 * 1024 * 1024;
+
+const WAIFU2X_LICENSE = Object.freeze({
+  name: 'MIT',
+  url: 'https://github.com/nagadomi/nunif/blob/eab6952c78a27f6d4b73dbfda30d12f349699741/LICENSE',
+});
+
+const WAIFU2X_FP32_MANIFEST = Object.freeze({
+  value: 'waifu2x',
+  label: 'Waifu2x',
+  description: '动漫插画通用模型，兼顾去噪、线条和色块，画质与速度较均衡。',
+  id: 'waifu2x-cunet-art-scale2x-20250502',
+  url: '/models/waifu2x-cunet-art-scale2x/scale2x.onnx',
+  scale: 2,
+  inputLayout: 'nchw',
+  outputLayout: 'nchw',
+  inputName: 'x',
+  outputName: 'y',
+  colorSpace: 'rgb',
+  executionProviders: ['webgpu'],
+  inputWidth: 224,
+  inputHeight: 224,
+  tileCore: 152,
+  padding: 36,
+  outputInset: 18,
+  checksum: {
+    algorithm: 'SHA-256',
+    digest: '0966d74dd0739a20de358de88c8fa4eb6cb8c3489bb0e941da9751ad4dcdf495',
+  },
+  license: WAIFU2X_LICENSE,
+});
+
+const WAIFU2X_FP16_MANIFEST = Object.freeze({
+  ...WAIFU2X_FP32_MANIFEST,
+  id: 'waifu2x-cunet-art-scale2x-fp16-20260816',
+  url: '/models/waifu2x-cunet-art-scale2x/scale2x-fp16.onnx',
+  precision: 'fp16',
+  inputWidth: 304,
+  inputHeight: 304,
+  tileCore: 232,
+  tileCoreWidth: 232,
+  tileCoreHeight: 232,
+  checksum: {
+    algorithm: 'SHA-256',
+    digest: '32b9a5f3b4623e13f29a9f98e0fe03bee69d556df0d33be0a2d8a8d77d3a700d',
+  },
+});
 
 export function scheduleSuperResolutionUpgrade(queue, key, task) {
   return queue.schedule(key, task, IMAGE_LOAD_PRIORITY.PRELOAD);
@@ -29,35 +76,7 @@ export function cancelVisibleSuperResolutionJobs(cacheKey) {
 
 // 超分能力检测与模型选项（引擎：onnxruntime-web WebGPU 与 realcugan-tfjs）
 export const SUPER_RESOLUTION_MODELS = Object.freeze([
-  {
-    value: 'waifu2x',
-    label: 'Waifu2x',
-    description: '动漫插画通用模型，兼顾去噪、线条和色块，画质与速度较均衡。',
-    id: 'waifu2x-cunet-art-scale2x-20250502',
-    url: '/models/waifu2x-cunet-art-scale2x/scale2x.onnx',
-    scale: 2,
-    inputLayout: 'nchw',
-    outputLayout: 'nchw',
-    inputName: 'x',
-    outputName: 'y',
-    colorSpace: 'rgb',
-    executionProviders: ['webgpu'],
-    // Keep CUNet's largest full-resolution Conv2dMM buffer below the 128 MiB
-    // storage-binding limit exposed by Android Adreno WebGPU adapters.
-    inputWidth: 224,
-    inputHeight: 224,
-    tileCore: 152,
-    padding: 36,
-    outputInset: 18,
-    checksum: {
-      algorithm: 'SHA-256',
-      digest: '0966d74dd0739a20de358de88c8fa4eb6cb8c3489bb0e941da9751ad4dcdf495',
-    },
-    license: {
-      name: 'MIT',
-      url: 'https://github.com/nagadomi/nunif/blob/eab6952c78a27f6d4b73dbfda30d12f349699741/LICENSE',
-    },
-  },
+  WAIFU2X_FP32_MANIFEST,
   {
     value: 'realcugan',
     label: 'Real-CUGAN',
@@ -94,6 +113,17 @@ export const SUPER_RESOLUTION_MODELS = Object.freeze([
 
 export function getSuperResolutionModel(value) {
   return SUPER_RESOLUTION_MODELS.find((model) => model.value === value) ?? null;
+}
+
+export function selectWaifu2xManifest(adapterInfo, failedProfileIds = new Set()) {
+  const maxBindingSize = Number(adapterInfo?.maxStorageBufferBindingSize);
+  const fp16Failed = failedProfileIds?.has?.(WAIFU2X_FP16_MANIFEST.id) === true;
+  if (adapterInfo?.shaderF16 === true
+    && maxBindingSize >= WAIFU2X_FP16_MIN_BINDING_SIZE
+    && !fp16Failed) {
+    return WAIFU2X_FP16_MANIFEST;
+  }
+  return WAIFU2X_FP32_MANIFEST;
 }
 
 function hasText(value) {

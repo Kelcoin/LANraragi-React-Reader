@@ -975,8 +975,19 @@ test('Waifu2x model is served locally and Real-CUGAN requires WebGPU', () => {
   const sr = read('src/lib/superResolution.js');
   const real = read('src/lib/realCugan.js');
   assert.match(sr, /url: '\/models\/waifu2x-cunet-art-scale2x\/scale2x\.onnx'/);
+  assert.match(sr, /url: '\/models\/waifu2x-cunet-art-scale2x\/scale2x-fp16\.onnx'/);
+  assert.equal(fs.existsSync(new URL('../public/models/waifu2x-cunet-art-scale2x/scale2x-fp16.onnx', import.meta.url)), true);
   assert.match(real, /tfjs-backend-webgpu/);
   assert.doesNotMatch(real, /tfjs-backend-(?:webgl|wasm)/);
+});
+
+test('Reader retries FP32 once when the FP16 Waifu2x profile cannot initialize', () => {
+  const reader = read('src/pages/Reader.jsx');
+
+  assert.match(reader, /selectWaifu2xManifest/);
+  assert.match(reader, /selectWaifu2xManifest\(srSupport\.adapterInfo, srFailedProfileIds\)/);
+  assert.match(reader, /if \(srManifest\.precision === 'fp16'\)/);
+  assert.match(reader, /setSrFailedProfileIds/);
 });
 
 test('Reader resets zoom and pan whenever immersive mode is exited', () => {
