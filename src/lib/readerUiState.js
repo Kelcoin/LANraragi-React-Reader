@@ -128,6 +128,23 @@ export function resolveArchiveSuperResolutionState({
   };
 }
 
+export function scheduleSuperResolutionResume({
+  currentTimer,
+  resume,
+  delay = 300,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+} = {}) {
+  if (currentTimer !== null && currentTimer !== undefined) clearTimer(currentTimer);
+  return setTimer(resume, delay);
+}
+
+export function subscribeSuperResolutionInteraction(target, pause) {
+  const options = { capture: true, passive: true };
+  target.addEventListener('pointerdown', pause, options);
+  return () => target.removeEventListener('pointerdown', pause, options);
+}
+
 export function getForegroundSuperResolutionPageIndices({
   webtoonActive,
   currentIndex,

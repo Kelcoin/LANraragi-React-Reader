@@ -20,6 +20,7 @@ import {
   getSuperResolutionCacheKey,
   getSuperResolutionModel,
   processSuperResolutionImageSource,
+  scheduleSuperResolutionUpgrade,
   validateSuperResolutionManifest,
   verifySuperResolutionSupport,
 } from '../lib/superResolution';
@@ -51,6 +52,8 @@ import {
   resolveImmersiveZoomPan,
   resolvePageIndicatorPlacement,
   resolveReaderToolbarMode,
+  scheduleSuperResolutionResume,
+  subscribeSuperResolutionInteraction,
   rememberReaderToolbarFullWidth,
   resolveArchiveSuperResolutionState,
   resolveSuperResolutionFailure,
@@ -293,6 +296,7 @@ const PageImage = React.forwardRef(({
 
     let isMounted = true;
     let decodeTicket = null;
+    let superResolutionTicket = null;
     let pendingSuperResolutionSource = null;
     const requestSeq = ++requestSeqRef.current;
     setShowLoadingStatus(false);
@@ -331,33 +335,35 @@ const PageImage = React.forwardRef(({
         setNetworkPending(false);
         if (src) {
           if (serializedDecode) {
-            decodeTicket = readerImageDecodeQueue.schedule(`page:${pageUrl}:${requestSeq}`, async (signal) => {
-              if (!isMounted || requestSeq !== requestSeqRef.current) return;
-              try {
-                const commitPageImage = (resolved, decoded, source, readyKey, notifyReady = false, recordSourceSize = false) => {
-                  if (!isMounted || requestSeq !== requestSeqRef.current || !imgRef.current) return false;
-                  superResolutionSourceRef.current?.dispose();
-                  superResolutionSourceRef.current = source;
-                  readyPageUrlRef.current = pageUrl;
-                  readyPrecisionRef.current = readyKey;
-                  visibleSourceRef.current = resolved.src;
-                  const resolvedNaturalSize = {
-                    width: resolved.width || decoded.width,
-                    height: resolved.height || decoded.height,
-                  };
-                  let nextCropInsets = { top: 0, right: 0, bottom: 0, left: 0 };
-                  if (cropBorders) {
-                    try { nextCropInsets = detectImageBorderInsets(decoded.image); } catch {}
-                  }
-                  setNaturalSize(resolvedNaturalSize);
-                  if (recordSourceSize) onNaturalSize?.(pageIndex, resolvedNaturalSize);
-                  setCropInsets(nextCropInsets);
-                  setImgSrc(resolved.src);
-                  setLoadState('ready');
-                  if (notifyReady) onReady?.(pageIndex);
-                  return true;
-                };
-
+            const commitPageImage = (resolved, decoded, source, readyKey, notifyReady = false, recordSourceSize = false) => {
+              if (!isMounted || requestSeq !== requestSeqRef.current || !imgRef.current) return false;
+              superResolutionSourceRef.current?.dispose();
+              superResolutionSourceRef.current = source;
+              readyPageUrlRef.current = pageUrl;
+              readyPrecisionRef.current = readyKey;
+              visibleSourceRef.current = resolved.src;
+              const resolvedNaturalSize = {
+                width: resolved.width || decoded.width,
+                height: resolved.height || decoded.height,
+              };
+              let nextCropInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+              if (cropBorders) {
+                try { nextCropInsets = detectImageBorderInsets(decoded.image); } catch {}
+              }
+              setNaturalSize(resolvedNaturalSize);
+              if (recordSourceSize) onNaturalSize?.(pageIndex, resolvedNaturalSize);
+              setCropInsets(nextCropInsets);
+              setImgSrc(resolved.src);
+              setLoadState('ready');
+              if (notifyReady) onReady?.(pageIndex);
+              return true;
+            };
+            const originalAlreadyReady = readyPageUrlRef.current === pageUrl
+              && readyPrecisionRef.current?.startsWith(`${precision}:`)
+              && !!visibleSourceRef.current;
+            if (!originalAlreadyReady) {
+              decodeTicket = readerImageDecodeQueue.schedule(`page:${pageUrl}:${requestSeq}`, async (signal) => {
+                if (!isMounted || requestSeq !== requestSeqRef.current) return;
                 const originalResolved = await getReaderPreviewSource(src, {
                   enabled: previewDecodeEnabled,
                   fullPrecision,
@@ -365,53 +371,67 @@ const PageImage = React.forwardRef(({
                   signal,
                 });
                 const originalDecoded = await decodeImageSource(originalResolved.src, { signal });
-                if (!commitPageImage(originalResolved, originalDecoded, null, `${precision}:original`, true, true)) return;
-                if (!superResolution) {
-                  readyPrecisionRef.current = precisionKey;
-                  return;
-                }
-
-                let source = src;
+                commitPageImage(originalResolved, originalDecoded, null, `${precision}:original`, true, true);
+              }, priority);
+              await decodeTicket.promise;
+            }
+            if (!superResolution || !isMounted || requestSeq !== requestSeqRef.current) {
+              readyPrecisionRef.current = precisionKey;
+              return;
+            }
+            superResolutionTicket = scheduleSuperResolutionUpgrade(
+              readerImageDecodeQueue,
+              `super-resolution:${pageUrl}:${requestSeq}`,
+              async (signal) => {
                 try {
-                  pendingSuperResolutionSource = await processSuperResolutionImageSource(src, {
-                    ...superResolution,
+                  let source = src;
+                  try {
+                    pendingSuperResolutionSource = await processSuperResolutionImageSource(src, {
+                      ...superResolution,
+                      signal,
+                      keepAlive: true,
+                      cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
+                      getCachedSource: getCachedImage,
+                      cacheResult: putImage,
+                    });
+                    source = pendingSuperResolutionSource.src;
+                  } catch (error) {
+                    if (error?.name === 'AbortError') throw error;
+                    onSuperResolutionError?.(error);
+                    readyPrecisionRef.current = precisionKey;
+                    return;
+                  }
+                  const enhancedResolved = await getReaderPreviewSource(source, {
+                    enabled: previewDecodeEnabled,
+                    fullPrecision: true,
+                    sourceSize: pendingSuperResolutionSource || sourceSize,
                     signal,
-                    keepAlive: true,
-                    cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
-                    getCachedSource: getCachedImage,
-                    cacheResult: putImage,
                   });
-                  source = pendingSuperResolutionSource.src;
+                  const enhancedDecoded = await decodeImageSource(enhancedResolved.src, { signal });
+                  if (pendingSuperResolutionSource && enhancedResolved.src !== pendingSuperResolutionSource.src) {
+                    pendingSuperResolutionSource.dispose();
+                    pendingSuperResolutionSource = null;
+                  }
+                  if (commitPageImage(
+                    enhancedResolved,
+                    enhancedDecoded,
+                    pendingSuperResolutionSource,
+                    precisionKey,
+                  )) pendingSuperResolutionSource = null;
                 } catch (error) {
-                  if (error?.name === 'AbortError') throw error;
-                  onSuperResolutionError?.(error);
-                  readyPrecisionRef.current = precisionKey;
-                  return;
-                }
-                const enhancedResolved = await getReaderPreviewSource(source, {
-                  enabled: previewDecodeEnabled,
-                  fullPrecision: true,
-                  sourceSize: pendingSuperResolutionSource || sourceSize,
-                  signal,
-                });
-                const enhancedDecoded = await decodeImageSource(enhancedResolved.src, { signal });
-                if (pendingSuperResolutionSource && enhancedResolved.src !== pendingSuperResolutionSource.src) {
-                  pendingSuperResolutionSource.dispose();
+                  pendingSuperResolutionSource?.dispose();
                   pendingSuperResolutionSource = null;
+                  throw error;
                 }
-                if (commitPageImage(
-                  enhancedResolved,
-                  enhancedDecoded,
-                  pendingSuperResolutionSource,
-                  precisionKey,
-                )) pendingSuperResolutionSource = null;
-              } catch (error) {
-                pendingSuperResolutionSource?.dispose();
-                pendingSuperResolutionSource = null;
-                throw error;
-              }
-            }, priority);
-            await decodeTicket.promise;
+              },
+            );
+            try {
+              await superResolutionTicket.promise;
+            } catch (error) {
+              if (error?.name === 'AbortError') throw error;
+              onSuperResolutionError?.(error);
+              readyPrecisionRef.current = precisionKey;
+            }
             return;
           }
           setImgSrc(src);
@@ -439,6 +459,7 @@ const PageImage = React.forwardRef(({
     return () => {
       isMounted = false;
       decodeTicket?.cancel();
+      superResolutionTicket?.cancel();
       pendingSuperResolutionSource?.dispose();
     };
   }, [allowNetworkFallback, cacheOnly, cropBorders, fullPrecision, onError, onLoadStart, onNaturalSize, onReady, onSuperResolutionError, pageIndex, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize, superResolution]);
@@ -1157,11 +1178,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     return { ...initial, checking: initial.supported };
   });
   const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
+  const [srInteractionGeneration, setSrInteractionGeneration] = useState(0);
   const [srRuntimeContext, setSrRuntimeContext] = useState(null);
   const [srRuntimeError, setSrRuntimeError] = useState('');
   const srInitToastRequestedRef = useRef(false);
   const srArchiveManualRef = useRef(null);
   const srErrorToastKeyRef = useRef('');
+  const srInteractionPausedRef = useRef(false);
+  const srInteractionResumeTimerRef = useRef(null);
   const [showArchivePanel, setShowArchivePanel] = useState(false);
   const [immersiveControlsSide, setImmersiveControlsSide] = useState(null);
   const [archivePanelType, setArchivePanelType] = useState('history');
@@ -1324,18 +1348,47 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     && srManifest?.scale
     && currentPageSize.width * currentPageSize.height * srManifest.scale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS,
   );
+  const scheduledSrRuntimeContext = useMemo(() => (
+    srRuntimeContext ? { ...srRuntimeContext, interactionGeneration: srInteractionGeneration } : null
+  ), [srInteractionGeneration, srRuntimeContext]);
   const activeSuperResolution = srArchiveEnabled && !currentPageTooLargeForSuperResolution
-    ? srRuntimeContext
+    ? scheduledSrRuntimeContext
     : null;
   function getSuperResolutionForPage(pageIndex, foreground = true) {
-    if (!foreground || !srArchiveEnabled || !srRuntimeContext) return null;
+    if (!foreground || !srArchiveEnabled || !scheduledSrRuntimeContext) return null;
     const size = pageSizes[pageIndex];
     if (size?.width && size?.height && srManifest?.scale
       && size.width * size.height * srManifest.scale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS) {
       return null;
     }
-    return srRuntimeContext;
+    return scheduledSrRuntimeContext;
   }
+  const pauseSuperResolutionForInteraction = useCallback(() => {
+    if (!srArchiveEnabled) return;
+    if (!srInteractionPausedRef.current) {
+      srInteractionPausedRef.current = true;
+      cancelVisibleSuperResolutionJobs();
+    }
+    srInteractionResumeTimerRef.current = scheduleSuperResolutionResume({
+      currentTimer: srInteractionResumeTimerRef.current,
+      resume: () => {
+        srInteractionResumeTimerRef.current = null;
+        srInteractionPausedRef.current = false;
+        setSrInteractionGeneration((current) => current + 1);
+      },
+    });
+  }, [srArchiveEnabled]);
+
+  useEffect(() => () => {
+    if (srInteractionResumeTimerRef.current !== null) {
+      clearTimeout(srInteractionResumeTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!srArchiveEnabled) return undefined;
+    return subscribeSuperResolutionInteraction(window, pauseSuperResolutionForInteraction);
+  }, [pauseSuperResolutionForInteraction, srArchiveEnabled]);
   const [autoWebtoon, setAutoWebtoon] = useState(false);
   const [autoMangaEligible, setAutoMangaEligible] = useState(false);
   const [readerContainerWidth, setReaderContainerWidth] = useState(() => window.innerWidth);
@@ -2179,7 +2232,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           };
           const startSuperResolutionUpgrade = () => {
             if (!superResolution) return;
-            const upgradeTicket = readerImageDecodeQueue.schedule(
+            const upgradeTicket = scheduleSuperResolutionUpgrade(
+              readerImageDecodeQueue,
               `immersive-super-resolution:${loadSeq}:${unitKey}`,
               async (signal) => {
                 let superResolutionSource = null;
@@ -2214,7 +2268,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   throw error;
                 }
               },
-              priority,
             );
             decodeTickets.push(upgradeTicket);
             upgradeTicket.promise.then((decoded) => {
@@ -2237,6 +2290,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               image.dataset.readerUnit = unitKey;
               applyUnitStyle(image, unit);
               image.style.display = '';
+              return true;
+            };
+          }
+          const originalAlreadyReady = image.dataset.pageIndex === String(pageIndex)
+            && image.dataset.decodePrecision === `${precision}:original`
+            && image.complete
+            && image.naturalWidth > 0;
+          if (originalAlreadyReady && superResolution) {
+            return () => {
+              image.dataset.readerUnit = unitKey;
+              applyUnitStyle(image, unit);
+              image.style.display = '';
+              startSuperResolutionUpgrade();
               return true;
             };
           }
@@ -2720,6 +2786,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   // ===== Pointer down =====
   const handlePointerDown = useCallback((e) => {
     if (viewMode !== 'immersive' || webtoonActive) return;
+    pauseSuperResolutionForInteraction();
 
     const touches = e.touches;
     const isTouchEvent = !!touches;
@@ -2787,11 +2854,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (sctr) { sctr.style.transition = 'none'; sctr.style.transform = 'translateX(0px)'; }
     if (leftDivRef.current)  { leftDivRef.current.style.transition = 'none'; leftDivRef.current.style.transform = 'translateX(-100%)'; }
     if (rightDivRef.current) { rightDivRef.current.style.transition = 'none'; rightDivRef.current.style.transform = 'translateX(100%)'; }
-  }, [applyZoomAtPoint, viewMode, webtoonActive]);
+  }, [applyZoomAtPoint, pauseSuperResolutionForInteraction, viewMode, webtoonActive]);
 
   // ===== Pointer move (RAF-batched — translateX only, zero adjacent manipulation) =====
   const handlePointerMove = useCallback((e) => {
     if (viewMode !== 'immersive' || webtoonActive) return;
+    pauseSuperResolutionForInteraction();
 
     const touches = e.touches;
     if (touches && touches.length >= 2 && isZoomingRef.current) {
@@ -2864,7 +2932,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         });
       }
     }
-  }, [applyZoomAtPoint, scheduleZoomTransform, settings.direction, viewMode, webtoonActive]);
+  }, [applyZoomAtPoint, pauseSuperResolutionForInteraction, scheduleZoomTransform, settings.direction, viewMode, webtoonActive]);
 
   // ===== Pointer up =====
   const handlePointerUp = useCallback(() => {
@@ -3225,6 +3293,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }, []);
 
   const handleWebtoonScroll = useCallback(() => {
+    pauseSuperResolutionForInteraction();
     if (webtoonScrollRafRef.current) return;
     webtoonScrollRafRef.current = requestAnimationFrame(() => {
       webtoonScrollRafRef.current = null;
@@ -3256,7 +3325,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         shownAt: previous.shownAt,
       }));
     });
-  }, []);
+  }, [pauseSuperResolutionForInteraction]);
 
   useLayoutEffect(() => {
     if (!webtoonActive) return undefined;
@@ -3772,7 +3841,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }, [archive, settings.srAuto, settings.srEnabled, settings.srAutoThreshold, srRuntimeContext]);
 
   useEffect(() => {
-    if (!srArchiveEnabled) cancelVisibleSuperResolutionJobs();
+    if (!srArchiveEnabled) {
+      cancelVisibleSuperResolutionJobs();
+      if (srInteractionResumeTimerRef.current !== null) {
+        clearTimeout(srInteractionResumeTimerRef.current);
+        srInteractionResumeTimerRef.current = null;
+      }
+      srInteractionPausedRef.current = false;
+    }
   }, [srArchiveEnabled]);
 
   const btnBase = getTopBarButtonStyle(toolbarCompact);
@@ -4883,6 +4959,3 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     </div>
   );
 }
-
-
-

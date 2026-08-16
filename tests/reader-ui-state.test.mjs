@@ -8,6 +8,58 @@ test('reader compact layout follows viewport width rather than touch capability'
   assert.equal(readerUiState.isReaderMobileViewport(1024, true), false);
 });
 
+test('super-resolution resumes only after the latest interaction quiet period', () => {
+  const callbacks = new Map();
+  const delays = [];
+  const cleared = [];
+  let nextTimer = 0;
+  let resumeCount = 0;
+  const timers = {
+    setTimer(callback, delay) {
+      nextTimer += 1;
+      callbacks.set(nextTimer, callback);
+      delays.push(delay);
+      return nextTimer;
+    },
+    clearTimer(timer) {
+      cleared.push(timer);
+      callbacks.delete(timer);
+    },
+  };
+
+  const first = readerUiState.scheduleSuperResolutionResume({
+    currentTimer: null,
+    resume: () => { resumeCount += 1; },
+    ...timers,
+  });
+  const second = readerUiState.scheduleSuperResolutionResume({
+    currentTimer: first,
+    resume: () => { resumeCount += 1; },
+    ...timers,
+  });
+
+  assert.deepEqual(delays, [300, 300]);
+  assert.deepEqual(cleared, [first]);
+  assert.equal(callbacks.has(first), false);
+  callbacks.get(second)();
+  assert.equal(resumeCount, 1);
+});
+
+test('super-resolution interaction subscription covers UI pointer input and cleans up', () => {
+  const target = new EventTarget();
+  let pauseCount = 0;
+  const unsubscribe = readerUiState.subscribeSuperResolutionInteraction(
+    target,
+    () => { pauseCount += 1; },
+  );
+
+  target.dispatchEvent(new Event('pointerdown'));
+  assert.equal(pauseCount, 1);
+  unsubscribe();
+  target.dispatchEvent(new Event('pointerdown'));
+  assert.equal(pauseCount, 1);
+});
+
 test('page indicator placement uses hysteresis at overlap boundaries', () => {
   const image = { left: 0, right: 100, top: 0, bottom: 100 };
   const clear = { left: 20, right: 80, top: 108, bottom: 128 };

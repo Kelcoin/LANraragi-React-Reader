@@ -1,4 +1,5 @@
 import { createSuperResolutionRuntime as createRuntime } from './superResolutionRuntime.js';
+import { IMAGE_LOAD_PRIORITY } from './imageLoadQueue.js';
 import { isAnimatedImageBlob } from './readerPreviewDecode.js';
 import {
   hasWebGpuApi,
@@ -8,6 +9,10 @@ import {
 } from './webGpuSupport.js';
 
 const visiblePageJobs = new Map();
+
+export function scheduleSuperResolutionUpgrade(queue, key, task) {
+  return queue.schedule(key, task, IMAGE_LOAD_PRIORITY.PRELOAD);
+}
 
 export function cancelVisibleSuperResolutionJobs(cacheKey) {
   if (typeof cacheKey === 'string' && cacheKey) {

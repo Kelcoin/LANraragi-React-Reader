@@ -5,6 +5,7 @@ import test from 'node:test';
 import * as imageCache from '../src/lib/imageCache.js';
 import * as superResolution from '../src/lib/superResolution.js';
 import * as tiling from '../src/lib/superResolutionTiling.js';
+import { createImageDecodeQueue, IMAGE_LOAD_PRIORITY } from '../src/lib/imageLoadQueue.js';
 import { patchOrtSegmentedOffsetTypes } from '../src/lib/superResolutionOrt.js';
 import { createSuperResolutionRuntime as createRawSuperResolutionRuntime } from '../src/lib/superResolutionRuntime.js';
 
@@ -186,6 +187,48 @@ test('Real-CUGAN reflects tile edges and disposes every inference tensor', async
   assert.deepEqual(disposed, ['output', 'input']);
   processor.dispose();
   assert.deepEqual(disposed, ['output', 'input', 'model']);
+});
+
+test('Real-CUGAN yields between tiles and observes cancellation before the next tile', async () => {
+  const { createRealCuganProcessor } = await import('../src/lib/realCugan.js');
+  const yieldStarted = createDeferred();
+  const yieldGate = createDeferred();
+  let cancelled = false;
+  let inferenceCount = 0;
+  const processor = createRealCuganProcessor({
+    tf: { tensor4d: () => ({ dispose() {} }) },
+    model: {
+      async executeAsync() {
+        inferenceCount += 1;
+        return {
+          shape: [1, 128, 128, 3],
+          async data() { return new Float32Array(128 * 128 * 3); },
+          dispose() {},
+        };
+      },
+      dispose() {},
+    },
+    async yieldControl() {
+      yieldStarted.resolve();
+      await yieldGate.promise;
+    },
+  });
+
+  const processPromise = processor.process(
+    new Uint8ClampedArray(128 * 64 * 4),
+    128,
+    64,
+    { isCancelled: () => cancelled },
+  );
+  await Promise.race([
+    yieldStarted.promise,
+    processPromise.then(() => { throw new Error('Real-CUGAN completed without yielding'); }),
+  ]);
+  cancelled = true;
+  yieldGate.resolve();
+
+  await assert.rejects(processPromise, (error) => error?.name === 'AbortError');
+  assert.equal(inferenceCount, 1);
 });
 
 test('Real-CUGAN cannot introduce chroma into a grayscale source page', async () => {
@@ -1415,6 +1458,63 @@ test('cancels between tiles and discards a result returned by an active session 
   assert.equal(outputDisposeCount, 1);
 });
 
+test('ONNX inference yields between tiles and observes cancellation before the next tile', async () => {
+  const yieldStarted = createDeferred();
+  const yieldGate = createDeferred();
+  let runCount = 0;
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run() {
+      runCount += 1;
+      return {
+        output: {
+          dims: [1, 3, 2, 2],
+          data: new Float32Array(12),
+          dispose() {},
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 2,
+      height: 1,
+      pixels: new Uint8ClampedArray(8),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => new Blob(),
+    async yieldControl() {
+      yieldStarted.resolve();
+      await yieldGate.promise;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-yield-cancel', manifest });
+
+  const processPromise = handler.handleMessage({
+    type: 'process',
+    requestId: 'yield-cancel',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  await Promise.race([
+    yieldStarted.promise,
+    processPromise.then(() => { throw new Error('ONNX inference completed without yielding'); }),
+  ]);
+  await handler.handleMessage({ type: 'cancel', requestId: 'yield-cancel' });
+  yieldGate.resolve();
+
+  const response = await processPromise;
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'AbortError');
+  assert.equal(runCount, 1);
+});
+
 test('discards a cancelled result that finishes encoding after the request becomes stale', async () => {
   const encodeStarted = createDeferred();
   const encodeGate = createDeferred();
@@ -2034,6 +2134,29 @@ test('stores a new super-resolution result in the shared image cache', async () 
     dispose: result.dispose,
   });
   result.dispose();
+});
+
+test('background super-resolution upgrades leave capacity for critical original decodes', async () => {
+  const queue = createImageDecodeQueue({ maxConcurrent: 2 });
+  const releaseUpgrades = createDeferred();
+  const started = [];
+  const first = superResolution.scheduleSuperResolutionUpgrade(queue, 'sr:first', async () => {
+    started.push('sr:first');
+    await releaseUpgrades.promise;
+  });
+  const second = superResolution.scheduleSuperResolutionUpgrade(queue, 'sr:second', async () => {
+    started.push('sr:second');
+    await releaseUpgrades.promise;
+  });
+  const original = queue.schedule('original', async () => {
+    started.push('original');
+  }, IMAGE_LOAD_PRIORITY.CRITICAL);
+
+  await original.promise;
+  assert.deepEqual(started, ['sr:first', 'original']);
+  releaseUpgrades.resolve();
+  await Promise.all([first.promise, second.promise]);
+  assert.deepEqual(started, ['sr:first', 'original', 'sr:second']);
 });
 
 test('shares a keep-alive visible-page inference across renderer switches', async () => {

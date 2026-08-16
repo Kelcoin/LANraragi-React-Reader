@@ -146,14 +146,21 @@ export function createRealCuganModelIOHandler({ manifest, fetcher = globalThis.f
   };
 }
 
-export function createRealCuganProcessor({ tf, model } = {}) {
+export function createRealCuganProcessor({
+  tf,
+  model,
+  yieldControl: defaultYieldControl = () => new Promise((resolve) => setTimeout(resolve, 0)),
+} = {}) {
   if (typeof tf?.tensor4d !== 'function') throw new TypeError('Real-CUGAN requires TensorFlow.js');
   if (typeof model?.executeAsync !== 'function' && typeof model?.execute !== 'function') {
     throw new TypeError('Real-CUGAN requires a GraphModel');
   }
   let disposed = false;
 
-  async function process(pixels, width, height, { isCancelled } = {}) {
+  async function process(pixels, width, height, {
+    isCancelled,
+    yieldControl = defaultYieldControl,
+  } = {}) {
     if (disposed) throw new Error('Real-CUGAN processor is disposed');
     if (!(pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray)
       || pixels.length !== width * height * 4) {
@@ -202,6 +209,8 @@ export function createRealCuganProcessor({ tf, model } = {}) {
         disposeOutput(rawOutput);
         input.dispose?.();
       }
+      await yieldControl();
+      throwIfCancelled(isCancelled);
     }
 
     for (let y = 0; y < outputHeight; y += 1) {

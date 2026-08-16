@@ -400,6 +400,7 @@ async function processBlobImage({
   decodeImage,
   encodeImage,
   tensorFactory,
+  yieldControl,
 }) {
   const { scale, inputLayout, outputLayout } = validateProcessManifest(manifest);
   const decoded = await decodeImage(blob);
@@ -486,6 +487,10 @@ async function processBlobImage({
         disposeTensor(outputTensor);
         disposeTensor(inputTensor);
       }
+      await yieldControl();
+      if (!isCurrent() || isCancelled()) {
+        throw createNamedError('AbortError', 'Super-resolution request was cancelled');
+      }
     }
 
     copyScaledAlphaNearest({
@@ -531,6 +536,7 @@ async function processPixelProcessorBlob({
   isCancelled,
   decodeImage,
   encodeImage,
+  yieldControl,
 }) {
   const decoded = await decodeImage(blob);
   try {
@@ -547,7 +553,10 @@ async function processPixelProcessorBlob({
     if (!isCurrent() || isCancelled()) {
       throw createNamedError('AbortError', 'Super-resolution request was cancelled');
     }
-    const output = await processor.process(image.pixels, image.width, image.height, { isCancelled });
+    const output = await processor.process(image.pixels, image.width, image.height, {
+      isCancelled,
+      yieldControl,
+    });
     if (!isCurrent() || isCancelled()) {
       throw createNamedError('AbortError', 'Super-resolution request was cancelled');
     }
@@ -664,6 +673,8 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
   const encodeImage = dependencies.encodeImage ?? encodeImageBlob;
   const tensorFactory = dependencies.tensorFactory ?? createProductionTensor;
   const realCuganFactory = dependencies.realCuganFactory ?? createProductionRealCuganProcessor;
+  const yieldControl = dependencies.yieldControl
+    ?? (() => new Promise((resolve) => setTimeout(resolve, 0)));
   let session = null;
   let processor = null;
   let backend = null;
@@ -839,6 +850,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
                 isCancelled: () => staleRequestIds.delete(requestId),
                 decodeImage,
                 encodeImage,
+                yieldControl,
               }).then((result) => ({ ...result, backend: processBackend }))
               : () => processBlobImage({
                 blob: message.blob,
@@ -853,6 +865,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
                 decodeImage,
                 encodeImage,
                 tensorFactory,
+                yieldControl,
               }).then((result) => ({ ...result, backend: processBackend }));
             const result = inferenceChain.then(runInference, runInference);
             inferenceChain = result.catch(() => {});

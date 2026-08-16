@@ -702,7 +702,7 @@ test('metadata navigation, races, and operations are guarded', () => {
 test('Reader recovery reacts to cache fallback and live direction/crop changes', () => {
   const source = read('src/pages/Reader.jsx');
   assert.match(source, /\[assetCacheOnly, currentIndex,[^\]]*settings\.direction,[^\]]*webtoonActive\]/);
-  assert.match(source, /\[applyZoomAtPoint, scheduleZoomTransform, settings\.direction, viewMode, webtoonActive\]/);
+  assert.match(source, /\[applyZoomAtPoint,[^\]]*scheduleZoomTransform, settings\.direction, viewMode, webtoonActive\]/);
   assert.match(source, /\[cropBorders, isReady, imgSrc\]/);
   assert.match(source, /keepalive: true/);
 });
@@ -866,6 +866,8 @@ test('Reader super-resolution processes only visible pages and preserves origina
   assert.match(reader, /function getSuperResolutionForPage\(pageIndex, foreground = true\)/);
   assert.match(reader, /superResolution=\{getSuperResolutionForPage\([\s\S]{0,100}foregroundSuperResolutionPageIndices\.has\(/);
   assert.doesNotMatch(reader, /superResolution=\{getSuperResolutionForPage\(index\)\}/);
+  assert.match(reader, /readyPrecisionRef\.current\?\.startsWith\(`\$\{precision\}:`\)/);
+  assert.match(reader, /originalAlreadyReady && superResolution/);
   assert.match(reader, /reader-webtoon-flow-immersive[\s\S]{0,1000}priority=\{index === currentIndex\s*\? IMAGE_LOAD_PRIORITY\.CRITICAL\s*:\s*\(Math\.abs\(index - currentIndex\) === 1\s*\? IMAGE_LOAD_PRIORITY\.ADJACENT\s*:\s*IMAGE_LOAD_PRIORITY\.PRELOAD\)\}/);
   assert.match(reader, /fullPrecision: true,/);
   assert.match(reader, /decodeTickets\.forEach\(\(ticket\) => ticket\.cancel\(\)\)/);
