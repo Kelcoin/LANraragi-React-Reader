@@ -1879,6 +1879,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       if (!wrapper) return;
       wrapper.style.transition = zoomTransformAnimatedRef.current ? 'transform 0.15s ease-out' : 'none';
       wrapper.style.transform = `translate3d(${panRef.current.x}px, ${panRef.current.y}px, 0) scale(${zoomScaleRef.current})`;
+      // React 只在虚拟样式变化时重写内联样式；非动画帧写入的 transition:none
+      // 若不主动恢复，会一直残留，导致下一次缩放（如翻页后的首次双击放大）瞬移。
+      if (!zoomTransformAnimatedRef.current) {
+        requestAnimationFrame(() => {
+          if (!zoomTransformFrameRef.current && wrapper.isConnected) {
+            wrapper.style.transition = 'transform 0.18s ease-out';
+          }
+        });
+      }
     });
   }, []);
 
@@ -2718,6 +2727,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (isTouchEvent && touches.length >= 2) {
       isZoomingRef.current = true;
       isSwipingRef.current = false;
+      // 双指落下即进入捏合：取消残留的单指平移状态，避免捏合结束后
+      // 误走 pan 收尾分支（会用旧 pan 值做一次带动画的钳制提交）。
+      isPanningRef.current = false;
       const dx = touches[0].clientX - touches[1].clientX;
       const dy = touches[0].clientY - touches[1].clientY;
       pinchStartRef.current = {
@@ -2790,6 +2802,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         let scale = pinchStartRef.current.scale * (dist / pinchStartRef.current.dist);
         if (scale > 3.15) scale = 3.15;
         if (scale < 0.95) scale = 0.95;
+        // 记录当前双指中点，松手 snap 时以释放位置（而非捏合起点）为焦点，
+        // 避免手指漂移后回弹方向跳错（表现为抽搐到对角再复位）。
+        pinchStartRef.current.cx = (touches[0].clientX + touches[1].clientX) / 2;
+        pinchStartRef.current.cy = (touches[0].clientY + touches[1].clientY) / 2;
         applyZoomAtPoint(scale, pinchStartRef.current.cx, pinchStartRef.current.cy, false);
       }
       return;
