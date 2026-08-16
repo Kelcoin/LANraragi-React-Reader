@@ -1198,7 +1198,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     return { ...initial, checking: initial.supported };
   });
   const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
-  const [srInteractionGeneration, setSrInteractionGeneration] = useState(0);
   const [srRuntimeContext, setSrRuntimeContext] = useState(null);
   const [srRuntimeError, setSrRuntimeError] = useState('');
   const [srOversizedConfirmOpen, setSrOversizedConfirmOpen] = useState(false);
@@ -1367,9 +1366,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }, [disableArchiveSuperResolution, showToast]);
   const currentPageSize = pageSizes[currentIndex];
   const currentPageTooLargeForSuperResolution = isSuperResolutionPageTooLarge(currentPageSize, srManifest?.scale);
-  const scheduledSrRuntimeContext = useMemo(() => (
-    srRuntimeContext ? { ...srRuntimeContext, interactionGeneration: srInteractionGeneration } : null
-  ), [srInteractionGeneration, srRuntimeContext]);
+  const scheduledSrRuntimeContext = srRuntimeContext;
   const activeSuperResolution = srArchiveEnabled && !currentPageTooLargeForSuperResolution
     ? scheduledSrRuntimeContext
     : null;
@@ -1382,26 +1379,30 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     return scheduledSrRuntimeContext;
   }
   const pauseSuperResolutionForInteraction = useCallback(() => {
-    if (!srArchiveEnabled) return;
+    if (!srArchiveEnabled || !srRuntimeContext) return;
+    const runtime = srRuntimeContext.runtime;
     if (!srInteractionPausedRef.current) {
       srInteractionPausedRef.current = true;
-      cancelVisibleSuperResolutionJobs();
+      srRuntimeContext.runtime.pause();
     }
     srInteractionResumeTimerRef.current = scheduleSuperResolutionResume({
       currentTimer: srInteractionResumeTimerRef.current,
       resume: () => {
         srInteractionResumeTimerRef.current = null;
         srInteractionPausedRef.current = false;
-        setSrInteractionGeneration((current) => current + 1);
+        runtime.resume();
       },
     });
-  }, [srArchiveEnabled]);
+  }, [srArchiveEnabled, srRuntimeContext]);
 
   useEffect(() => () => {
     if (srInteractionResumeTimerRef.current !== null) {
       clearTimeout(srInteractionResumeTimerRef.current);
+      srInteractionResumeTimerRef.current = null;
     }
-  }, []);
+    if (srInteractionPausedRef.current) srRuntimeContext?.runtime.resume();
+    srInteractionPausedRef.current = false;
+  }, [srRuntimeContext]);
 
   useEffect(() => {
     if (!srArchiveEnabled) return undefined;
@@ -3918,9 +3919,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         clearTimeout(srInteractionResumeTimerRef.current);
         srInteractionResumeTimerRef.current = null;
       }
+      if (srInteractionPausedRef.current) srRuntimeContext?.runtime.resume();
       srInteractionPausedRef.current = false;
     }
-  }, [srArchiveEnabled]);
+  }, [srArchiveEnabled, srRuntimeContext]);
 
   const btnBase = getTopBarButtonStyle(toolbarCompact);
 

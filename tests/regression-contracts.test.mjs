@@ -895,6 +895,15 @@ test('Reader super-resolution processes only visible pages and preserves origina
   assert.match(reader, /decodeTickets\.forEach\(\(ticket\) => ticket\.cancel\(\)\)/);
 });
 
+test('Reader pauses super-resolution during interaction without restarting completed tiles', () => {
+  const reader = read('src/pages/Reader.jsx');
+
+  assert.match(reader, /srRuntimeContext\.runtime\.pause\(\)/);
+  assert.match(reader, /runtime\.resume\(\)/);
+  assert.doesNotMatch(reader, /srInteractionGeneration/);
+  assert.match(reader, /cancelVisibleSuperResolutionJobs\(\);[\s\S]{0,120}runtime\.dispose\(\)/);
+});
+
 test('Reader snapshots do not persist immersive mode or image transforms', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.doesNotMatch(reader, /viewMode: viewModeSnapshotRef\.current/);

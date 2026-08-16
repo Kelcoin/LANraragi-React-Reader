@@ -132,7 +132,7 @@ export function resolveArchiveSuperResolutionState({
 export function scheduleSuperResolutionResume({
   currentTimer,
   resume,
-  delay = 300,
+  delay = 650,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
 } = {}) {
@@ -142,8 +142,35 @@ export function scheduleSuperResolutionResume({
 
 export function subscribeSuperResolutionInteraction(target, pause) {
   const options = { capture: true, passive: true };
+  const navigationKeys = new Set([
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'PageUp',
+    'PageDown',
+    'Home',
+    'End',
+    ' ',
+  ]);
+  const handlePointerMove = (event) => {
+    if (event.pointerType === 'touch' || Number(event.buttons) > 0) pause(event);
+  };
+  const handleKeyDown = (event) => {
+    if (navigationKeys.has(event.key)) pause(event);
+  };
   target.addEventListener('pointerdown', pause, options);
-  return () => target.removeEventListener('pointerdown', pause, options);
+  target.addEventListener('pointermove', handlePointerMove, options);
+  target.addEventListener('wheel', pause, options);
+  target.addEventListener('scroll', pause, options);
+  target.addEventListener('keydown', handleKeyDown, options);
+  return () => {
+    target.removeEventListener('pointerdown', pause, options);
+    target.removeEventListener('pointermove', handlePointerMove, options);
+    target.removeEventListener('wheel', pause, options);
+    target.removeEventListener('scroll', pause, options);
+    target.removeEventListener('keydown', handleKeyDown, options);
+  };
 }
 
 export function getForegroundSuperResolutionPageIndices({

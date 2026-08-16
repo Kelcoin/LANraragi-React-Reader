@@ -38,14 +38,14 @@ test('super-resolution resumes only after the latest interaction quiet period', 
     ...timers,
   });
 
-  assert.deepEqual(delays, [300, 300]);
+  assert.deepEqual(delays, [650, 650]);
   assert.deepEqual(cleared, [first]);
   assert.equal(callbacks.has(first), false);
   callbacks.get(second)();
   assert.equal(resumeCount, 1);
 });
 
-test('super-resolution interaction subscription covers UI pointer input and cleans up', () => {
+test('super-resolution interaction subscription covers reading input and cleans up', () => {
   const target = new EventTarget();
   let pauseCount = 0;
   const unsubscribe = readerUiState.subscribeSuperResolutionInteraction(
@@ -55,9 +55,36 @@ test('super-resolution interaction subscription covers UI pointer input and clea
 
   target.dispatchEvent(new Event('pointerdown'));
   assert.equal(pauseCount, 1);
+
+  const hover = new Event('pointermove');
+  Object.defineProperty(hover, 'buttons', { value: 0 });
+  target.dispatchEvent(hover);
+  assert.equal(pauseCount, 1);
+
+  const drag = new Event('pointermove');
+  Object.defineProperty(drag, 'buttons', { value: 1 });
+  target.dispatchEvent(drag);
+  target.dispatchEvent(new Event('wheel'));
+  target.dispatchEvent(new Event('scroll'));
+  assert.equal(pauseCount, 4);
+
+  const letter = new Event('keydown');
+  Object.defineProperty(letter, 'key', { value: 'a' });
+  target.dispatchEvent(letter);
+  assert.equal(pauseCount, 4);
+
+  for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']) {
+    const event = new Event('keydown');
+    Object.defineProperty(event, 'key', { value: key });
+    target.dispatchEvent(event);
+  }
+  assert.equal(pauseCount, 13);
+
   unsubscribe();
   target.dispatchEvent(new Event('pointerdown'));
-  assert.equal(pauseCount, 1);
+  target.dispatchEvent(new Event('wheel'));
+  target.dispatchEvent(new Event('scroll'));
+  assert.equal(pauseCount, 13);
 });
 
 test('page indicator placement uses hysteresis at overlap boundaries', () => {
