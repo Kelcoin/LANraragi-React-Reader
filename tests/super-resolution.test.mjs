@@ -2343,6 +2343,24 @@ test('accepts a complete production model manifest', () => {
   assert.equal(validateManifest(productionManifest), true);
 });
 
+test('reports WebGPU adapter limits and shader-f16 support', async () => {
+  const support = await superResolution.verifySuperResolutionSupport({
+    requestAdapter: async () => ({
+      limits: { maxStorageBufferBindingSize: 134217728 },
+      features: new Set(['shader-f16']),
+    }),
+  });
+
+  assert.deepEqual(support, {
+    supported: true,
+    reason: '',
+    adapterInfo: {
+      maxStorageBufferBindingSize: 134217728,
+      shaderF16: true,
+    },
+  });
+});
+
 test('rejects production manifests missing required metadata', () => {
   const missingFields = [
     'id',
@@ -2435,6 +2453,24 @@ test('rejects non-positive or non-integer production scales', () => {
   }
 });
 
+test('validates independent fixed-input tile core axes', () => {
+  const rectangular = {
+    ...productionManifest,
+    inputWidth: 224,
+    inputHeight: 384,
+    tileCore: undefined,
+    tileCoreWidth: 152,
+    tileCoreHeight: 312,
+    padding: 36,
+    outputInset: 18,
+  };
+
+  assert.equal(validateManifest(rectangular), true);
+  assert.equal(validateManifest({ ...rectangular, tileCoreWidth: 153 }), false);
+  assert.equal(validateManifest({ ...rectangular, tileCoreHeight: 313 }), false);
+  assert.equal(validateManifest({ ...rectangular, tileCoreWidth: 0 }), false);
+});
+
 function getTilingApi() {
   assert.equal(typeof tiling.createTilePlan, 'function');
   assert.equal(typeof tiling.getOutputTileRect, 'function');
@@ -2449,6 +2485,8 @@ test('creates one unclipped tile for an image smaller than the default core', ()
     width: 80,
     height: 60,
     tileCore: 128,
+    tileCoreWidth: 128,
+    tileCoreHeight: 128,
     padding: 18,
     columns: 1,
     rows: 1,
@@ -2459,6 +2497,27 @@ test('creates one unclipped tile for an image smaller than the default core', ()
       core: { x: 0, y: 0, width: 80, height: 60 },
       input: { x: 0, y: 0, width: 80, height: 60 },
     }],
+  });
+});
+
+test('uses independent core axes for portrait-oriented Waifu2x tiles', () => {
+  const { createTilePlan } = getTilingApi();
+  const plan = createTilePlan(800, 1130, {
+    tileCoreWidth: 152,
+    tileCoreHeight: 312,
+    padding: 36,
+  });
+
+  assert.equal(plan.tileCoreWidth, 152);
+  assert.equal(plan.tileCoreHeight, 312);
+  assert.equal(plan.columns, 6);
+  assert.equal(plan.rows, 4);
+  assert.equal(plan.tiles.length, 24);
+  assert.deepEqual(plan.tiles.at(-1).core, {
+    x: 760,
+    y: 936,
+    width: 40,
+    height: 194,
   });
 });
 

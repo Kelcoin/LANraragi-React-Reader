@@ -137,18 +137,20 @@ function hasValidFixedInput(manifest) {
   if (manifest?.inputWidth === undefined && manifest?.inputHeight === undefined) return true;
   const width = Number(manifest?.inputWidth);
   const height = Number(manifest?.inputHeight);
-  const tileCore = Number(manifest?.tileCore);
+  const tileCoreWidth = Number(manifest?.tileCoreWidth ?? manifest?.tileCore);
+  const tileCoreHeight = Number(manifest?.tileCoreHeight ?? manifest?.tileCore);
   const padding = Number(manifest?.padding);
   const outputInset = Number(manifest?.outputInset ?? 0);
   return Number.isInteger(width) && width > 0
     && Number.isInteger(height) && height > 0
-    && Number.isInteger(tileCore) && tileCore > 0
+    && Number.isInteger(tileCoreWidth) && tileCoreWidth > 0
+    && Number.isInteger(tileCoreHeight) && tileCoreHeight > 0
     && Number.isInteger(padding) && padding >= 0
     && Number.isInteger(outputInset) && outputInset >= 0 && outputInset <= padding
     && width > outputInset * 2
     && height > outputInset * 2
-    && width >= tileCore + padding * 2
-    && height >= tileCore + padding * 2;
+    && width >= tileCoreWidth + padding * 2
+    && height >= tileCoreHeight + padding * 2;
 }
 
 function hasValidExecutionProviders(manifest) {
@@ -228,7 +230,14 @@ export async function verifySuperResolutionSupport({ requestAdapter } = {}) {
   try {
     const adapter = await requestHighPerformanceWebGpuAdapter(requestAdapter);
     return adapter
-      ? { supported: true, reason: '' }
+      ? {
+        supported: true,
+        reason: '',
+        adapterInfo: {
+          maxStorageBufferBindingSize: Number(adapter.limits?.maxStorageBufferBindingSize) || 0,
+          shaderF16: adapter.features?.has?.('shader-f16') === true,
+        },
+      }
       : { supported: false, reason: WEBGPU_ADAPTER_UNAVAILABLE_REASON };
   } catch {
     return { supported: false, reason: WEBGPU_ADAPTER_UNAVAILABLE_REASON };

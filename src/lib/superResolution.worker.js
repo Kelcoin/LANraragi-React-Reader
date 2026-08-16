@@ -417,6 +417,8 @@ async function processBlobImage({
     }
     const tilePlan = createTilePlan(image.width, image.height, {
       tileCore: manifest.tileCore,
+      tileCoreWidth: manifest.tileCoreWidth,
+      tileCoreHeight: manifest.tileCoreHeight,
       padding: manifest.padding,
     });
     const colorSpace = manifest.colorSpace ?? 'rgb';

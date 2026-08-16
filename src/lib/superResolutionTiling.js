@@ -6,8 +6,7 @@ function normalizeDimension(value) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
-function normalizeTileCore(options) {
-  const requested = options.tileCore ?? options.tileSize ?? DEFAULT_TILE_CORE;
+function normalizeTileCore(requested) {
   const number = Number(requested);
   return Number.isFinite(number) && number > 0 ? Math.max(1, Math.floor(number)) : DEFAULT_TILE_CORE;
 }
@@ -21,18 +20,20 @@ export function createTilePlan(width, height, options = {}) {
   const imageWidth = normalizeDimension(width);
   const imageHeight = normalizeDimension(height);
   const config = options && typeof options === 'object' ? options : {};
-  const tileCore = normalizeTileCore(config);
+  const tileCore = normalizeTileCore(config.tileCore ?? config.tileSize ?? DEFAULT_TILE_CORE);
+  const tileCoreWidth = normalizeTileCore(config.tileCoreWidth ?? tileCore);
+  const tileCoreHeight = normalizeTileCore(config.tileCoreHeight ?? tileCore);
   const padding = normalizePadding(config);
-  const columns = imageWidth > 0 ? Math.ceil(imageWidth / tileCore) : 0;
-  const rows = imageHeight > 0 ? Math.ceil(imageHeight / tileCore) : 0;
+  const columns = imageWidth > 0 ? Math.ceil(imageWidth / tileCoreWidth) : 0;
+  const rows = imageHeight > 0 ? Math.ceil(imageHeight / tileCoreHeight) : 0;
   const tiles = [];
 
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
-      const x = column * tileCore;
-      const y = row * tileCore;
-      const coreWidth = Math.min(tileCore, imageWidth - x);
-      const coreHeight = Math.min(tileCore, imageHeight - y);
+      const x = column * tileCoreWidth;
+      const y = row * tileCoreHeight;
+      const coreWidth = Math.min(tileCoreWidth, imageWidth - x);
+      const coreHeight = Math.min(tileCoreHeight, imageHeight - y);
       const inputX = Math.max(0, x - padding);
       const inputY = Math.max(0, y - padding);
       const inputRight = Math.min(imageWidth, x + coreWidth + padding);
@@ -53,7 +54,17 @@ export function createTilePlan(width, height, options = {}) {
     }
   }
 
-  return { width: imageWidth, height: imageHeight, tileCore, padding, columns, rows, tiles };
+  return {
+    width: imageWidth,
+    height: imageHeight,
+    tileCore,
+    tileCoreWidth,
+    tileCoreHeight,
+    padding,
+    columns,
+    rows,
+    tiles,
+  };
 }
 
 export function getOutputTileRect(tile, scale) {
