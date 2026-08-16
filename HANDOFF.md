@@ -19,6 +19,9 @@
 | 超分错误或退出沉浸后仍保持开启 | 已统一关闭当前档案超分并取消可见任务；本次变更 |
 | 超大页面误启用超分 | 已复用 6400 万输出像素上限弹出二级确认，超大页保持原图；本次变更 |
 | 首页待看档案增删反馈 | 新增卡片使用 280ms 入场动画；成功移出后使用 220ms 退场动画，减少动态效果时禁用；本次变更 |
+| 移动端超分卡顿 | Worker 在 tile 边界暂停/续算，阅读交互安静 650ms 后继续；真机三次滑动 P99 16.8ms |
+| Waifu2x 推理速度 | 保留 CUNet FP16 与 FP32 回退，新增独立 `Waifu2x UpConv7` FP16；800x1130 真机 P50 3.31s |
+| Real-CUGAN FP16 | 现有 60 个浮点权重已全部为 FP16 量化存储；ORT FP16 计算候选更慢，未替换现有 TF.js 路径 |
 
 ## Android Waifu2x 根因链
 
@@ -117,6 +120,24 @@ output: 376x376
 
 这证明 Waifu2x 在目标 Android/WebView/Adreno 组合上完成了一整页 2x 推理与显示。
 
+## 2026-08-16 移动端超分性能优化
+
+保留单 Worker、WebGPU-only 和串行 tile 推理。tile 几何支持独立宽高；推理可在 tile 边界暂停并保留已完成输出。阅读页的 pointer、wheel、scroll 与导航键交互会暂停超分，最后一次交互后 650ms 继续；页面切换仍执行真正取消。
+
+### Waifu2x 模型
+
+- `Waifu2x`：CUNet FP16 图仅在 `shader-f16` 和 128 MiB binding limit 均满足时选择，初始化失败一次后回退原 FP32 224px 安全图；两个图有独立 ID、checksum 和派生缓存。
+- CUNet FP16 真实 800x1130 五次：`7805.3 / 7311.0 / 7385.2 / 7422.4 / 7343.9ms`，P50 `7385.2ms`，未达到 4 秒目标，但按用户要求保留为标准 Waifu2x 的 FP16 优先路径。
+- `Waifu2x UpConv7`：独立模型值 `waifu2x-upconv7`，固定输入 240x240、core 226、padding/outputInset 7，内部 FP16、I/O FP32。
+- UpConv7 直接 Worker 五次：`3680.9 / 3256.7 / 3295.7 / 3365.4 / 3311.5ms`，P50 `3311.5ms`；完整阅读器 UI 为 `3621.9ms`，输出均为 1600x2260 PNG。
+- 三次真实滑动期间 12 秒帧采样：P50 `6.1ms`、P90/P95 `16.7ms`、P99 `16.8ms`、最大 `24.9ms`，`>32ms` 和 `>50ms` 均为 0；松手后继续并显示 2x 结果。
+
+### Real-CUGAN FP16 结论
+
+现有 TensorFlow.js `weights.json` 已将全部 60 个浮点权重以 `float16` 量化存储；TF.js 4.22 加载后解码为 FP32，WebGPU shader 也使用 FP32。基于官方 `up2x-latest-conservative.pth` 另行导出了内部 FP16、I/O FP32 的 ORT 候选，checker、shape inference、60 个 FP16 initializer 和 64x64 到 128x128 真机输出均通过。
+
+同设备、同 800x1130 页面热 session P50：现有 TF.js `10455.2ms`，ORT FP16 `10895.0ms`，候选慢约 4.2%，且需要重做源色度保持路径。因此未提交该候选；保留更快、已有灰度/色度保护且权重已为 FP16 存储的 TF.js 实现。
+
 ## 推荐栏右侧空白
 
 ### 根因
@@ -143,6 +164,7 @@ max-width: 100%;
 - 不要使用 WebGL EP 回退：该模型在当前 ORT WebGL 加载路径失败。
 - 不要删除 `superResolutionOrt.js` 的 i32/u32 WGSL 修补。224px tile 避开当前 Adreno 的分段路径，但修补仍保护其他设备/限制组合。
 - 不要把生产 localStorage/API key 写入共享 `/sdcard` 或 world-writable 临时目录。此次旁装配置转移使用设备 `127.0.0.1` loopback 的 `run-as + tar + nc` 内存流，不落盘、不输出值。
+- 不要把本次 Real-CUGAN ORT FP16 候选恢复为生产默认；它在参考设备上比现有 TF.js 路径更慢，且绕过现有源色度保护。
 
 ## 验证与 Git
 

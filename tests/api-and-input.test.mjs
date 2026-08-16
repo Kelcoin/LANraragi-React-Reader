@@ -160,6 +160,7 @@ test('reader settings normalize super-resolution fields', () => {
   assert.equal(readerSettings.normalizeReaderSettings({ srEnabled: 1 }).srEnabled, true);
   assert.equal(readerSettings.normalizeReaderSettings({ srAuto: 'yes' }).srAuto, true);
   assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'onnx-subpixel-x3' }).srModel, 'waifu2x');
+  assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'waifu2x-upconv7' }).srModel, 'waifu2x-upconv7');
   assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'realcugan' }).srModel, 'realcugan');
   assert.equal(readerSettings.normalizeReaderSettings({ srModel: 'unknown' }).srModel, 'waifu2x');
   assert.equal(readerSettings.normalizeReaderSettings({ preloadCount: 99 }).preloadCount, 10);
@@ -169,7 +170,7 @@ test('reader settings normalize super-resolution fields', () => {
 
   // 纯函数库可加载；Node 环境（无 document/WebGL）安全降级为不支持
   assert.equal(typeof superResolution.detectSuperResolutionSupport, 'function');
-  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((m) => m.value), ['waifu2x', 'realcugan']);
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((m) => m.value), ['waifu2x', 'waifu2x-upconv7', 'realcugan']);
   const fallback = superResolution.detectSuperResolutionSupport();
   assert.equal(fallback.supported, false);
   assert.ok(fallback.reason);

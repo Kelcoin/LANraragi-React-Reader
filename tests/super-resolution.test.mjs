@@ -2081,7 +2081,7 @@ test('resolves a super-resolution model by its value', () => {
 
 test('does not ship the test-only ONNX sub-pixel model', () => {
   assert.equal(superResolution.getSuperResolutionModel('onnx-subpixel-x3'), null);
-  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((model) => model.value), ['waifu2x', 'realcugan']);
+  assert.deepEqual(superResolution.SUPER_RESOLUTION_MODELS.map((model) => model.value), ['waifu2x', 'waifu2x-upconv7', 'realcugan']);
 });
 
 test('describes every selectable super-resolution model', () => {
@@ -2136,17 +2136,36 @@ test('selects FP16 Waifu2x only for capable adapters and falls back after failur
     maxStorageBufferBindingSize: 127 * 1024 * 1024,
   }), fp32);
   assert.equal(superResolution.selectWaifu2xManifest(adapterInfo, new Set([fp16.id])), fp32);
-});
-
-test('FP16 and FP32 Waifu2x use distinct derived cache identities', () => {
-  const fp32 = superResolution.getSuperResolutionModel('waifu2x');
-  const fp16 = superResolution.selectWaifu2xManifest({
-    maxStorageBufferBindingSize: 128 * 1024 * 1024,
-    shaderF16: true,
-  });
-
   assert.notEqual(
     superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fp16),
+    superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fp32),
+  );
+});
+
+test('ships an explicit FP16 Waifu2x UpConv7 manifest with independent cache identity', () => {
+  const fp32 = superResolution.getSuperResolutionModel('waifu2x');
+  const fast = superResolution.getSuperResolutionModel('waifu2x-upconv7');
+  assert.ok(fast);
+  assert.equal(fast.value, 'waifu2x-upconv7');
+  assert.equal(fast.label, 'Waifu2x UpConv7');
+  assert.equal(fast.id, 'waifu2x-upconv7-art-scale2x-fp16-20260816');
+  assert.equal(fast.url, '/models/waifu2x-upconv7-art-scale2x/scale2x.onnx');
+  assert.equal(fast.precision, 'fp16');
+  assert.equal(fast.inputLayout, 'nchw');
+  assert.equal(fast.outputLayout, 'nchw');
+  assert.equal(fast.inputName, 'x');
+  assert.equal(fast.outputName, 'y');
+  assert.equal(fast.inputWidth, 240);
+  assert.equal(fast.inputHeight, 240);
+  assert.equal(fast.tileCore, 226);
+  assert.equal(fast.padding, 7);
+  assert.equal(fast.outputInset, 7);
+  assert.equal(fast.scale, 2);
+  assert.equal(fast.checksum.digest, 'd6e851231688b239425e5cb05632a434bdbc58c076686dc69bd7e539d1680961');
+  assert.equal(validateManifest(fast), true);
+
+  assert.notEqual(
+    superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fast),
     superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fp32),
   );
 });
@@ -2244,6 +2263,51 @@ test('accepts FP16 Waifu2x 304px input and 536px cropped output geometry', async
   assert.equal(response.height, 464);
   assert.equal(encoded.width, 464);
   assert.equal(encoded.height, 464);
+});
+
+test('accepts Waifu2x UpConv7 240px input and 452px cropped output geometry', async () => {
+  const model = superResolution.getSuperResolutionModel('waifu2x-upconv7');
+  assert.ok(model);
+  let encoded;
+  const session = {
+    inputNames: ['x'],
+    outputNames: ['y'],
+    async run(feeds) {
+      assert.deepEqual(feeds.x.dims, [1, 3, 240, 240]);
+      return { y: { dims: [1, 3, 452, 452], data: new Float32Array(3 * 452 * 452).fill(0.5) } };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    digest: async () => model.checksum.digest,
+    decodeImage: async () => ({
+      width: 226,
+      height: 226,
+      pixels: new Uint8ClampedArray(226 * 226 * 4).fill(255),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async (image) => {
+      encoded = image;
+      return new Blob(['waifu2x-upconv7'], { type: 'image/png' });
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  await handler.handleMessage({ type: 'init', requestId: 'init-waifu2x-upconv7', manifest: model });
+
+  const response = await handler.handleMessage({
+    type: 'process',
+    requestId: 'process-waifu2x-upconv7',
+    blob: new Blob(['source']),
+    manifest: model,
+  });
+
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.equal(response.width, 452);
+  assert.equal(response.height, 452);
+  assert.equal(encoded.width, 452);
+  assert.equal(encoded.height, 452);
 });
 
 test('Waifu2x yields an 8ms compositor gap after every tile', async () => {

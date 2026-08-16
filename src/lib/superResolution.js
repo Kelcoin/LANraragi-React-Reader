@@ -57,6 +57,35 @@ const WAIFU2X_FP16_MANIFEST = Object.freeze({
   },
 });
 
+const WAIFU2X_UPCONV7_MANIFEST = Object.freeze({
+  value: 'waifu2x-upconv7',
+  label: 'Waifu2x UpConv7',
+  description: '轻量快速模型，适合优先处理速度的动漫插画。',
+  id: 'waifu2x-upconv7-art-scale2x-fp16-20260816',
+  url: '/models/waifu2x-upconv7-art-scale2x/scale2x.onnx',
+  precision: 'fp16',
+  scale: 2,
+  inputLayout: 'nchw',
+  outputLayout: 'nchw',
+  inputName: 'x',
+  outputName: 'y',
+  colorSpace: 'rgb',
+  executionProviders: ['webgpu'],
+  inputWidth: 240,
+  inputHeight: 240,
+  tileCore: 226,
+  padding: 7,
+  outputInset: 7,
+  checksum: {
+    algorithm: 'SHA-256',
+    digest: 'd6e851231688b239425e5cb05632a434bdbc58c076686dc69bd7e539d1680961',
+  },
+  license: {
+    name: 'MIT',
+    url: 'https://github.com/nagadomi/nunif/blob/eab6952d93e85951ed4e4cff30cd26c09e1dbb63/LICENSE',
+  },
+});
+
 export function scheduleSuperResolutionUpgrade(queue, key, task) {
   return queue.schedule(key, task, IMAGE_LOAD_PRIORITY.PRELOAD);
 }
@@ -77,6 +106,7 @@ export function cancelVisibleSuperResolutionJobs(cacheKey) {
 // 超分能力检测与模型选项（引擎：onnxruntime-web WebGPU 与 realcugan-tfjs）
 export const SUPER_RESOLUTION_MODELS = Object.freeze([
   WAIFU2X_FP32_MANIFEST,
+  WAIFU2X_UPCONV7_MANIFEST,
   {
     value: 'realcugan',
     label: 'Real-CUGAN',

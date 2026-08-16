@@ -58,7 +58,7 @@ export function normalizeReaderSettings(value = {}) {
   next.progressBarVisibility = normalizeArchiveProgressVisibility(next.progressBarVisibility);
   if (next.splitWidePagesEnabled) next.rotateWidePagesEnabled = false;
   // 超分字段
-  if (next.srModel === 'onnx-subpixel-x3' || next.srModel === 'anime4k' || !['waifu2x', 'realcugan'].includes(next.srModel)) {
+  if (next.srModel === 'onnx-subpixel-x3' || next.srModel === 'anime4k' || !['waifu2x', 'waifu2x-upconv7', 'realcugan'].includes(next.srModel)) {
     next.srModel = DEFAULT_READER_SETTINGS.srModel;
   }
   next.srEnabled = Boolean(next.srEnabled);

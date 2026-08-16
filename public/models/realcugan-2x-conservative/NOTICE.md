@@ -5,6 +5,7 @@
 - Original project and weights: `bilibili/ailab`, Real-CUGAN. Original model terms remain applicable.
 - `model.json` SHA-256: `01bd550f8a4e875355ef248ab380676cc0283e78460459201136559051f7a15e`.
 - `weights.json` (binary weight payload) SHA-256: `2c383f2d3b8d64bf442ab97ec089980088619451d3793354561c2ce5e677072a`.
+- All 60 floating-point weight tensors use TensorFlow.js `float16` quantized storage and decode to FP32 for WebGPU execution.
 
 Sources:
 
