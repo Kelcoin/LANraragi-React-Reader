@@ -22,7 +22,7 @@ export function cancelVisibleSuperResolutionJobs(cacheKey) {
   visiblePageJobs.clear();
 }
 
-// 超分能力检测与模型选项（UI 框架；wasm 引擎后续接入）
+// 超分能力检测与模型选项（引擎：onnxruntime-web WebGPU 与 realcugan-tfjs）
 export const SUPER_RESOLUTION_MODELS = Object.freeze([
   {
     value: 'waifu2x',
