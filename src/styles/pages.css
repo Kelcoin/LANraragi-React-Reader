@@ -995,7 +995,17 @@
     gap: 10px;
     padding: 0;
     flex: 0 0 auto;
+    min-width: 0;
     width: max-content;
+  }
+
+  .recommendation-content > .archive-card-wrap {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .recommendation-content > .archive-card-wrap > .archive-card-shell {
+    overflow: hidden;
   }
 
   .recommendation-content.is-loading { padding: 4px 0; }

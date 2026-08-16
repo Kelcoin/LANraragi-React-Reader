@@ -60,8 +60,18 @@ async function digestWithWebCrypto(bytes) {
   return bytesToHex(await subtle.digest('SHA-256', bytes));
 }
 
+function shouldUseFallbackWebGpuAdapter() {
+  const userAgent = globalThis.navigator?.userAgent ?? '';
+  return /Android/i.test(userAgent) && /; wv\)/i.test(userAgent);
+}
+
 async function createProductionSession(modelBytes, backend) {
   const ort = await loadOrtBackend(backend);
+  // ORT 1.27 generates invalid segmented-buffer WGSL for strict Android
+  // WebView Tint. Its fallback adapter avoids that native pipeline path.
+  if (backend === WEBGPU_BACKEND && shouldUseFallbackWebGpuAdapter()) {
+    ort.env.webgpu.forceFallbackAdapter = true;
+  }
   const session = await ort.InferenceSession.create(modelBytes, {
     executionProviders: [{ name: backend, powerPreference: 'high-performance' }],
     graphOptimizationLevel: 'all',
