@@ -242,6 +242,14 @@ export function createSuperResolutionRuntime({
     worker.postMessage({ type: 'cancel', requestId });
   }
 
+  function pause() {
+    if (!disposed) worker.postMessage({ type: 'pause' });
+  }
+
+  function resume() {
+    if (!disposed) worker.postMessage({ type: 'resume' });
+  }
+
   function dispose() {
     if (disposed) return;
     disposed = true;
@@ -263,6 +271,8 @@ export function createSuperResolutionRuntime({
     processPixels,
     processBlob,
     cancel,
+    pause,
+    resume,
     dispose,
   };
 }

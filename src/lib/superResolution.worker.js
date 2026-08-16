@@ -401,6 +401,7 @@ async function processBlobImage({
   encodeImage,
   tensorFactory,
   yieldControl,
+  waitUntilRunnable,
 }) {
   const { scale, inputLayout, outputLayout } = validateProcessManifest(manifest);
   const decoded = await decodeImage(blob);
@@ -427,6 +428,7 @@ async function processBlobImage({
     const outputName = manifest.outputName ?? session.outputNames?.[0] ?? 'output';
 
     for (const tile of tilePlan.tiles) {
+      await waitUntilRunnable(isCancelled);
       if (!isCurrent() || isCancelled()) {
         throw createNamedError('AbortError', 'Super-resolution request was cancelled');
       }
@@ -490,6 +492,7 @@ async function processBlobImage({
         disposeTensor(inputTensor);
       }
       await yieldControl();
+      await waitUntilRunnable(isCancelled);
       if (!isCurrent() || isCancelled()) {
         throw createNamedError('AbortError', 'Super-resolution request was cancelled');
       }
@@ -539,6 +542,7 @@ async function processPixelProcessorBlob({
   decodeImage,
   encodeImage,
   yieldControl,
+  waitUntilRunnable,
 }) {
   const decoded = await decodeImage(blob);
   try {
@@ -558,6 +562,7 @@ async function processPixelProcessorBlob({
     const output = await processor.process(image.pixels, image.width, image.height, {
       isCancelled,
       yieldControl,
+      waitUntilRunnable,
     });
     if (!isCurrent() || isCancelled()) {
       throw createNamedError('AbortError', 'Super-resolution request was cancelled');
@@ -684,7 +689,27 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
   let disposed = false;
   let generation = 0;
   let inferenceChain = Promise.resolve();
+  let paused = false;
+  const pauseWaiters = new Set();
   const staleRequestIds = new Set();
+
+  function wakePauseWaiters() {
+    const waiters = [...pauseWaiters];
+    pauseWaiters.clear();
+    for (const resolve of waiters) resolve();
+  }
+
+  async function waitUntilRunnable(isCancelled) {
+    while (paused) {
+      if (isCancelled()) {
+        throw createNamedError('AbortError', 'Super-resolution request was cancelled');
+      }
+      await new Promise((resolve) => pauseWaiters.add(resolve));
+    }
+    if (isCancelled()) {
+      throw createNamedError('AbortError', 'Super-resolution request was cancelled');
+    }
+  }
 
   function isCurrentGeneration(initGeneration) {
     return !disposed && initGeneration === generation;
@@ -702,6 +727,8 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
 
   async function initialize(requestId, manifest) {
     if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');
+    paused = false;
+    wakePauseWaiters();
     const initGeneration = ++generation;
     validateInitManifest(manifest);
 
@@ -793,6 +820,8 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
 
   async function dispose(requestId) {
     disposed = true;
+    paused = false;
+    wakePauseWaiters();
     generation += 1;
     const currentSession = session;
     const currentProcessor = processor;
@@ -853,6 +882,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
                 decodeImage,
                 encodeImage,
                 yieldControl,
+                waitUntilRunnable,
               }).then((result) => ({ ...result, backend: processBackend }))
               : () => processBlobImage({
                 blob: message.blob,
@@ -868,6 +898,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
                 encodeImage,
                 tensorFactory,
                 yieldControl,
+                waitUntilRunnable,
               }).then((result) => ({ ...result, backend: processBackend }));
             const result = inferenceChain.then(runInference, runInference);
             inferenceChain = result.catch(() => {});
@@ -876,7 +907,17 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
         case 'cancel':
           if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');
           staleRequestIds.add(requestId);
+          wakePauseWaiters();
           return { type: 'cancelled', requestId };
+        case 'pause':
+          if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');
+          paused = true;
+          return { type: 'paused', requestId };
+        case 'resume':
+          if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');
+          paused = false;
+          wakePauseWaiters();
+          return { type: 'resumed', requestId };
         case 'dispose':
           return await dispose(requestId);
         default:

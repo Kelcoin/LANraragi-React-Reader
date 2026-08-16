@@ -231,6 +231,53 @@ test('Real-CUGAN yields between tiles and observes cancellation before the next 
   assert.equal(inferenceCount, 1);
 });
 
+test('Real-CUGAN waits at tile boundaries before continuing inference', async () => {
+  const { createRealCuganProcessor } = await import('../src/lib/realCugan.js');
+  const secondTileWaiting = createDeferred();
+  const secondTileGate = createDeferred();
+  let runnableChecks = 0;
+  let inferenceCount = 0;
+  const processor = createRealCuganProcessor({
+    tf: { tensor4d: () => ({ dispose() {} }) },
+    model: {
+      async executeAsync() {
+        inferenceCount += 1;
+        return {
+          shape: [1, 128, 128, 3],
+          async data() { return new Float32Array(128 * 128 * 3); },
+          dispose() {},
+        };
+      },
+      dispose() {},
+    },
+  });
+
+  const processPromise = processor.process(
+    new Uint8ClampedArray(128 * 64 * 4),
+    128,
+    64,
+    {
+      async waitUntilRunnable() {
+        runnableChecks += 1;
+        if (runnableChecks === 2) {
+          secondTileWaiting.resolve();
+          await secondTileGate.promise;
+        }
+      },
+    },
+  );
+  await Promise.race([
+    secondTileWaiting.promise,
+    processPromise.then(() => { throw new Error('Real-CUGAN completed without waiting'); }),
+  ]);
+  assert.equal(inferenceCount, 1);
+
+  secondTileGate.resolve();
+  const result = await processPromise;
+  assert.equal(result.width, 256);
+  assert.equal(inferenceCount, 2);
+});
+
 test('Real-CUGAN cannot introduce chroma into a grayscale source page', async () => {
   const { createRealCuganProcessor } = await import('../src/lib/realCugan.js');
   const source = new Uint8ClampedArray(28 * 28 * 4);
@@ -1515,6 +1562,133 @@ test('ONNX inference yields between tiles and observes cancellation before the n
   assert.equal(runCount, 1);
 });
 
+test('ONNX inference resumes from the next tile without recomputing completed output', async () => {
+  const firstYieldStarted = createDeferred();
+  const firstYieldGate = createDeferred();
+  let yieldCount = 0;
+  let runCount = 0;
+  let encodeCount = 0;
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run() {
+      runCount += 1;
+      return {
+        output: {
+          dims: [1, 3, 2, 2],
+          data: new Float32Array(12),
+          dispose() {},
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 3,
+      height: 1,
+      pixels: new Uint8ClampedArray(12),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => {
+      encodeCount += 1;
+      return new Blob();
+    },
+    async yieldControl() {
+      yieldCount += 1;
+      if (yieldCount === 1) {
+        firstYieldStarted.resolve();
+        await firstYieldGate.promise;
+      }
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-pause-resume', manifest });
+
+  const processPromise = handler.handleMessage({
+    type: 'process',
+    requestId: 'pause-resume',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  await firstYieldStarted.promise;
+  await handler.handleMessage({ type: 'pause' });
+  firstYieldGate.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(runCount, 1);
+  assert.equal(encodeCount, 0);
+
+  await handler.handleMessage({ type: 'resume' });
+  const response = await processPromise;
+  assert.equal(response.type, 'result', response.error?.message);
+  assert.equal(runCount, 3);
+  assert.equal(encodeCount, 1);
+});
+
+test('cancelling paused ONNX inference releases its wait without encoding', async () => {
+  const firstYieldStarted = createDeferred();
+  const firstYieldGate = createDeferred();
+  let runCount = 0;
+  let encodeCount = 0;
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => ({
+      inputNames: ['input'],
+      outputNames: ['output'],
+      async run() {
+        runCount += 1;
+        return {
+          output: {
+            dims: [1, 3, 2, 2],
+            data: new Float32Array(12),
+            dispose() {},
+          },
+        };
+      },
+      async release() {},
+    }),
+    decodeImage: async () => ({
+      width: 3,
+      height: 1,
+      pixels: new Uint8ClampedArray(12),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => {
+      encodeCount += 1;
+      return new Blob();
+    },
+    async yieldControl() {
+      firstYieldStarted.resolve();
+      await firstYieldGate.promise;
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-pause-cancel', manifest });
+
+  const processPromise = handler.handleMessage({
+    type: 'process',
+    requestId: 'pause-cancel',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  await firstYieldStarted.promise;
+  await handler.handleMessage({ type: 'pause' });
+  firstYieldGate.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  await handler.handleMessage({ type: 'cancel', requestId: 'pause-cancel' });
+
+  const response = await withTimeout(processPromise);
+  assert.equal(response.type, 'error');
+  assert.equal(response.error.name, 'AbortError');
+  assert.equal(runCount, 1);
+  assert.equal(encodeCount, 0);
+});
+
 test('discards a cancelled result that finishes encoding after the request becomes stale', async () => {
   const encodeStarted = createDeferred();
   const encodeGate = createDeferred();
@@ -1628,6 +1802,22 @@ test('runtime forwards init, pixel processing, cancellation, and disposal messag
 
   runtime.dispose();
   assert.equal(harness.terminated, true);
+});
+
+test('runtime forwards global pause and resume messages', () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => harness.worker,
+  });
+
+  runtime.pause();
+  runtime.resume();
+
+  assert.deepEqual(harness.messages.map(({ message }) => message), [
+    { type: 'pause' },
+    { type: 'resume' },
+  ]);
+  runtime.dispose();
 });
 
 test('runtime forwards blobs and maps AbortSignal to worker cancellation', async () => {

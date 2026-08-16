@@ -160,6 +160,7 @@ export function createRealCuganProcessor({
   async function process(pixels, width, height, {
     isCancelled,
     yieldControl = defaultYieldControl,
+    waitUntilRunnable = async () => {},
   } = {}) {
     if (disposed) throw new Error('Real-CUGAN processor is disposed');
     if (!(pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray)
@@ -172,6 +173,7 @@ export function createRealCuganProcessor({
     const plan = createTilePlan(width, height, { tileCore: TILE_CORE, padding: PADDING });
 
     for (const tile of plan.tiles) {
+      await waitUntilRunnable(isCancelled);
       throwIfCancelled(isCancelled);
       const input = tf.tensor4d(createTileInput(pixels, width, height, tile), [1, INPUT_SIZE, INPUT_SIZE, 3]);
       let rawOutput;
