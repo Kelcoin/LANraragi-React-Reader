@@ -4,10 +4,28 @@ import test from 'node:test';
 import * as cachePolicy from '../src/lib/cachePolicy.js';
 import * as imageLoadQueue from '../src/lib/imageLoadQueue.js';
 import * as readerLayout from '../src/lib/readerLayout.js';
+import * as readerImageTransform from '../src/lib/readerImageTransform.js';
 import * as readerPreviewDecode from '../src/lib/readerPreviewDecode.js';
 import * as readerSettings from '../src/lib/readerSettings.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+
+test('border crop translation recenters asymmetric content within each page slot', () => {
+  const asymmetric = readerImageTransform.getBorderCropCenterTranslation({
+    top: 0.03,
+    right: 0.02,
+    bottom: 0.11,
+    left: 0.1,
+  });
+  assert.ok(Math.abs(asymmetric.xPercent + 4) < 1e-9);
+  assert.ok(Math.abs(asymmetric.yPercent - 4) < 1e-9);
+  assert.deepEqual(readerImageTransform.getBorderCropCenterTranslation({
+    top: 0.05,
+    right: 0.05,
+    bottom: 0.05,
+    left: 0.05,
+  }), { xPercent: 0, yPercent: 0 });
+});
 
 test('super-resolution display budget preserves aspect ratio', () => {
   const size = cachePolicy.resolveBoundedImageSize(5000, 4000);

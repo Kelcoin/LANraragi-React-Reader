@@ -61,7 +61,7 @@ import {
 } from '../lib/readerUiState';
 import { computeContainedImageRect } from '../lib/pageIndicatorLayout';
 import { classifyWebtoonSeams, compareSeamPixels, sampleImageSeam } from '../lib/webtoonDetector';
-import { detectImageBorderInsets } from '../lib/readerImageTransform';
+import { detectImageBorderInsets, getBorderCropCenterTranslation } from '../lib/readerImageTransform';
 import { getWorkerUrl, getSyncToken, hasValidWorkerConfig } from '../lib/worker-config';
 import { getBootState, markBackground, loadReaderSnapshot, saveReaderSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
@@ -519,6 +519,13 @@ const PageImage = React.forwardRef(({
   const showCrop = isWide && !!cropSide;
   const showRotate = isWide && rotateWide;
   const cropFrame = showCrop ? getContainedHalfFrame(naturalSize, shellSize, cropSide) : null;
+  const cropTranslation = getBorderCropCenterTranslation(cropInsets);
+  const imageTransform = [
+    showRotate ? 'rotate(90deg)' : style?.transform,
+    cropBorders && (cropTranslation.xPercent || cropTranslation.yPercent)
+      ? `translate(${cropTranslation.xPercent}%, ${cropTranslation.yPercent}%)`
+      : null,
+  ].filter(Boolean).join(' ') || undefined;
   const pageShellStyle = isReady ? style : {
     ...style,
     width: '100%',
@@ -564,7 +571,7 @@ const PageImage = React.forwardRef(({
           WebkitUserDrag: 'none',
           MozUserSelect: 'none',
           msUserSelect: 'none',
-          transform: showRotate ? 'rotate(90deg)' : style?.transform,
+          transform: imageTransform,
           transformOrigin: 'center center',
           ...(cropBorders ? { clipPath: `inset(${cropInsets.top * 100}% ${cropInsets.right * 100}% ${cropInsets.bottom * 100}% ${cropInsets.left * 100}%)` } : {}),
         }}
