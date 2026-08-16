@@ -949,6 +949,10 @@ test('Reader resets zoom and pan whenever immersive mode is exited', () => {
   assert.match(reader, /panRef\.current = \{ x: 0, y: 0, startX: 0, startY: 0, originX: 0, originY: 0 \};/);
   assert.match(reader, /onClick=\{exitImmersiveMode\} title="退出沉浸模式"/);
   assert.doesNotMatch(reader, /onClick=\{\(\) => \{ setViewMode\('normal'\); hideImmersiveControls\(\); \}\}/);
+  assert.match(reader, /resolveImmersivePinchScale\(rawScale\)/);
+  assert.match(reader, /applyZoomAtPoint\([\s\S]{0,180}false,\s*true,[\s\S]{0,20}\);/);
+  assert.match(reader, /if \(s > 3\.0\) target = 3\.0/);
+  assert.match(reader, /if \(s < 1\.0\) target = 1\.0/);
 });
 
 test('build and proxy hardening are reproducible', () => {

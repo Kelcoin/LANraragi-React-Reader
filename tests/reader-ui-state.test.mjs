@@ -195,6 +195,24 @@ test('immersive double tap toggles between normal and zoomed scale', () => {
   assert.equal(readerUiState.resolveImmersiveDoubleTapScale(2.4), 1);
 });
 
+test('immersive pinch scale stays linear inside normal bounds', () => {
+  assert.equal(readerUiState.resolveImmersivePinchScale(1), 1);
+  assert.equal(readerUiState.resolveImmersivePinchScale(1.8), 1.8);
+  assert.equal(readerUiState.resolveImmersivePinchScale(3), 3);
+});
+
+test('immersive pinch scale progressively resists lower and upper overshoot', () => {
+  const lowerNear = readerUiState.resolveImmersivePinchScale(0.95);
+  const lowerFar = readerUiState.resolveImmersivePinchScale(0.5);
+  const upperNear = readerUiState.resolveImmersivePinchScale(3.1);
+  const upperFar = readerUiState.resolveImmersivePinchScale(4);
+
+  assert.ok(lowerNear < 1 && lowerNear > 0.9);
+  assert.ok(lowerFar < lowerNear && lowerFar > 0.9);
+  assert.ok(upperNear > 3 && upperNear < 3.35);
+  assert.ok(upperFar > upperNear && upperFar < 3.35);
+});
+
 test('immersive single tap still navigates by click zone', () => {
   assert.equal(typeof readerUiState.resolveImmersiveClickZone, 'function');
   assert.equal(readerUiState.resolveImmersiveClickZone({ x: 100, width: 1000 }), 'previous');

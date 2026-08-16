@@ -182,6 +182,20 @@ export function resolveImmersiveDoubleTapScale(currentScale) {
   return Number(currentScale) > 1 ? 1 : 1.75;
 }
 
+export function resolveImmersivePinchScale(rawScale) {
+  const raw = Number(rawScale);
+  if (!Number.isFinite(raw)) return 1;
+  if (raw < 1) {
+    const excess = 1 - raw;
+    return 1 - excess / (1 + excess / 0.1);
+  }
+  if (raw > 3) {
+    const excess = raw - 3;
+    return 3 + excess / (1 + excess / 0.35);
+  }
+  return raw;
+}
+
 export function resolveImmersiveZoomPan({
   previousScale,
   nextScale,

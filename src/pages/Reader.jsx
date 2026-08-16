@@ -48,6 +48,7 @@ import {
   IMMERSIVE_DOUBLE_TAP_MS,
   resolveImmersiveClickZone,
   resolveImmersiveDoubleTapScale,
+  resolveImmersivePinchScale,
   resolveImmersiveTapAction,
   resolveImmersiveZoomPan,
   resolvePageIndicatorPlacement,
@@ -1964,11 +1965,17 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     setViewMode('normal');
   }, [hideImmersiveControls, scheduleZoomTransform]);
 
-  const applyZoomAtPoint = useCallback((nextScale, focalX = window.innerWidth / 2, focalY = window.innerHeight / 2, commit = true) => {
+  const applyZoomAtPoint = useCallback((
+    nextScale,
+    focalX = window.innerWidth / 2,
+    focalY = window.innerHeight / 2,
+    commit = true,
+    allowLowerOvershoot = false,
+  ) => {
     const prevScale = zoomScaleRef.current || 1;
-    let scale = Math.max(1, Math.min(5, nextScale));
+    let scale = Math.max(allowLowerOvershoot ? 0.9 : 1, Math.min(5, nextScale));
 
-    if (scale <= 1.01) {
+    if (!allowLowerOvershoot && scale <= 1.01) {
       scale = 1;
       panRef.current = { x: 0, y: 0, startX: 0, startY: 0, originX: 0, originY: 0 };
       zoomScaleRef.current = scale;
@@ -2867,14 +2874,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       const dy = touches[0].clientY - touches[1].clientY;
       const dist = Math.hypot(dx, dy);
       if (pinchStartRef.current.dist > 0) {
-        let scale = pinchStartRef.current.scale * (dist / pinchStartRef.current.dist);
-        if (scale > 3.15) scale = 3.15;
-        if (scale < 0.95) scale = 0.95;
+        const rawScale = pinchStartRef.current.scale * (dist / pinchStartRef.current.dist);
+        const scale = resolveImmersivePinchScale(rawScale);
         // 记录当前双指中点，松手 snap 时以释放位置（而非捏合起点）为焦点，
         // 避免手指漂移后回弹方向跳错（表现为抽搐到对角再复位）。
         pinchStartRef.current.cx = (touches[0].clientX + touches[1].clientX) / 2;
         pinchStartRef.current.cy = (touches[0].clientY + touches[1].clientY) / 2;
-        applyZoomAtPoint(scale, pinchStartRef.current.cx, pinchStartRef.current.cy, false);
+        applyZoomAtPoint(
+          scale,
+          pinchStartRef.current.cx,
+          pinchStartRef.current.cy,
+          false,
+          true,
+        );
       }
       return;
     }
