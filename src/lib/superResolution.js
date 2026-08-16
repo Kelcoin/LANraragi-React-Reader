@@ -37,9 +37,11 @@ export const SUPER_RESOLUTION_MODELS = Object.freeze([
     outputName: 'y',
     colorSpace: 'rgb',
     executionProviders: ['webgpu'],
-    inputWidth: 384,
-    inputHeight: 384,
-    tileCore: 312,
+    // Keep CUNet's largest full-resolution Conv2dMM buffer below the 128 MiB
+    // storage-binding limit exposed by Android Adreno WebGPU adapters.
+    inputWidth: 224,
+    inputHeight: 224,
+    tileCore: 152,
     padding: 36,
     outputInset: 18,
     checksum: {

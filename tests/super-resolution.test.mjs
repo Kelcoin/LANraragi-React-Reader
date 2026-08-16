@@ -1791,7 +1791,7 @@ test('describes every selectable super-resolution model', () => {
   }
 });
 
-test('ships a pinned Waifu2x CUNet x2 manifest with cropped-output geometry', () => {
+test('ships a pinned Waifu2x CUNet x2 manifest with Android-safe cropped-output geometry', () => {
   const model = superResolution.getSuperResolutionModel('waifu2x');
   assert.equal(model.id, 'waifu2x-cunet-art-scale2x-20250502');
   assert.equal(model.scale, 2);
@@ -1799,24 +1799,26 @@ test('ships a pinned Waifu2x CUNet x2 manifest with cropped-output geometry', ()
   assert.equal(model.outputName, 'y');
   assert.equal(model.inputLayout, 'nchw');
   assert.equal(model.outputLayout, 'nchw');
-  assert.equal(model.inputWidth, 384);
-  assert.equal(model.inputHeight, 384);
-  assert.equal(model.tileCore, 312);
+  assert.equal(model.inputWidth, 224);
+  assert.equal(model.inputHeight, 224);
+  assert.equal(model.tileCore, 152);
   assert.equal(model.padding, 36);
   assert.equal(model.outputInset, 18);
+  const largestFullResolutionConv2dMmBuffer = model.inputWidth * model.inputHeight * 64 * 3 * 3 * 4;
+  assert.ok(largestFullResolutionConv2dMmBuffer < 128 * 1024 * 1024);
   assert.deepEqual(model.executionProviders, ['webgpu']);
   assert.equal(model.checksum.digest, '0966d74dd0739a20de358de88c8fa4eb6cb8c3489bb0e941da9751ad4dcdf495');
   assert.equal(validateManifest(model), true);
 });
 
-test('accepts the production Waifu2x 384px input and 696px output geometry', async () => {
+test('accepts the production Waifu2x 224px input and 376px output geometry', async () => {
   const model = superResolution.getSuperResolutionModel('waifu2x');
   const session = {
     inputNames: ['x'],
     outputNames: ['y'],
     async run(feeds) {
-      assert.deepEqual(feeds.x.dims, [1, 3, 384, 384]);
-      return { y: { dims: [1, 3, 696, 696], data: new Float32Array(3 * 696 * 696).fill(0.5) } };
+      assert.deepEqual(feeds.x.dims, [1, 3, 224, 224]);
+      return { y: { dims: [1, 3, 376, 376], data: new Float32Array(3 * 376 * 376).fill(0.5) } };
     },
     async release() {},
   };
