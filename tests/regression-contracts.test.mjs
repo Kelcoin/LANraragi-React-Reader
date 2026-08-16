@@ -712,15 +712,34 @@ test('Reader layouts share page order while normal and immersive renderers stay 
   assert.match(source, /buildReaderSpreads/);
   assert.match(source, /imgCurrSecondRef/);
   assert.match(source, /settings\.rotateWidePagesEnabled && wide/);
-  assert.match(source, /getContainedHalfFrame\(naturalSize, shellSize, cropSide\)/);
-  assert.match(source, /clipPath: cropSide === 'left' \? 'inset\(0 50% 0 0\)'/);
+  assert.match(source, /getContainedHalfFrame\(naturalSize, shellSize, cropSide, cropBorders \? cropInsets : undefined\)/);
+  assert.match(source, /clipPath: getBorderCropClipPath\(cropFrame\.clipInsets\)/);
   assert.match(source, /maxWidth: showRotate \? `\$\{shellSize\.height\}px`/);
+  assert.match(source, /cropInsets = detectImageBorderInsets\(decodedImage\)/);
+  assert.match(source, /storeCropInsets\(image, decoded\.image\)/);
+  assert.match(source, /image\.dataset\.cropInsets/);
+  assert.match(source, /settings\.cropBordersEnabled,[^\]]*settings\.rotateWidePagesEnabled/);
   assert.match(source, /resizeObserver = new ResizeObserver/);
   assert.match(source, /data-webtoon=\{webtoonActive \? 'true' : 'false'\}/);
   assert.match(source, /onMouseDown=\{webtoonActive \? undefined : handlePointerDown\}/);
   assert.match(source, /!webtoonActive && settings\.autoTurnActive/);
   assert.match(source, /settings\.autoTurnActive, currentIndex, splitPart, currentSpreadIndex/);
   assert.doesNotMatch(source, /splitWide=\{settings\.splitWidePagesEnabled\}/);
+});
+
+test('automatic border cropping is grouped with reading layout controls', () => {
+  const source = read('src/pages/Reader.jsx');
+  const generalPanel = source.slice(
+    source.indexOf('id="reader-settings-panel-general"'),
+    source.indexOf('{/* 阅读 */}'),
+  );
+  const readingPanel = source.slice(
+    source.indexOf('id="reader-settings-panel-reading"'),
+    source.indexOf('{/* 其他（含超分） */}'),
+  );
+  assert.doesNotMatch(generalPanel, /自动裁白边/);
+  assert.match(readingPanel, /自动裁白边/);
+  assert.ok(readingPanel.indexOf('自动裁白边') < readingPanel.indexOf('拆分宽页'));
 });
 
 test('Reader toolbar has three measured states and page commits preserve transient indicators', () => {

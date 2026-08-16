@@ -27,6 +27,15 @@ test('border crop translation recenters asymmetric content within each page slot
   }), { xPercent: 0, yPercent: 0 });
 });
 
+test('border crop clip paths preserve asymmetric content and split boundaries', () => {
+  assert.equal(readerImageTransform.getBorderCropClipPath({
+    top: 0.1,
+    right: 0.475,
+    bottom: 0.05,
+    left: 0.1,
+  }), 'inset(10% 47.5% 5% 10%)');
+});
+
 test('super-resolution display budget preserves aspect ratio', () => {
   const size = cachePolicy.resolveBoundedImageSize(5000, 4000);
   assert.ok(size.width * size.height <= cachePolicy.READER_OPTIMIZED_DECODE_PIXELS);
@@ -311,6 +320,7 @@ test('decoded previews become visible atomically and immersive promotion keeps d
   assert.match(reader, /target\.dataset\.decodePrecision = source\.dataset\.decodePrecision/);
   assert.match(reader, /target\.dataset\.sourceWidth = source\.dataset\.sourceWidth/);
   assert.match(reader, /target\.dataset\.sourceHeight = source\.dataset\.sourceHeight/);
+  assert.match(reader, /target\.style\.cssText = source\.style\.cssText/);
 });
 
 test('immersive click and automatic page turns promote an already decoded adjacent spread', () => {
@@ -374,6 +384,7 @@ test('webtoon pages always use offscreen decode even when preview downsampling i
 test('border crop is measured from the decoded replacement before it is displayed', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /detectImageBorderInsets\(decoded\.image\)/);
+  assert.match(reader, /if \(decodedImage === image && image\.dataset\.cropInsets\) return;/);
 });
 
 test('archive covers wait for one shared near-viewport observer', () => {

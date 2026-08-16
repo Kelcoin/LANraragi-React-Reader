@@ -61,7 +61,7 @@ import {
 } from '../lib/readerUiState';
 import { computeContainedImageRect } from '../lib/pageIndicatorLayout';
 import { classifyWebtoonSeams, compareSeamPixels, sampleImageSeam } from '../lib/webtoonDetector';
-import { detectImageBorderInsets, getBorderCropCenterTranslation } from '../lib/readerImageTransform';
+import { detectImageBorderInsets, getBorderCropCenterTranslation, getBorderCropClipPath } from '../lib/readerImageTransform';
 import { getWorkerUrl, getSyncToken, hasValidWorkerConfig } from '../lib/worker-config';
 import { getBootState, markBackground, loadReaderSnapshot, saveReaderSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
@@ -211,6 +211,16 @@ const DRAWER_OVERSCAN_ROWS = 4;
 const DRAWER_TRANSITION_MS = 300;
 const IMMERSIVE_TOUCH_ACTIVATION_GUARD_MS = 500;
 const READER_OVERLAY_SCROLL_SELECTOR = '[data-reader-overlay-scroll], [data-select-dropdown="true"]';
+const EMPTY_BORDER_CROP_INSETS = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
+
+function readImmersiveCropInsets(image) {
+  try {
+    return JSON.parse(image?.dataset?.cropInsets || '') || EMPTY_BORDER_CROP_INSETS;
+  } catch {
+    return EMPTY_BORDER_CROP_INSETS;
+  }
+}
+
 const PageImage = React.forwardRef(({
   pageUrl,
   pageIndex,
@@ -518,7 +528,9 @@ const PageImage = React.forwardRef(({
   const isWide = isReady && isWidePageSize(naturalSize);
   const showCrop = isWide && !!cropSide;
   const showRotate = isWide && rotateWide;
-  const cropFrame = showCrop ? getContainedHalfFrame(naturalSize, shellSize, cropSide) : null;
+  const cropFrame = showCrop
+    ? getContainedHalfFrame(naturalSize, shellSize, cropSide, cropBorders ? cropInsets : undefined)
+    : null;
   const cropTranslation = getBorderCropCenterTranslation(cropInsets);
   const imageTransform = [
     showRotate ? 'rotate(90deg)' : style?.transform,
@@ -573,7 +585,7 @@ const PageImage = React.forwardRef(({
           msUserSelect: 'none',
           transform: imageTransform,
           transformOrigin: 'center center',
-          ...(cropBorders ? { clipPath: `inset(${cropInsets.top * 100}% ${cropInsets.right * 100}% ${cropInsets.bottom * 100}% ${cropInsets.left * 100}%)` } : {}),
+          ...(cropBorders ? { clipPath: getBorderCropClipPath(cropInsets) } : {}),
         }}
       />
       {cropFrame && (
@@ -591,7 +603,7 @@ const PageImage = React.forwardRef(({
             maxWidth: 'none',
             maxHeight: 'none',
             objectFit: 'fill',
-            clipPath: cropSide === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)',
+            clipPath: getBorderCropClipPath(cropFrame.clipInsets),
             userSelect: 'none',
             pointerEvents: isImmersive ? 'none' : 'auto',
           }}
@@ -2123,6 +2135,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       image.removeAttribute('src');
       delete image.dataset.pageIndex;
       delete image.dataset.readerUnit;
+      delete image.dataset.cropInsets;
     });
   }, []);
 
@@ -2162,11 +2175,25 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const decodeTickets = [];
     const key = localStorage.getItem('lrr_api_key') || '';
 
+    const storeCropInsets = (image, decodedImage = image) => {
+      if (!settings.cropBordersEnabled) {
+        delete image.dataset.cropInsets;
+        return;
+      }
+      if (decodedImage === image && image.dataset.cropInsets) return;
+      let cropInsets = EMPTY_BORDER_CROP_INSETS;
+      try { cropInsets = detectImageBorderInsets(decodedImage); } catch {}
+      image.dataset.cropInsets = JSON.stringify(cropInsets);
+    };
+
     const applyUnitStyle = (image, unit) => {
       const sourceSize = {
         width: Number(image.dataset.sourceWidth) || image.naturalWidth,
         height: Number(image.dataset.sourceHeight) || image.naturalHeight,
       };
+      const cropInsets = settings.cropBordersEnabled
+        ? readImmersiveCropInsets(image)
+        : EMPTY_BORDER_CROP_INSETS;
       const wide = isWidePageSize(sourceSize);
       const cropped = wide && !!unit?.cropSide;
       const slot = image.parentElement;
@@ -2176,6 +2203,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           sourceSize,
           slotSize,
           unit.cropSide,
+          cropInsets,
         )
         : null;
       image.style.position = cropped ? 'absolute' : 'static';
@@ -2188,9 +2216,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       image.style.maxHeight = cropped ? 'none' : (rotated ? `${slotSize.width}px` : '100%');
       image.style.objectFit = cropped ? 'fill' : 'contain';
       image.style.clipPath = cropped
-        ? (unit.cropSide === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)')
-        : 'none';
-      image.style.transform = rotated ? 'rotate(90deg)' : 'none';
+        ? getBorderCropClipPath(cropFrame.clipInsets)
+        : (settings.cropBordersEnabled ? getBorderCropClipPath(cropInsets) : 'none');
+      const cropTranslation = getBorderCropCenterTranslation(cropInsets);
+      image.style.transform = [
+        rotated ? 'rotate(90deg)' : null,
+        !cropped && settings.cropBordersEnabled && (cropTranslation.xPercent || cropTranslation.yPercent)
+          ? `translate(${cropTranslation.xPercent}%, ${cropTranslation.yPercent}%)`
+          : null,
+      ].filter(Boolean).join(' ') || 'none';
       image.style.transformOrigin = 'center center';
     };
 
@@ -2234,6 +2268,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             image.dataset.decodePrecision = decodePrecision;
             image.dataset.pageIndex = String(pageIndex);
             image.dataset.readerUnit = unitKey;
+            storeCropInsets(image, decoded.image);
             if (recordSourceSize) {
               setPageSizes((previous) => {
                 const current = previous[pageIndex];
@@ -2275,6 +2310,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     src: resolved.src,
                     width: resolved.width || decoded.width,
                     height: resolved.height || decoded.height,
+                    image: decoded.image,
                     superResolutionSource,
                   };
                 } catch (error) {
@@ -2302,6 +2338,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           if (imageAlreadyReady) {
             return () => {
               image.dataset.readerUnit = unitKey;
+              storeCropInsets(image);
               applyUnitStyle(image, unit);
               image.style.display = '';
               return true;
@@ -2314,6 +2351,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           if (originalAlreadyReady && superResolution) {
             return () => {
               image.dataset.readerUnit = unitKey;
+              storeCropInsets(image);
               applyUnitStyle(image, unit);
               image.style.display = '';
               startSuperResolutionUpgrade();
@@ -2334,6 +2372,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 src: resolved.src,
                 width: resolved.width || decoded.width,
                 height: resolved.height || decoded.height,
+                image: decoded.image,
               };
             },
             priority,
@@ -2370,6 +2409,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         delete imgRef.current.dataset.pageIndex;
         delete imgRef.current.dataset.readerUnit;
         delete imgRef.current.dataset.decodePrecision;
+        delete imgRef.current.dataset.cropInsets;
       }
     };
 
@@ -2450,7 +2490,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       decodeTickets.forEach((ticket) => ticket.cancel());
       resizeObserver?.disconnect();
     };
-  }, [assetCacheOnly, currentIndex, currentSpreadIndex, fullPrecisionDecode, activeSuperResolution, handleSuperResolutionError, pages, readerSpreads, settings.direction, settings.optimizedImageDecodeEnabled, settings.rotateWidePagesEnabled, viewMode, webtoonActive]);
+  }, [assetCacheOnly, currentIndex, currentSpreadIndex, fullPrecisionDecode, activeSuperResolution, handleSuperResolutionError, pages, readerSpreads, settings.direction, settings.optimizedImageDecodeEnabled, settings.cropBordersEnabled, settings.rotateWidePagesEnabled, viewMode, webtoonActive]);
 
   useEffect(() => {
     if (viewMode === 'immersive' && !webtoonActive) return;
@@ -3172,15 +3212,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         delete target.dataset.decodePrecision;
         delete target.dataset.sourceWidth;
         delete target.dataset.sourceHeight;
+        delete target.dataset.cropInsets;
         return;
       }
       target.src = source.currentSrc || source.src;
+      target.style.cssText = source.style.cssText;
       target.style.display = '';
       target.dataset.pageIndex = String(unit.pageIndex);
       target.dataset.readerUnit = source.dataset.readerUnit;
       target.dataset.decodePrecision = source.dataset.decodePrecision;
       target.dataset.sourceWidth = source.dataset.sourceWidth;
       target.dataset.sourceHeight = source.dataset.sourceHeight;
+      if (source.dataset.cropInsets) target.dataset.cropInsets = source.dataset.cropInsets;
+      else delete target.dataset.cropInsets;
     });
     return true;
   }, [currentSpreadIndex, readerSpreads, settings.direction, viewMode, webtoonActive]);
@@ -4182,10 +4226,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <div className="settings-control"><CustomSelect value={settings.scaleMode} options={[{ label: '适应屏幕', value: 'fit-screen' }, { label: '适应宽度', value: 'fit-width' }, { label: '适应高度', value: 'fit-height' }, { label: '原始尺寸', value: 'original' }]} onChange={(v) => updateSettings((s) => ({ ...s, scaleMode: v }))} compact /></div>
                   </div>
                   <div className="settings-row">
-                    <SettingHint text={'自动识别并裁掉图片四周的白色或空边，让画面更紧凑。'}>自动裁白边</SettingHint>
-                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动裁白边" checked={settings.cropBordersEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, cropBordersEnabled: checked }))} /></div>
-                  </div>
-                  <div className="settings-row">
                     <SettingHint text={'提前加载后续页面的图片，翻页时更流畅。\n范围：1–10 页。'}>预加载</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={preloadInput}
@@ -4232,6 +4272,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   <div className="settings-row">
                     <SettingHint text={'单页：每次显示一页。\n双页：跨页显示两页。\n滚动：纵向连续滚动。\n自动检测：根据画面自动选择。'}>阅读布局</SettingHint>
                     <div className="settings-control"><CustomSelect value={settings.readingLayout} options={[{ label: '单页', value: 'single' }, { label: '双页', value: 'double' }, { label: '滚动', value: 'webtoon' }, { label: '自动检测', value: 'auto' }]} onChange={(v) => updateSettings((s) => ({ ...s, readingLayout: v }))} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'自动识别并裁掉图片四周的白色或空边，让画面更紧凑。'}>自动裁白边</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动裁白边" checked={settings.cropBordersEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, cropBordersEnabled: checked }))} /></div>
                   </div>
                   {[
                     ['splitWidePagesEnabled', '拆分宽页', '将过宽的横向跨页拆成两页依次显示。'],
