@@ -2,6 +2,7 @@ import { getSyncToken, getWorkerUrl } from './worker-config';
 import { decorateArchiveRecord, hydrateArchiveRecords, rememberArchiveMetadata } from './archiveMetadataCache';
 import { getConfigScopeId, getServerScopeId, migrateLegacyStorageKey } from './configScope';
 import { mergeWatchlistReadingProgress } from './readingProgress';
+import { commitRemoteRemoval } from './remoteRemoval';
 
 const LOCAL_WATCHLIST_KEY = 'lrr_watchlist';
 const REMOTE_WATCHLIST_CACHE_KEY = 'lrr_watchlist_remote_cache';
@@ -118,12 +119,13 @@ function writeWatchlistCache(list, { notify = true } = {}) {
   if (notify) emitWatchlistChanged();
 }
 
-async function workerJson(endpoint, { method = 'GET', body = null } = {}) {
+async function workerJson(endpoint, { method = 'GET', body = null, keepalive = false } = {}) {
   const cfg = remoteConfig();
   if (!cfg) throw new Error('未配置 Worker');
   const init = {
     method,
     headers: { 'x-sync-token': cfg.token, 'x-lrr-server-scope': getServerScopeId() },
+    keepalive,
   };
   if (body) {
     init.headers['Content-Type'] = 'application/json';
@@ -131,7 +133,7 @@ async function workerJson(endpoint, { method = 'GET', body = null } = {}) {
   }
   const perform = () => fetch(cfg.base + endpoint, init);
   // Same cross-tab write serialization as history.js (see workerJson there).
-  const request = method !== 'GET' && typeof navigator?.locks?.request === 'function'
+  const request = method !== 'GET' && !keepalive && typeof navigator?.locks?.request === 'function'
     ? navigator.locks.request('lrr-worker-write-v1', { mode: 'exclusive' }, perform)
     : perform();
   const res = await request;
@@ -203,7 +205,7 @@ async function loadWatchlistStateNow({ force = false } = {}) {
     writeWatchlistCache(items, { notify: false });
   }
   const hydrated = await hydrateArchiveRecords(items, { force });
-  if (hydrated.missingIds.length > 0) await removeWatchlistItems(hydrated.missingIds);
+  if (hydrated.missingIds.length > 0) await pruneWatchlistItems(hydrated.missingIds);
   emitWatchlistChanged();
   return { items: hydrated.items, remote, lastSync };
 }
@@ -248,6 +250,25 @@ export const removeWatchlistItems = async (archiveIds) => {
   const next = before.filter((item) => !removeSet.has(item.id));
   const removed = before.length - next.length;
   if (removed === 0) return 0;
+  const ids = Array.from(removeSet);
+  await commitRemoteRemoval({
+    hasRemote: hasRemoteWatchlist(),
+    removeRemote: () => workerJson('/watchlist', { method: 'DELETE', body: { ids }, keepalive: true }),
+    commitLocal: () => writeWatchlistCache(next),
+  });
+  return removed;
+};
+
+export const removeWatchlistItem = async (archiveId) => removeWatchlistItems([archiveId]);
+
+export const pruneWatchlistItems = async (archiveIds) => {
+  const removeSet = new Set((Array.isArray(archiveIds) ? archiveIds : []).map(String).filter(Boolean));
+  if (removeSet.size === 0) return 0;
+  const before = getStoredWatchlist();
+  const next = before.filter((item) => !removeSet.has(item.id));
+  const removed = before.length - next.length;
+  if (removed === 0) return 0;
+
   writeWatchlistCache(next);
   if (hasRemoteWatchlist()) {
     try {
@@ -260,4 +281,4 @@ export const removeWatchlistItems = async (archiveIds) => {
   return removed;
 };
 
-export const removeWatchlistItem = async (archiveId) => removeWatchlistItems([archiveId]);
+export const pruneWatchlistItem = async (archiveId) => pruneWatchlistItems([archiveId]);

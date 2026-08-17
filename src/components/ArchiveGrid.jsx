@@ -169,8 +169,8 @@ const ArchiveGrid = forwardRef(function ArchiveGrid({ className = '', displayMod
           },
         ],
         {
-          duration: 150,
-          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          duration: 180,
+          easing: 'cubic-bezier(.32, .72, 0, 1)',
         },
       );
       animationsRef.current.set(key, animation);

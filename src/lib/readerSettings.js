@@ -11,10 +11,16 @@ export const DEFAULT_READER_SETTINGS = Object.freeze({
   splitWidePagesEnabled: false, rotateWidePagesEnabled: false,
   webtoonGap: 0, doublePageGap: 8,
   pageIndicatorVisibilityMode: 'auto',
+  showNormalNavigationControls: true,
   optimizedImageDecodeEnabled: true,
   maxConcurrentDecodes: 3,
   allowProgressRegression: true,
   progressBarVisibility: ARCHIVE_PROGRESS_VISIBILITY.HISTORY,
+  // 超分
+  srEnabled: false,
+  srModel: 'waifu2x',
+  srAuto: false,
+  srAutoThreshold: 500, // 每页平均体积阈值（KB）；0 表示不限制体积
 });
 
 const allowed = {
@@ -32,7 +38,7 @@ export function normalizeReaderSettings(value = {}) {
   for (const [key, choices] of Object.entries(allowed)) {
     if (!choices.includes(next[key])) next[key] = DEFAULT_READER_SETTINGS[key];
   }
-  for (const key of ['doublePageEnabled', 'cropBordersEnabled', 'splitWidePagesEnabled', 'rotateWidePagesEnabled', 'optimizedImageDecodeEnabled', 'allowProgressRegression']) {
+  for (const key of ['doublePageEnabled', 'cropBordersEnabled', 'splitWidePagesEnabled', 'rotateWidePagesEnabled', 'optimizedImageDecodeEnabled', 'allowProgressRegression', 'showNormalNavigationControls']) {
     next[key] = Boolean(next[key]);
   }
   next.preloadCount = Math.max(0, Math.min(10, Number(next.preloadCount) || 0));
@@ -52,7 +58,22 @@ export function normalizeReaderSettings(value = {}) {
   next.doublePageEnabled = next.readingLayout === 'double';
   next.progressBarVisibility = normalizeArchiveProgressVisibility(next.progressBarVisibility);
   if (next.splitWidePagesEnabled) next.rotateWidePagesEnabled = false;
+  // 超分字段
+  if (next.srModel === 'onnx-subpixel-x3' || next.srModel === 'anime4k' || !['waifu2x', 'waifu2x-upconv7', 'realcugan'].includes(next.srModel)) {
+    next.srModel = DEFAULT_READER_SETTINGS.srModel;
+  }
+  next.srEnabled = Boolean(next.srEnabled);
+  next.srAuto = Boolean(next.srAuto);
+  delete next.srPreloadCount;
+  const srThreshold = Number(next.srAutoThreshold);
+  next.srAutoThreshold = Number.isFinite(srThreshold) && srThreshold >= 0
+    ? srThreshold
+    : DEFAULT_READER_SETTINGS.srAutoThreshold;
   return next;
+}
+
+export function sanitizeUnsignedIntegerInput(value) {
+  return String(value ?? '').replace(/\D/g, '');
 }
 
 export function prepareReaderSettingsForArchiveChange(value = {}) {

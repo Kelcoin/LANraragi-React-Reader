@@ -9,6 +9,7 @@ import PwaStatus from './components/PwaStatus';
 import SecretInput from './components/SecretInput';
 import AppVersion from './components/AppVersion';
 import ConfigTransferDialog from './components/ConfigTransferDialog';
+import { useToast } from './components/Toast';
 import { cacheServerInfo } from './lib/serverInfoCache';
 import { flushHistorySync } from './lib/history';
 import { flushWatchlistSync } from './lib/watchlist';
@@ -43,6 +44,7 @@ function HomeRouteFallback() {
       <div className="home-route-fallback-topbar">
         <div className="home-route-fallback-brand shimmer-strip" />
         <div className="home-route-fallback-actions">
+          <span className="home-route-fallback-action home-route-fallback-theme-action shimmer-strip" />
           <span className="home-route-fallback-action shimmer-strip" />
           <span className="home-route-fallback-action shimmer-strip" />
         </div>
@@ -73,38 +75,6 @@ function HomeRouteFallback() {
           ))}
         </div>
       </section>
-    </main>
-  );
-}
-
-function ReaderRouteFallback() {
-  return (
-    <main className="route-fallback-shell reader-route-fallback" role="status" aria-label="正在加载阅读器">
-      <div className="reader-route-fallback-toolbar">
-        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-left">
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-        </div>
-        <span className="reader-route-fallback-title shimmer-strip" />
-        <div className="reader-route-fallback-toolbar-group reader-route-fallback-toolbar-group-right">
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-wide shimmer-strip" />
-          <span className="reader-route-fallback-button reader-route-fallback-button-icon shimmer-strip" />
-        </div>
-      </div>
-      <div className="reader-route-fallback-stage-layout">
-        <div className="reader-route-fallback-stage-frame reader-stage-frame">
-          <div className="reader-route-fallback-slot reader-stage-slot" aria-hidden="true">
-            <span className="shimmer-strip" />
-          </div>
-        </div>
-        <div className="reader-route-fallback-nav-row">
-          <span className="reader-route-fallback-nav-button shimmer-strip" />
-          <span className="reader-route-fallback-page-count shimmer-strip" />
-          <span className="reader-route-fallback-nav-button shimmer-strip" />
-        </div>
-      </div>
     </main>
   );
 }
@@ -142,18 +112,33 @@ function ArchiveListRouteFallback({ title }) {
 
 function DedupeRouteFallback() {
   return (
-    <main className="route-fallback-shell dedupe-route-fallback" role="status" aria-label="正在加载重复检测">
-      <section className="route-fallback-panel dedupe-route-fallback-panel">
+    <main className="dedupe-route-fallback dedupe-page workbench-page" role="status" aria-label="正在加载重复检测">
+      <header className="workbench-header dedupe-page-header dedupe-route-fallback-header">
         <div className="route-fallback-heading shimmer-strip" />
-        <div className="dedupe-route-fallback-controls">
-          <span className="dedupe-route-fallback-control shimmer-strip" />
-          <span className="dedupe-route-fallback-control shimmer-strip" />
-          <span className="dedupe-route-fallback-control shimmer-strip" />
+        <div className="dedupe-route-fallback-header-actions">
+          {Array.from({ length: 4 }, (_, index) => <span className="dedupe-route-fallback-header-action shimmer-strip" key={`dedupe-fallback-action-${index}`} />)}
         </div>
-        <div className="archive-list-loading-grid">
-          <RouteSkeletonCards count={6} />
+      </header>
+      <section className="surface workbench-section dedupe-scope-section dedupe-route-fallback-scope">
+        <div className="dedupe-route-fallback-scope-header">
+          <div className="dedupe-route-fallback-scope-heading shimmer-strip" />
+          <div className="dedupe-route-fallback-scope-actions">
+            {Array.from({ length: 2 }, (_, index) => <span className="dedupe-route-fallback-scope-action shimmer-strip" key={`dedupe-fallback-scope-action-${index}`} />)}
+          </div>
+        </div>
+        <div className="dedupe-route-fallback-scope-fields">
+          {Array.from({ length: 2 }, (_, index) => (
+            <div className="dedupe-route-fallback-scope-field" key={`dedupe-fallback-scope-${index}`}>
+              <span className="dedupe-route-fallback-field-label shimmer-strip" />
+              <span className="dedupe-route-fallback-field-control shimmer-strip" />
+            </div>
+          ))}
         </div>
       </section>
+      <div className="dedupe-route-fallback-empty">
+        <span className="dedupe-route-fallback-empty-title shimmer-strip" />
+        <span className="dedupe-route-fallback-empty-detail shimmer-strip" />
+      </div>
     </main>
   );
 }
@@ -175,7 +160,7 @@ function getRouteFallback(route) {
     case 'home':
       return <HomeRouteFallback />;
     case 'reader':
-      return <ReaderRouteFallback />;
+      return <AppRouteFallback />;
     case 'metadata':
       return <MetadataRouteFallback />;
     case 'history':
@@ -192,6 +177,7 @@ function getRouteFallback(route) {
 }
 
 export default function App() {
+  const { showToast } = useToast();
   const [route, setRoute] = useState(() => resolveInitialRoute(parseRouteFromLocation()));
   const [themePalettes, setThemePalettes] = useState(readStoredThemePalettes);
   const [themeMode, setThemeMode] = useState(() => {
@@ -212,17 +198,10 @@ export default function App() {
     syncToken: getSyncToken(),
   });
 
-  const [loginNotice, setLoginNotice] = useState(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [workerCollapsed, setWorkerCollapsed] = useState(true);
   const [configTransfer, setConfigTransfer] = useState(null);
 
-  useEffect(() => {
-    if (loginNotice?.type !== 'success') return undefined;
-    const timer = setTimeout(() => setLoginNotice(null), 3000);
-    return () => clearTimeout(timer);
-  }, [loginNotice]);
-  
   useEffect(() => {
     const run = () => loadTagDB();
     if (typeof requestIdleCallback === 'function') {
@@ -284,7 +263,6 @@ export default function App() {
 
   const handleConnect = async (e) => {
     e.preventDefault();
-    setLoginNotice(null);
     setLoginLoading(true);
     try {
       // Flush the old config's pending sync data before switching scope,
@@ -298,7 +276,7 @@ export default function App() {
       setSyncToken(tempConfig.syncToken);
       setSavedConfig({ url: tempConfig.url, key: tempConfig.key });
     } catch (err) {
-      setLoginNotice({ type: 'error', text: err.message || '无法连接到服务器，请检查 LANraragi 地址和 LANraragi API Key 是否正确，以及 LANraragi 服务是否在运行' });
+      showToast(err.message || '无法连接到服务器，请检查 LANraragi 地址和 LANraragi API Key 是否正确，以及 LANraragi 服务是否在运行', 'error', { autoHide: false });
     } finally {
       setLoginLoading(false);
     }
@@ -330,7 +308,7 @@ export default function App() {
     setThemeMode(nextThemeMode);
     setThemePalettes(nextThemePalettes);
     setConfigTransfer(null);
-    setLoginNotice({ type: 'success', text: `已导入 ${count} 项配置` });
+    showToast(`已导入 ${count} 项配置`, 'success');
   };
 
   if (!savedConfig.url || !savedConfig.key) {
@@ -339,8 +317,8 @@ export default function App() {
         <div className="login-shell">
           <div className="login-stack">
 
-          <form onSubmit={handleConnect} className={`glass-panel login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
-            <button type="button" className="login-import-button" onClick={handleImportConfig} aria-label="导入配置" title="导入配置">
+          <form onSubmit={handleConnect} className={`surface login-card${workerCollapsed ? ' is-worker-collapsed' : ''}`}>
+            <button type="button" className="btn btn-quiet login-import-button" onClick={handleImportConfig} aria-label="导入配置" title="导入配置">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 3v12" />
                 <path d="m8 11 4 4 4-4" />
@@ -354,7 +332,7 @@ export default function App() {
             
             <div>
               <label className="field-label" htmlFor="server-url">LANraragi 地址 *</label>
-              <input id="server-url" name="server-url" type="url" inputMode="url" autoComplete="url" spellCheck={false} className="input-glass" value={tempConfig.url} onChange={e => setTempConfig({...tempConfig, url: e.target.value})} required />
+              <input id="server-url" name="server-url" type="url" inputMode="url" autoComplete="url" spellCheck={false} className="field login-field" value={tempConfig.url} onChange={e => setTempConfig({...tempConfig, url: e.target.value})} required />
             </div>
             
             <div>
@@ -366,7 +344,7 @@ export default function App() {
                     value={tempConfig.key}
                     onChange={e => setTempConfig({...tempConfig, key: e.target.value})}
                     required
-                    style={{ padding: '11px 15px', fontSize: '16px' }}
+                    className="login-secret-input"
                   />
             </div>
 
@@ -375,7 +353,7 @@ export default function App() {
                 <span>Worker 设置</span>
                 <button
                   type="button"
-                  className="login-collapse-button"
+                  className="btn btn-quiet login-collapse-button"
                   onClick={() => setWorkerCollapsed(value => !value)}
                   aria-expanded={!workerCollapsed}
                   aria-controls="login-worker-fields"
@@ -389,7 +367,7 @@ export default function App() {
               <div id="login-worker-fields" className={`login-worker-fields${workerCollapsed ? ' is-collapsed' : ''}`}>
                 <div>
                   <label className="field-label" htmlFor="worker-url">Cloudflare Worker 端点</label>
-                  <input id="worker-url" name="worker-url" type="url" inputMode="url" autoComplete="off" spellCheck={false} className="input-glass" value={tempConfig.workerUrl} onChange={e => setTempConfig({...tempConfig, workerUrl: e.target.value})} />
+                  <input id="worker-url" name="worker-url" type="url" inputMode="url" autoComplete="off" spellCheck={false} className="field login-field" value={tempConfig.workerUrl} onChange={e => setTempConfig({...tempConfig, workerUrl: e.target.value})} />
                 </div>
                 <div>
                   <label className="field-label" htmlFor="sync-token">访问 Token</label>
@@ -399,23 +377,17 @@ export default function App() {
                     ariaLabel="访问 Token"
                     value={tempConfig.syncToken}
                     onChange={e => setTempConfig({...tempConfig, syncToken: e.target.value})}
+                    className="login-secret-input"
                   />
                 </div>
               </div>
             </div>
 
-            <button type="submit" className="btn" style={{ marginTop: '8px', padding: '12px', background: 'var(--accent)', borderColor: 'var(--accent-strong)', color: 'var(--accent-contrast)' }} disabled={loginLoading}>
+            <button type="submit" className="btn btn-primary login-submit" disabled={loginLoading}>
               {loginLoading ? '正在验证连接…' : '开始阅读'}
             </button>
 
           </form>
-          {loginNotice && (
-            <div className="login-stack-notice">
-              <div className={`login-notice is-${loginNotice.type}`} role={loginNotice.type === 'error' ? 'alert' : 'status'}>
-                {loginNotice.text}
-              </div>
-            </div>
-          )}
           <AppVersion />
           </div>
         </div>

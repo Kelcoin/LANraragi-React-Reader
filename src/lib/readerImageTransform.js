@@ -8,6 +8,18 @@ export function findContentBounds(data, width, height, threshold = 245) {
   return { top: top / height, right: (width - 1 - right) / width, bottom: (height - 1 - bottom) / height, left: left / width };
 }
 
+export function getBorderCropCenterTranslation({ top = 0, right = 0, bottom = 0, left = 0 } = {}) {
+  return {
+    xPercent: (right - left) * 50,
+    yPercent: (bottom - top) * 50,
+  };
+}
+
+export function getBorderCropClipPath({ top = 0, right = 0, bottom = 0, left = 0 } = {}) {
+  const percent = (value) => Math.max(0, Math.min(1, Number(value) || 0)) * 100;
+  return `inset(${percent(top)}% ${percent(right)}% ${percent(bottom)}% ${percent(left)}%)`;
+}
+
 export function detectImageBorderInsets(image, size = 96) {
   const canvas = document.createElement('canvas');
   const ratio = image.naturalWidth / image.naturalHeight;

@@ -1,4 +1,6 @@
 import { normalizeThemePalettes } from './theme.js';
+import { normalizeReaderSettings } from './readerSettings.js';
+import { hasWebGpuApi } from './webGpuSupport.js';
 
 const WORKER_URL_KEY = 'lrr_worker_url';
 const SYNC_TOKEN_KEY = 'lrr_sync_token';
@@ -117,6 +119,15 @@ export function importConfig(encoded) {
         const normalizedTheme = normalizeThemePalettes(parsedTheme);
         if (!normalizedTheme) continue;
         localStorage.setItem(key, JSON.stringify(normalizedTheme));
+        count++;
+        continue;
+      }
+      if (key === 'lrr_reader_settings') {
+        let parsedSettings;
+        try { parsedSettings = JSON.parse(cfg[key]); } catch { continue; }
+        const normalized = normalizeReaderSettings(parsedSettings);
+        if (!hasWebGpuApi()) normalized.srEnabled = false;
+        localStorage.setItem(key, JSON.stringify(normalized));
         count++;
         continue;
       }

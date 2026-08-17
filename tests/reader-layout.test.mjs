@@ -112,6 +112,35 @@ test('fits and centers the selected bitmap half without letterbox drift', () => 
   closeTo(right.top, 0);
 });
 
+test('splits and centers the detected content rectangle instead of the bordered bitmap', () => {
+  const cropInsets = { top: 0.1, right: 0.05, bottom: 0.05, left: 0.1 };
+  const left = getContainedHalfFrame(
+    { width: 2000, height: 1000 },
+    { width: 900, height: 700 },
+    'left',
+    cropInsets,
+  );
+  const right = getContainedHalfFrame(
+    { width: 2000, height: 1000 },
+    { width: 900, height: 700 },
+    'right',
+    cropInsets,
+  );
+  const closeTo = (actual, expected) => assert.ok(Math.abs(actual - expected) < 0.001);
+
+  closeTo(left.width, 1647.058824);
+  closeTo(left.height, 823.529412);
+  closeTo(left.left, -64.705882);
+  closeTo(left.top, -82.352941);
+  assert.deepEqual(left.clipInsets, { top: 0.1, right: 0.475, bottom: 0.05, left: 0.1 });
+
+  closeTo(right.width, 1647.058824);
+  closeTo(right.height, 823.529412);
+  closeTo(right.left, -764.705882);
+  closeTo(right.top, -82.352941);
+  assert.deepEqual(right.clipInsets, { top: 0.1, right: 0.05, bottom: 0.05, left: 0.525 });
+});
+
 test('detects only pages wider than the configured landscape threshold', () => {
   assert.equal(isWidePageSize({ width: 1200, height: 1000 }), false);
   assert.equal(isWidePageSize({ width: 1201, height: 1000 }), true);

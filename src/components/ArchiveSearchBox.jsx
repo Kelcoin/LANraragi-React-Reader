@@ -9,8 +9,11 @@ import { deleteFilterPreset, readFilterPresets, renameFilterPreset, saveFilterPr
 export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
   const searchBoxRef = useRef(null);
   const suggestActiveRef = useRef(false);
+  const presetMenuRef = useRef(null);
+  const presetToggleRef = useRef(null);
   const [presets, setPresets] = useState(readFilterPresets);
   const [showPresets, setShowPresets] = useState(false);
+  const [presetsClosing, setPresetsClosing] = useState(false);
   const [nameDialog, setNameDialog] = useState(null);
   const [editingPreset, setEditingPreset] = useState('');
   const [deleteTarget, setDeleteTarget] = useState('');
@@ -24,42 +27,75 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
 
   const savePreset = useCallback(() => setNameDialog({ mode: 'create', value: '' }), []);
 
+  const requestPresetMenuClose = useCallback(() => {
+    if (!showPresets || presetsClosing) return;
+    setPresetsClosing(true);
+    setEditingPreset('');
+  }, [presetsClosing, showPresets]);
+
+  const togglePresetMenu = useCallback(() => {
+    if (showPresets && !presetsClosing) {
+      requestPresetMenuClose();
+      return;
+    }
+    setPresetsClosing(false);
+    setShowPresets(true);
+  }, [presetsClosing, requestPresetMenuClose, showPresets]);
+
+  const handlePresetMenuAnimationEnd = useCallback((event) => {
+    if (event.target !== event.currentTarget || !presetsClosing) return;
+    setPresetsClosing(false);
+    setShowPresets(false);
+  }, [presetsClosing]);
+
+  const presetsOpen = showPresets && !presetsClosing;
+
   useEffect(() => {
     if (!showPresets) return undefined;
     const close = (event) => {
-      if (!searchBoxRef.current?.contains(event.target)) setShowPresets(false);
+      if (event.type === 'keydown') {
+        if (event.key === 'Escape') requestPresetMenuClose();
+        return;
+      }
+      if (presetMenuRef.current?.contains(event.target) || presetToggleRef.current?.contains(event.target)) return;
+      requestPresetMenuClose();
     };
     document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [showPresets]);
+    document.addEventListener('focusin', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('focusin', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [requestPresetMenuClose, showPresets]);
 
   return (
     <div className="archive-search-wrap" ref={searchBoxRef}>
       <div className="archive-search-row">
         <div className="archive-search-input-wrap">
           <input
-            className="input-glass"
+            className="field archive-search-field"
             name="archive-search"
             autoComplete="off"
             aria-label={placeholder}
             value={query}
             onChange={(event) => {
-              if (showPresets) setShowPresets(false);
+              requestPresetMenuClose();
               setQuery(event.target.value);
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !suggestActiveRef.current) event.currentTarget.blur();
-              if (event.key === 'Escape') setShowPresets(false);
+              if (event.key === 'Escape') requestPresetMenuClose();
             }}
             placeholder={placeholder}
-            style={{ padding: `10px ${query ? 66 : 38}px 10px 12px`, fontSize: '14px', width: '100%', boxSizing: 'border-box' }}
+            data-has-query={query ? 'true' : 'false'}
           />
           {query && (
             <button
               type="button"
               className="input-clear-btn"
               onClick={() => setQuery('')}
-              style={{ position: 'absolute', right: '36px', top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}
               aria-label="清空搜索"
             >
               <ToolbarGlyph name="close" size={14} />
@@ -68,13 +104,14 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
           <button
             type="button"
             className="input-clear-btn archive-search-preset-toggle"
+            ref={presetToggleRef}
             onClick={() => {
               suggestActiveRef.current = false;
-              setShowPresets(v => !v);
+              togglePresetMenu();
             }}
-            aria-expanded={showPresets}
+            aria-expanded={presetsOpen}
             aria-controls={presetMenuId}
-            aria-label={showPresets ? '收起筛选预设' : '展开筛选预设'}
+            aria-label={presetsOpen ? '收起筛选预设' : '展开筛选预设'}
           >
             <svg className="archive-search-chevron" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
               <path d="M6 9l6 6 6-6z" />
@@ -82,14 +119,21 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
           </button>
           {!showPresets && <TagSuggest inputValue={query} onSelectTag={handleTagSelect} containerRef={searchBoxRef} onSetActive={(active) => { suggestActiveRef.current = active; }} />}
           {showPresets && (
-            <div className="archive-search-presets dropdown-animate" id={presetMenuId}>
+            <div
+              className={`archive-search-presets dropdown-animate${presetsClosing ? ' is-closing' : ''}`}
+              id={presetMenuId}
+              ref={presetMenuRef}
+              aria-hidden={presetsClosing}
+              inert={presetsClosing ? '' : undefined}
+              onAnimationEnd={handlePresetMenuAnimationEnd}
+            >
               <div className="archive-search-preset-heading">
                 <span>已保存的筛选方案</span>
-                <button type="button" className="btn" onClick={savePreset}>+ 保存当前筛选</button>
+                <button type="button" className="btn btn-secondary archive-search-save" onClick={savePreset}>+ 保存当前筛选</button>
               </div>
               {presets.length > 0 ? <div className="archive-search-preset-list">{presets.map(preset => (
                 <div key={preset.name} className="archive-search-preset-row">
-                  <button className="archive-search-preset-apply" type="button" onClick={() => { setQuery(preset.query || ''); setShowPresets(false); }} title={preset.query || preset.name}>
+                  <button className="archive-search-preset-apply" type="button" onClick={() => { setQuery(preset.query || ''); requestPresetMenuClose(); }} title={preset.query || preset.name}>
                     {preset.name}
                   </button>
                   <button className="archive-search-preset-edit" type="button" aria-label={`编辑 ${preset.name}`} aria-expanded={editingPreset === preset.name} onClick={() => setEditingPreset(current => current === preset.name ? '' : preset.name)}>
@@ -108,7 +152,7 @@ export default function ArchiveSearchBox({ query, setQuery, placeholder }) {
             </div>
           )}
         </div>
-        <button type="button" className="btn archive-search-submit" onClick={() => searchBoxRef.current?.querySelector('input')?.blur()}>
+        <button type="button" className="btn btn-secondary archive-search-submit" onClick={() => searchBoxRef.current?.querySelector('input')?.blur()}>
           筛选
         </button>
       </div>

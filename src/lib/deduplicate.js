@@ -307,6 +307,23 @@ export function selectDuplicateDeletionIds(archives) {
     .map(archiveId);
 }
 
+export function mergeSmartDuplicateSelection(groups, protectedGroupKeys, selectedArchiveIds = [], selectedGroupKeys = []) {
+  const protectedKeys = new Set(Array.from(protectedGroupKeys || [], String));
+  const protectedGroups = (groups || []).filter((group) => protectedKeys.has(duplicateGroupIds(group).sort().join('|')));
+  const protectedArchiveIds = new Set(protectedGroups.flatMap(duplicateGroupIds));
+  const retainedArchiveIds = Array.from(selectedArchiveIds || [], String)
+    .filter((id) => protectedArchiveIds.has(id));
+  const retainedGroupKeys = Array.from(selectedGroupKeys || [], String)
+    .filter((key) => protectedKeys.has(key));
+  const generatedArchiveIds = (groups || [])
+    .filter((group) => !protectedKeys.has(duplicateGroupIds(group).sort().join('|')))
+    .flatMap((group) => selectDuplicateDeletionIds(group).slice(0, 1));
+  return {
+    archiveIds: normalizeDuplicateSelection(groups, [...retainedArchiveIds, ...generatedArchiveIds]),
+    groupKeys: retainedGroupKeys,
+  };
+}
+
 async function imageFromBlob(blob) {
   if (typeof createImageBitmap === 'function') {
     try {

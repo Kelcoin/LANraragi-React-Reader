@@ -201,6 +201,10 @@ function renderToolbarGlyph(name) {
   switch (name) {
     case 'back':
       return <path d="M19 12H5M12 19l-7-7 7-7" />;
+    case 'chevronLeft':
+      return <path d="m14.5 5.5-6.5 6.5 6.5 6.5" />;
+    case 'chevronRight':
+      return <path d="m9.5 5.5 6.5 6.5-6.5 6.5" />;
     case 'close':
       return <path d="M6 6l12 12M18 6 6 18" />;
     case 'history':
@@ -253,6 +257,23 @@ function renderToolbarGlyph(name) {
       return <path d="M3 3h7v7H3V3zM14 3h7v7h-7V3zM14 14h7v7h-7V14zM3 14h7v7H3V14z" />;
     case 'settings':
       return <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />;
+    case 'superResolution':
+      return (
+        <>
+          <path d="M5.25 18.75 18.75 5.25" strokeWidth="3.2" />
+          <path d="M10.25 5.25h8.5v8.5" strokeWidth="3.2" />
+          <path d="M13.75 18.75h-8.5v-8.5" strokeWidth="3.2" />
+        </>
+      );
+    case 'superResolutionOff':
+      return (
+        <>
+          <path d="M5.25 18.75 18.75 5.25" strokeWidth="3.2" opacity="0.42" />
+          <path d="M10.25 5.25h8.5v8.5" strokeWidth="3.2" opacity="0.42" />
+          <path d="M13.75 18.75h-8.5v-8.5" strokeWidth="3.2" opacity="0.42" />
+          <path d="M4.5 4.5 19.5 19.5" strokeWidth="2.4" />
+        </>
+      );
     case 'metadata':
       return (
         <>

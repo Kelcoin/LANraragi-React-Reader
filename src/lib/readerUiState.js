@@ -1,3 +1,6 @@
+import { shouldAutoEnableSuperResolution } from './superResolution.js';
+import { SUPER_RESOLUTION_MAX_INFERENCE_PIXELS } from './cachePolicy.js';
+
 const DESKTOP_TOOLBAR = Object.freeze({
   left: Object.freeze(['← 返回', '快速跳转']),
   right: Object.freeze(['沉浸模式', '设为封面', '阅读设定', '缩略面板']),
@@ -7,6 +10,8 @@ const MOBILE_TOOLBAR = Object.freeze({
   left: Object.freeze(['', '']),
   right: Object.freeze(['', '', '', '']),
 });
+
+export const IMMERSIVE_DOUBLE_TAP_MS = 350;
 
 export function getReaderToolbarGroups(isMobile) {
   return isMobile ? MOBILE_TOOLBAR : DESKTOP_TOOLBAR;
@@ -64,6 +69,14 @@ export function resolveReaderToolbarMode({
   return 'mobile';
 }
 
+export function rememberReaderToolbarFullWidth({ previousWidth = 0, measuredWidth = 0, mode } = {}) {
+  const previous = Number(previousWidth);
+  const measured = Number(measuredWidth);
+  if (!Number.isFinite(measured) || measured <= 0) return Math.max(0, previous || 0);
+  if (mode === 'full') return measured;
+  return Math.max(0, previous || 0, measured);
+}
+
 export function getCenteredToolbarTitleWidth({ toolbar, leftGroup, rightGroup, gap = 16 }) {
   const toolbarLeft = Number(toolbar?.left);
   const toolbarRight = Number(toolbar?.right);
@@ -82,6 +95,236 @@ export function isIosWebKitPlatform(userAgent = '', platform = '', maxTouchPoint
 
 export function getContentLanguage(value) {
   return /[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9d]/u.test(String(value || '')) ? 'ja' : 'zh-CN';
+}
+
+export function getSettingsPaneNaturalHeight({
+  tabsHeight = 0,
+  contentHeight = 0,
+  gap = 0,
+  inset = 0,
+  stacked = false,
+} = {}) {
+  const bodyHeight = stacked
+    ? tabsHeight + gap + contentHeight
+    : Math.max(tabsHeight, contentHeight);
+  return Math.max(0, bodyHeight + inset);
+}
+
+export function resolveArchiveSuperResolutionState({
+  archive,
+  enabled,
+  auto,
+  thresholdKb,
+  runtimeReady,
+  manualOverride,
+} = {}) {
+  if (!enabled || !runtimeReady || !archive) return { enabled: false, manual: false };
+  const archiveId = String(archive.arcid ?? archive.id ?? '');
+  if (archiveId && String(manualOverride?.archiveId ?? '') === archiveId) {
+    return { enabled: !!manualOverride.enabled, manual: true };
+  }
+  return {
+    enabled: shouldAutoEnableSuperResolution(archive, auto, thresholdKb),
+    manual: false,
+  };
+}
+
+export function scheduleSuperResolutionResume({
+  currentTimer,
+  resume,
+  delay = 650,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+} = {}) {
+  if (currentTimer !== null && currentTimer !== undefined) clearTimer(currentTimer);
+  return setTimer(resume, delay);
+}
+
+export function subscribeSuperResolutionInteraction(target, pause) {
+  const options = { capture: true, passive: true };
+  const navigationKeys = new Set([
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'PageUp',
+    'PageDown',
+    'Home',
+    'End',
+    ' ',
+  ]);
+  const handlePointerMove = (event) => {
+    if (event.pointerType === 'touch' || Number(event.buttons) > 0) pause(event);
+  };
+  const handleKeyDown = (event) => {
+    if (navigationKeys.has(event.key)) pause(event);
+  };
+  target.addEventListener('pointerdown', pause, options);
+  target.addEventListener('pointermove', handlePointerMove, options);
+  target.addEventListener('wheel', pause, options);
+  target.addEventListener('scroll', pause, options);
+  target.addEventListener('keydown', handleKeyDown, options);
+  return () => {
+    target.removeEventListener('pointerdown', pause, options);
+    target.removeEventListener('pointermove', handlePointerMove, options);
+    target.removeEventListener('wheel', pause, options);
+    target.removeEventListener('scroll', pause, options);
+    target.removeEventListener('keydown', handleKeyDown, options);
+  };
+}
+
+export function getForegroundSuperResolutionPageIndices({
+  webtoonActive,
+  currentIndex,
+  currentSpread = [],
+} = {}) {
+  const indices = webtoonActive
+    ? [currentIndex]
+    : currentSpread.map((unit) => unit?.pageIndex);
+  return new Set(indices.filter((index) => Number.isInteger(index) && index >= 0));
+}
+
+export function getSuperResolutionPreloadPageIndices({
+  pageCount,
+  currentIndex,
+  currentSpread = [],
+  preloadCount,
+} = {}) {
+  const count = Math.max(0, Math.floor(Number(pageCount) || 0));
+  const limit = Math.max(0, Math.floor(Number(preloadCount) || 0));
+  const visible = new Set(currentSpread
+    .map((unit) => unit?.pageIndex)
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < count));
+  if (Number.isInteger(currentIndex) && currentIndex >= 0 && currentIndex < count) {
+    visible.add(currentIndex);
+  }
+  const visibleIndices = [...visible];
+  const lastVisible = visibleIndices.length > 0 ? Math.max(...visibleIndices) : currentIndex;
+  const firstVisible = visibleIndices.length > 0 ? Math.min(...visibleIndices) : currentIndex;
+  const forward = [];
+  for (let index = lastVisible + 1; index < count && forward.length < limit; index += 1) {
+    forward.push(index);
+  }
+  const read = [];
+  for (let index = firstVisible - 1; index >= 0; index -= 1) read.push(index);
+  return { forward, read };
+}
+
+export function resolveImmersiveTapAction({
+  timestamp,
+  lastTimestamp,
+} = {}) {
+  const next = Number(timestamp);
+  const previous = Number(lastTimestamp);
+  return Number.isFinite(next) && Number.isFinite(previous)
+    && next >= previous
+    && next - previous <= IMMERSIVE_DOUBLE_TAP_MS
+    ? 'double-tap'
+    : 'single-tap';
+}
+
+export function resolveImmersiveClickZone({ x, width } = {}) {
+  const nextX = Number(x);
+  const nextWidth = Number(width);
+  if (!Number.isFinite(nextX) || !Number.isFinite(nextWidth) || nextWidth <= 0) return 'none';
+  if (nextX < nextWidth * 0.45) return 'previous';
+  if (nextX > nextWidth * 0.55) return 'next';
+  return 'none';
+}
+
+export function resolveImmersiveDoubleTapScale(currentScale) {
+  return Number(currentScale) > 1 ? 1 : 1.75;
+}
+
+export function resolveImmersivePinchScale(rawScale) {
+  const raw = Number(rawScale);
+  if (!Number.isFinite(raw)) return 1;
+  if (raw < 1) {
+    const excess = 1 - raw;
+    return 1 - excess / (1 + excess / 0.1);
+  }
+  if (raw > 3) {
+    const excess = raw - 3;
+    return 3 + excess / (1 + excess / 0.35);
+  }
+  return raw;
+}
+
+export function resolveImmersiveZoomPan({
+  previousScale,
+  nextScale,
+  panX,
+  panY,
+  focalX,
+  focalY,
+  viewportWidth,
+  viewportHeight,
+} = {}) {
+  const previous = Number(previousScale);
+  const next = Number(nextScale);
+  const width = Number(viewportWidth);
+  const height = Number(viewportHeight);
+  if (![previous, next, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    return { x: 0, y: 0 };
+  }
+  if (next <= 1) return { x: 0, y: 0 };
+
+  const focalOffsetX = Number(focalX) - width / 2;
+  const focalOffsetY = Number(focalY) - height / 2;
+  const maxX = (next - 1) * width / 2;
+  const maxY = (next - 1) * height / 2;
+  const rawX = Number(panX) + (previous - next) * (Number.isFinite(focalOffsetX) ? focalOffsetX : 0);
+  const rawY = Number(panY) + (previous - next) * (Number.isFinite(focalOffsetY) ? focalOffsetY : 0);
+  return {
+    x: Math.max(-maxX, Math.min(maxX, Number.isFinite(rawX) ? rawX : 0)),
+    y: Math.max(-maxY, Math.min(maxY, Number.isFinite(rawY) ? rawY : 0)),
+  };
+}
+
+const WEBGPU_SHADER_FAILURE_PATTERN = /Failed to create a WebGPU (?:compute|render) pipeline|Invalid ShaderModule/i;
+const SUPER_RESOLUTION_PIXEL_LIMIT_PATTERN = /Super-resolution inference exceeds the \d+ pixel limit/i;
+
+export function resolveSuperResolutionFailure(error) {
+  if (error?.name === 'AbortError') return { disable: false, notify: false };
+  if (typeof error?.message === 'string' && SUPER_RESOLUTION_PIXEL_LIMIT_PATTERN.test(error.message)) {
+    return { disable: false, notify: false, pageTooLarge: true };
+  }
+  if (typeof error?.message === 'string' && WEBGPU_SHADER_FAILURE_PATTERN.test(error.message)) {
+    return { disable: true, notify: true, webgpuShader: true };
+  }
+  return { disable: true, notify: true };
+}
+
+export function isSuperResolutionPageTooLarge(sourceSize, scale) {
+  const width = Number(sourceSize?.width);
+  const height = Number(sourceSize?.height);
+  const outputScale = Number(scale);
+  if (![width, height, outputScale].every((value) => Number.isFinite(value) && value > 0)) return false;
+  return width * height * outputScale ** 2 > SUPER_RESOLUTION_MAX_INFERENCE_PIXELS;
+}
+
+export function getNewlyAddedArchiveIds(previousItems = [], nextItems = []) {
+  const previousIds = new Set(previousItems.map((item) => String(item?.id || item?.arcid || '')).filter(Boolean));
+  return nextItems
+    .map((item) => String(item?.id || item?.arcid || ''))
+    .filter((id) => id && !previousIds.has(id));
+}
+
+export function getNewlyAddedArchiveId(previousItems = [], nextItems = []) {
+  return getNewlyAddedArchiveIds(previousItems, nextItems)[0] || '';
+}
+
+export function getRemovedArchiveIds(previousItems = [], nextItems = []) {
+  const nextIds = new Set(nextItems.map((item) => String(item?.id || item?.arcid || '')).filter(Boolean));
+  return previousItems
+    .map((item) => String(item?.id || item?.arcid || ''))
+    .filter((id) => id && !nextIds.has(id));
+}
+
+export function getVisibleContinueReadingItems(items = [], hideRead = false) {
+  return hideRead
+    ? items.filter((item) => !(Number(item?.total) > 0 && Number(item?.page) >= Number(item.total)))
+    : items;
 }
 
 export function getDrawerRowStride(gridWidth) {

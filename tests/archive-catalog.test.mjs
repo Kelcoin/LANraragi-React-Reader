@@ -54,3 +54,9 @@ test('archive search total ignores empty API values and preserves a known total'
   assert.equal(archiveSearch.getArchiveSearchTotal({}, 0), 0);
   assert.equal(archiveSearch.getArchiveSearchTotal({}, 20), null);
 });
+
+test('archive filtering ignores empty and whitespace-only queries', () => {
+  assert.equal(archiveSearch.hasArchiveSearchQuery(''), false);
+  assert.equal(archiveSearch.hasArchiveSearchQuery('   '), false);
+  assert.equal(archiveSearch.hasArchiveSearchQuery('artist:test'), true);
+});

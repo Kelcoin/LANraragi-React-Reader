@@ -10,6 +10,9 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Embedder-Policy "require-corp" always;
+
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript;
     gzip_min_length 1024;

@@ -5,22 +5,22 @@ import { getTagSuggestPlacement } from '../lib/tagSuggestLayout';
 import { NamespaceGlyph } from './AppGlyphs';
 
 const NS_COLORS = {
-  artist: '#e0994c',
-  parody: '#5aa9d4',
-  category: '#7ec7c5',
-  character: '#8ec274',
-  female: '#de7680',
-  male: '#72a3db',
-  mixed: '#d6aa38',
-  other: '#a5afb4',
-  group: '#948cd9',
-  series: '#e0759e',
-  language: '#64c9a9',
-  uploader: '#8c9baa',
-  date_added: '#8c9baa',
-  timestamp: '#8c9baa',
-  source: '#8c9baa',
-  general: '#a5afb4',
+  artist: 'var(--tag-artist)',
+  parody: 'var(--tag-parody)',
+  category: 'var(--tag-category)',
+  character: 'var(--tag-character)',
+  female: 'var(--tag-female)',
+  male: 'var(--tag-male)',
+  mixed: 'var(--tag-mixed)',
+  other: 'var(--tag-other)',
+  group: 'var(--tag-group)',
+  series: 'var(--tag-series)',
+  language: 'var(--tag-language)',
+  uploader: 'var(--tag-uploader)',
+  date_added: 'var(--tag-date-added)',
+  timestamp: 'var(--tag-timestamp)',
+  source: 'var(--tag-source)',
+  general: 'var(--tag-general)',
 };
 
 export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSetActive }) {
@@ -173,36 +173,12 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
 
   if (!visible || suggestions.length === 0 || !anchor) return null;
 
-  const basePanel = {
-    overflowY: 'auto',
-    overflowX: 'clip',
-    WebkitOverflowScrolling: 'touch',
-    background: 'var(--dropdown-bg)',
-    backdropFilter: 'blur(24px)',
-    WebkitBackdropFilter: 'blur(24px)',
-    border: '1px solid var(--glass-border)',
-    borderRadius: '12px',
-    boxShadow: 'var(--shadow)',
-    padding: '6px 0',
-    paddingRight: 0,
-    scrollbarGutter: 'auto',
-    boxSizing: 'border-box',
-    contain: 'layout paint',
-  };
-
-  const panelStyle = {
-    ...basePanel,
-    position: 'fixed',
-    ...anchor,
-    zIndex: 200000,
-  };
-
   return createPortal(
       <div
         ref={listRef}
-        className="dropdown-animate no-scrollbar tag-suggest-panel"
+        className="dropdown-animate no-scrollbar tag-suggest-panel popover"
         data-filter-popover="true"
-        style={panelStyle}
+        style={anchor}
         onKeyDown={handleKeyDown}
         tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}
@@ -223,64 +199,26 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
             return (
               <div
                 key={`${ns}|${key}`}
-                className="tag-suggest-option"
+                className={`tag-suggest-option is-narrow${activeIndex === idx ? ' is-active' : ''}`}
                 data-suggest-index={idx}
                 role="option"
                 aria-selected={activeIndex === idx}
                 onMouseDown={(e) => { e.preventDefault(); selectItem(item); }}
                 onClick={(e) => { e.preventDefault(); selectItem(item); }}
                 onMouseEnter={() => setActiveIndex(idx)}
-                style={{
-                  padding: '8px 14px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                  background: activeIndex === idx ? 'var(--accent-soft)' : 'transparent',
-                  transition: 'background 0.1s',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                }}
               >
                 {/* Row 1: badge + Chinese label */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                  <span style={{
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    color: `color-mix(in srgb, ${nsColor} 40%, var(--text-main))`,
-                    background: `color-mix(in srgb, ${nsColor} 14%, transparent)`,
-                    border: `1px solid color-mix(in srgb, ${nsColor} 40%, transparent)`,
-                    borderRadius: '4px',
-                    padding: '1px 5px',
-                    whiteSpace: 'nowrap',
-                    minWidth: '36px',
-                    textAlign: 'center',
-                    flexShrink: 0,
-                  }}>
+                <div className="tag-suggest-option-main">
+                  <span className="tag-suggest-badge" style={{ '--tag-suggest-ns-color': nsColor }}>
                     <NamespaceGlyph ns={ns} size={12} color="currentColor" />
-                    <span>{nsLabel}</span>
+                    <span className="tag-suggest-badge-label">{nsLabel}</span>
                   </span>
-                  <span style={{
-                    color: 'var(--text-main)',
-                    fontSize: '13px',
-                    flex: 1,
-                    minWidth: 0,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}>
+                  <span className="tag-suggest-label">
                     {label}
                   </span>
                 </div>
                 {/* Row 2: original tag (small, gray) */}
-                <span style={{
-                  fontSize: '10px',
-                  color: 'var(--text-muted)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  paddingLeft: '46px',
-                }}>
+                <span className="tag-suggest-tag is-mobile-tag">
                   {tag.length > 36 ? tag.slice(0, 36) + '…' : tag}
                 </span>
               </div>
@@ -291,44 +229,21 @@ export default function TagSuggest({ inputValue, onSelectTag, containerRef, onSe
           return (
             <div
               key={`${ns}|${key}`}
-              className="tag-suggest-option"
+              className={`tag-suggest-option${activeIndex === idx ? ' is-active' : ''}`}
               data-suggest-index={idx}
               role="option"
               aria-selected={activeIndex === idx}
               onMouseDown={(e) => { e.preventDefault(); selectItem(item); }}
               onMouseEnter={() => setActiveIndex(idx)}
-              style={{
-                padding: '7px 14px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                fontSize: '13px',
-                background: activeIndex === idx ? 'var(--accent-soft)' : 'transparent',
-                transition: 'background 0.1s',
-                userSelect: 'none',
-              }}
             >
-              <span style={{
-                fontSize: '10px',
-                fontWeight: 600,
-                color: `color-mix(in srgb, ${nsColor} 40%, var(--text-main))`,
-                background: `color-mix(in srgb, ${nsColor} 14%, transparent)`,
-                border: `1px solid color-mix(in srgb, ${nsColor} 40%, transparent)`,
-                borderRadius: '4px',
-                padding: '1px 5px',
-                whiteSpace: 'nowrap',
-                minWidth: '36px',
-                textAlign: 'center',
-                flexShrink: 0,
-              }}>
+              <span className="tag-suggest-badge" style={{ '--tag-suggest-ns-color': nsColor }}>
                 <NamespaceGlyph ns={ns} size={12} color="currentColor" />
-                <span>{nsLabel}</span>
+                <span className="tag-suggest-badge-label">{nsLabel}</span>
               </span>
-              <span style={{ color: 'var(--text-main)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span className="tag-suggest-label">
                 {label}
               </span>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+              <span className="tag-suggest-tag">
                 {tag.length > 30 ? tag.slice(0, 30) + '…' : tag}
               </span>
             </div>

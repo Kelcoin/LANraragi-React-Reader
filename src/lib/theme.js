@@ -3,37 +3,35 @@ export const CUSTOM_THEME_STORAGE_KEY = 'lrr_custom_theme';
 export const THEME_MODES = ['auto', 'dark', 'light'];
 export const DEFAULT_THEME_PALETTE = Object.freeze({
   accent: '#b74632',
-  secondary: '#70784f',
+  secondary: '#8a715c',
   background: '#f4f0e8',
 });
 export const DEFAULT_THEME_PALETTES = Object.freeze({
   light: DEFAULT_THEME_PALETTE,
   dark: Object.freeze({
-    accent: '#4a9ff0',
-    secondary: '#79b8ff',
-    background: '#0f1115',
+    accent: '#d16a57',
+    secondary: '#b8a58f',
+    background: '#0b0c0a',
   }),
 });
 const THEME_COLORS = {
-  dark: '#0f1115',
-  light: '#f4f0e8',
+  dark: '#0b0c0a',
+  light: '#f2efe8',
 };
 
 const CUSTOM_THEME_PROPERTIES = [
-  '--bg-color', '--page-bg', '--surface-1', '--surface-2', '--surface-3', '--surface-inset', '--glass-bg',
-  '--glass-border', '--glass-border-hover', '--accent', '--accent-strong', '--accent-soft', '--accent-contrast', '--olive',
-  '--olive-strong', '--olive-soft', '--good', '--good-text', '--good-surface', '--good-border', '--button-hover-bg', '--danger-contrast',
-  '--input-bg', '--input-focus-bg', '--placeholder', '--card-bg', '--cover-bg', '--toolbar-bg', '--dropdown-bg',
-  '--tag-panel-bg', '--scrollbar-thumb', '--scrollbar-thumb-hover', '--reader-control-bg', '--reader-control-hover-bg',
-  '--reader-control-border', '--reader-panel-bg', '--reader-skeleton-base', '--reader-skeleton-highlight',
-  '--comment-card-bg', '--comment-card-border', '--comment-header-bg', '--comment-body-bg', '--comment-content-bg',
-  '--comment-content-border', '--comment-meta-bg', '--comment-positive-bg', '--comment-positive-border',
-  '--comment-negative-bg', '--comment-negative-border', '--comment-input-bg', '--comment-positive', '--comment-negative',
-  '--comment-uploader-bg', '--comment-uploader-border', '--comment-user', '--comment-user-self', '--comment-text',
-  '--comment-meta', '--text-main', '--text-sub', '--text-muted', '--reader-control-text',
-  '--tag-artist', '--tag-parody', '--tag-category', '--tag-character', '--tag-female', '--tag-male', '--tag-mixed',
-  '--tag-other', '--tag-group', '--tag-series', '--tag-language', '--tag-uploader', '--tag-date-added', '--tag-timestamp',
-  '--tag-source', '--tag-general',
+  '--canvas', '--surface', '--surface-subtle', '--surface-raised', '--surface-hover', '--surface-inset',
+  '--text-primary', '--text-secondary', '--text-muted', '--border-subtle', '--border-strong',
+  '--accent', '--accent-strong', '--accent-soft', '--accent-contrast',
+  '--secondary', '--secondary-strong', '--secondary-soft',
+  '--positive', '--positive-strong', '--positive-soft', '--warning', '--warning-soft',
+  '--danger', '--danger-soft', '--focus-ring', '--overlay', '--reader-stage',
+  '--reader-toolbar-bg', '--reader-control-bg', '--reader-control-hover-bg', '--reader-control-border', '--reader-control-text',
+  '--reader-overlay-text', '--reader-stage-border', '--reader-panel-bg', '--reader-skeleton-base', '--reader-skeleton-highlight',
+  '--comment-header-bg', '--comment-content-bg', '--comment-card-bg', '--comment-card-border', '--comment-positive', '--comment-negative',
+  '--comment-uploader-bg', '--comment-uploader-border', '--comment-user', '--comment-user-self', '--comment-text', '--comment-meta', '--comment-input-bg',
+  '--tag-panel-bg', '--tag-artist', '--tag-parody', '--tag-category', '--tag-character', '--tag-female', '--tag-male', '--tag-mixed', '--tag-other',
+  '--tag-group', '--tag-series', '--tag-language', '--tag-uploader', '--tag-date-added', '--tag-timestamp', '--tag-source', '--tag-general',
 ];
 
 function normalizeHex(value, fallback) {
@@ -206,102 +204,87 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
   const secondary = ensureReadable(normalized.secondary, surface1, dark ? 3.2 : 4.5);
   const accentStrong = ensureReadable(dark ? mixHex(accent, '#ffffff', 0.2) : mixHex(accent, '#000000', 0.2), surface1, dark ? 3.2 : 4.5);
   const secondaryStrong = ensureReadable(dark ? mixHex(secondary, '#ffffff', 0.2) : mixHex(secondary, '#000000', 0.2), surface1, dark ? 3.2 : 4.5);
-  const textMain = dark ? '#e8eef7' : '#282522';
-  const textSub = dark ? '#a7b1c2' : '#625c54';
-  const border = dark ? mixHex(canvas, '#8ba6c7', 0.28) : mixHex(canvas, '#6d6254', 0.25);
+  const textMain = dark ? '#eeeae0' : '#282724';
+  const textSub = dark ? '#c6c0b4' : '#756f66';
+  const border = dark ? mixHex(canvas, '#a49b89', 0.24) : mixHex(canvas, '#6d6254', 0.25);
   const borderHover = dark ? mixHex(border, accent, 0.45) : mixHex(border, accent, 0.45);
   const accentSoft = dark ? mixHex(surface1, accent, 0.25) : mixHex(surface1, accent, 0.16);
   const secondarySoft = dark ? mixHex(surface1, secondary, 0.24) : mixHex(surface1, secondary, 0.15);
-  const good = dark ? '#7bd2a0' : '#4f7042';
-  const danger = dark ? '#f08b8b' : '#a83b31';
-  const accentContrast = luminance(accent) > 0.42 ? '#171a20' : '#fffdf8';
-  const dangerContrast = luminance(danger) > 0.42 ? '#171a20' : '#fffdf8';
-  const commentCardBg = dark ? mixHex(surface2, secondary, 0.04) : mixHex(surface1, secondary, 0.08);
-  const commentHeaderBg = dark ? mixHex(canvas, secondary, 0.04) : mixHex(surface2, secondary, 0.1);
-  const commentBorder = dark ? mixHex(border, secondary, 0.32) : mixHex(border, secondary, 0.42);
-  const commentContentBg = dark ? mixHex(commentCardBg, '#ffffff', 0.018) : mixHex(commentCardBg, '#ffffff', 0.35);
-  const commentMeta = dark ? mixHex(textSub, secondary, 0.08) : mixHex(textSub, secondary, 0.12);
-  const commentUploaderBg = dark ? mixHex(surface2, secondary, 0.08) : mixHex(surface1, secondary, 0.16);
-
+  const good = dark ? '#8e9a69' : '#66734a';
+  const goodStrong = ensureReadable(dark ? mixHex(good, '#ffffff', 0.2) : mixHex(good, '#000000', 0.2), surface1, dark ? 3.2 : 4.5);
+  const goodSoft = dark ? mixHex(surface1, good, 0.24) : mixHex(surface1, good, 0.15);
+  const danger = dark ? '#d96b62' : '#a93f35';
+  const accentContrast = luminance(accent) > 0.42 ? '#171815' : '#fffaf2';
+  const dangerContrast = luminance(danger) > 0.42 ? '#171815' : '#fffaf2';
   return {
-    '--bg-color': canvas,
-    '--page-bg': canvas,
-    '--surface-1': surface1,
-    '--surface-2': surface2,
-    '--surface-3': surface3,
+    '--canvas': canvas,
+    '--surface': surface1,
+    '--surface-subtle': surface2,
+    '--surface-raised': surface3,
+    '--surface-hover': dark ? mixHex(surface2, '#ffffff', 0.1) : mixHex(surface2, '#000000', 0.04),
     '--surface-inset': mixHex(surface1, surface2, 0.52),
-    '--glass-bg': surface1,
-    '--glass-border': border,
-    '--glass-border-hover': borderHover,
+    '--text-primary': textMain,
+    '--text-secondary': textSub,
+    '--text-muted': dark ? '#858176' : '#948d82',
+    '--border-subtle': border,
+    '--border-strong': borderHover,
+    '--secondary': secondary,
+    '--secondary-strong': secondaryStrong,
+    '--secondary-soft': secondarySoft,
+    '--positive': good,
+    '--positive-strong': goodStrong,
+    '--positive-soft': goodSoft,
+    '--warning': dark ? '#d4a75d' : '#95631f',
+    '--warning-soft': dark ? '#382e1d' : '#f4ead6',
+    '--danger': danger,
+    '--danger-soft': mixHex(surface1, danger, dark ? 0.2 : 0.1),
+    '--focus-ring': accent,
+    '--overlay': dark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(28, 25, 21, 0.55)',
+    '--reader-stage': 'var(--surface-inset)',
     '--accent': accent,
     '--accent-strong': accentStrong,
     '--accent-soft': accentSoft,
     '--accent-contrast': accentContrast,
-    '--olive': secondary,
-    '--olive-strong': secondaryStrong,
-    '--olive-soft': secondarySoft,
-    '--good': good,
-    '--good-text': good,
-    '--good-surface': mixHex(surface1, good, dark ? 0.22 : 0.12),
-    '--good-border': mixHex(surface1, good, dark ? 0.5 : 0.36),
-    '--button-hover-bg': accentStrong,
-    '--danger-contrast': dangerContrast,
-    '--input-bg': surface1,
-    '--input-focus-bg': surface2,
-    '--placeholder': dark ? '#8190a6' : '#968e84',
-    '--card-bg': surface1,
-    '--cover-bg': surface3,
-    '--toolbar-bg': surface1,
-    '--dropdown-bg': surface1,
-    '--tag-panel-bg': surface1,
-    '--scrollbar-thumb': borderHover,
-    '--scrollbar-thumb-hover': accent,
-    '--reader-control-bg': surface1,
-    '--reader-control-hover-bg': surface2,
-    '--reader-control-border': border,
+    '--reader-toolbar-bg': surface1,
+    '--reader-control-bg': surface3,
+    '--reader-control-hover-bg': dark ? mixHex(surface3, '#ffffff', 0.1) : mixHex(surface3, '#000000', 0.04),
+    '--reader-control-border': borderHover,
+    '--reader-control-text': textMain,
+    '--reader-overlay-text': textMain,
+    '--reader-stage-border': border,
     '--reader-panel-bg': surface1,
     '--reader-skeleton-base': surface2,
     '--reader-skeleton-highlight': surface3,
-    '--comment-card-bg': commentCardBg,
-    '--comment-card-border': commentBorder,
-    '--comment-header-bg': commentHeaderBg,
-    '--comment-body-bg': commentCardBg,
-    '--comment-content-bg': commentContentBg,
-    '--comment-content-border': mixHex(commentBorder, secondary, 0.2),
-    '--comment-meta-bg': dark ? mixHex(canvas, secondary, 0.08) : mixHex(surface2, secondary, 0.08),
-    '--comment-positive-bg': mixHex(surface1, good, dark ? 0.18 : 0.1),
-    '--comment-positive-border': mixHex(surface1, good, dark ? 0.48 : 0.32),
-    '--comment-negative-bg': mixHex(surface1, danger, dark ? 0.2 : 0.1),
-    '--comment-negative-border': mixHex(surface1, danger, dark ? 0.5 : 0.34),
-    '--comment-input-bg': surface1,
+    '--comment-header-bg': surface1,
+    '--comment-content-bg': surface2,
+    '--comment-card-bg': surface3,
+    '--comment-card-border': borderHover,
     '--comment-positive': good,
     '--comment-negative': danger,
-    '--comment-uploader-bg': commentUploaderBg,
-    '--comment-uploader-border': dark ? mixHex(secondary, border, 0.35) : secondary,
+    '--comment-uploader-bg': secondarySoft,
+    '--comment-uploader-border': secondaryStrong,
     '--comment-user': accentStrong,
-    '--comment-user-self': good,
+    '--comment-user-self': secondaryStrong,
     '--comment-text': textMain,
-    '--comment-meta': commentMeta,
-    '--tag-artist': accent,
-    '--tag-parody': accentStrong,
+    '--comment-meta': textSub,
+    '--comment-input-bg': surface1,
+    '--tag-panel-bg': surface1,
+    '--tag-artist': accentStrong,
+    '--tag-parody': accent,
     '--tag-category': secondary,
-    '--tag-character': good,
+    '--tag-character': secondaryStrong,
     '--tag-female': danger,
-    '--tag-male': accent,
+    '--tag-male': accentStrong,
     '--tag-mixed': secondaryStrong,
     '--tag-other': textSub,
     '--tag-group': secondaryStrong,
-    '--tag-series': accentStrong,
-    '--tag-language': good,
+    '--tag-series': accent,
+    '--tag-language': secondary,
     '--tag-uploader': secondary,
     '--tag-date-added': textSub,
     '--tag-timestamp': textSub,
     '--tag-source': secondary,
     '--tag-general': textSub,
-    '--text-main': textMain,
-    '--text-sub': textSub,
-    '--text-muted': dark ? '#8190a6' : '#8a8278',
-    '--reader-control-text': textMain,
   };
 }
 
@@ -364,7 +347,7 @@ export function applyThemeMode(mode, options = {}) {
   const customTokens = applyThemePalette(palette, { root, resolvedTheme: resolved });
   const document = root?.ownerDocument || globalThis.document;
   const themeColor = document?.querySelector?.('[data-theme-color]');
-  themeColor?.setAttribute('content', customTokens?.['--page-bg'] || THEME_COLORS[resolved] || THEME_COLORS.dark);
+  themeColor?.setAttribute('content', customTokens?.['--canvas'] || THEME_COLORS[resolved] || THEME_COLORS.dark);
   return resolved;
 }
 

@@ -72,16 +72,16 @@ test('random roam skeletons fill the carousel and match archive card geometry', 
   assert.match(home, /flex: `0 0 \$\{ARCHIVE_CARD_WIDTH\}px`/);
   assert.match(home, /width: `\$\{ARCHIVE_CARD_WIDTH\}px`/);
   assert.match(home, /minWidth: `\$\{ARCHIVE_CARD_WIDTH\}px`/);
-  assert.match(home, /boxSizing: 'border-box'/);
+  assert.match(home, /className="home-skeleton-card"/);
   assert.match(home, /height: `\$\{ARCHIVE_CARD_COVER_HEIGHT\}px`/);
-  assert.match(home, /marginTop: `\$\{ARCHIVE_CARD_TITLE_GAP\}px`, height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
-  assert.match(home, /height: `\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`, marginTop: `\$\{ARCHIVE_CARD_META_GAP\}px`/);
+  assert.match(home, /className="home-skeleton-title" style=\{\{[\s\S]*marginTop: `\$\{ARCHIVE_CARD_TITLE_GAP\}px`[\s\S]*height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.match(home, /className="home-skeleton-meta" style=\{\{[\s\S]*height: `\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`[\s\S]*marginTop: `\$\{ARCHIVE_CARD_META_GAP\}px`/);
   assert.equal((home.match(/Array\.from\(\{ length: randomSkeletonCount \}\)/g) || []).length, 2);
   assert.doesNotMatch(home, /fillWidth/);
   assert.doesNotMatch(home, /Array\.from\(\{ length: 5 \}\)/);
   assert.doesNotMatch(home, /Math\.max\(5, Math\.min\(8, randoms\.length \|\| 5\)\)/);
   assert.match(card, /height: `\$\{ARCHIVE_CARD_COVER_HEIGHT\}px`/);
-  assert.match(card, /height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.doesNotMatch(card, /height: `\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
   assert.match(card, /minWidth: isWide \? `\$\{wideCardWidth\}px` : `\$\{ARCHIVE_CARD_WIDTH\}px`/);
   assert.match(card, /width: isWide \? `\$\{wideCardWidth\}px` : `\$\{ARCHIVE_CARD_WIDTH\}px`/);
 });
@@ -117,34 +117,36 @@ test('global UI copy and selection styles use the archive terminology consistent
   assert.match(css, /body\s*\{[^}]*user-select:\s*none;/s);
   assert.match(css, /input,[\s\S]*textarea,[\s\S]*\[contenteditable="true"\][^{]*\{[^}]*user-select:\s*text;/s);
   assert.match(metadata, /className="metadata-field-label">标签</);
-  assert.match(css, /\.metadata-field-label\s*\{[^}]*font-weight:\s*650;/s);
+  assert.match(css, /\.metadata-field-label\s*\{[^}]*font-weight:\s*var\(--font-weight-semibold\);/s);
   assert.match(home, /style=\{\{ flex:\s*'1\.35 1 0'/);
   assert.doesNotMatch(home, /全部归档|待看归档|上传归档|重复归档检测/);
 });
 
 test('calm editorial theme replaces blue-gray light surfaces with paper, graphite, olive, and vermilion tokens', () => {
-  const css = read('src/index.css');
-  const lightTheme = css.match(/:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+  const css = read('src/styles/tokens.css');
+  const lightTheme = css.match(/:root\[data-theme="light"\]\s*\{([\s\S]*?)\n\s*\}/)?.[1] || '';
 
-  assert.match(lightTheme, /--page-bg:\s*#f4f0e8/i);
-  assert.match(lightTheme, /--surface-1:\s*#fffdf8/i);
-  assert.match(lightTheme, /--text-main:\s*#282522/i);
-  assert.match(lightTheme, /--accent:\s*#b74632/i);
-  assert.match(lightTheme, /--olive:\s*#70784f/i);
-  assert.match(lightTheme, /--card-bg:\s*#fffdf8/i);
+  assert.match(lightTheme, /--canvas:\s*#f2efe8/i);
+  assert.match(lightTheme, /--surface:\s*#fcfaf5/i);
+  assert.match(lightTheme, /--text-primary:\s*#282724/i);
+  assert.match(lightTheme, /--accent:\s*#b84a38/i);
+  assert.match(lightTheme, /--positive:\s*#66734a/i);
+  assert.match(lightTheme, /--surface-raised:\s*#ffffff/i);
   assert.doesNotMatch(lightTheme, /linear-gradient/i);
   assert.doesNotMatch(lightTheme, /#(?:2563eb|1d4ed8|d8e1eb|f4f7fb)/i);
 });
 
 test('calm editorial surfaces are flat by default and use restrained shape hierarchy', () => {
   const css = read('src/index.css');
+  const tokens = read('src/styles/tokens.css');
+  const primitives = read('src/styles/primitives.css');
   const cardRule = css.match(/\.archive-card-shell\s*\{([^}]*)\}/)?.[1] || '';
-  assert.match(css, /--radius-panel:\s*12px/);
-  assert.match(css, /--radius-control:\s*7px/);
-  assert.match(css, /\.glass-panel\s*\{[\s\S]*?background:\s*var\(--surface-1\);[\s\S]*?backdrop-filter:\s*none;/);
-  assert.match(css, /\.btn:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
+  assert.match(tokens, /--radius-md:\s*8px/);
+  assert.match(tokens, /--radius-sm:\s*6px/);
+  assert.match(css, /\.glass-panel\s*\{[\s\S]*?background:\s*var\(--surface\);[\s\S]*?backdrop-filter:\s*none;/);
+  assert.match(primitives, /\.btn:focus-visible[^}]*outline:\s*2px solid var\(--accent\)/);
   assert.match(css, /\.input-glass:focus-visible[\s\S]*outline:\s*2px solid var\(--accent\)/);
-  assert.match(cardRule, /background:\s*var\(--card-bg\)/);
+  assert.match(cardRule, /background:\s*var\(--surface\)/);
   assert.doesNotMatch(cardRule, /background:\s*linear-gradient/);
 });
 
@@ -194,19 +196,47 @@ test('home lazy route keeps archive skeleton visible during chunk loading', () =
   const css = read('src/index.css');
   assert.match(app, /function HomeRouteFallback\(\)[\s\S]*className="home-route-fallback"/);
   assert.match(app, /className="home-route-fallback-grid"/);
+  assert.match(app, /className="home-route-fallback-action home-route-fallback-theme-action shimmer-strip"/);
+  assert.match(css, /\.home-route-fallback-theme-action\s*\{[^}]*width:\s*32px;/s);
   assert.match(app, /function getRouteFallback\(route\)[\s\S]*case 'home':[\s\S]*<HomeRouteFallback \/>/);
-  assert.match(app, /case 'reader':[\s\S]*<ReaderRouteFallback \/>/);
+  assert.match(app, /case 'reader':[\s\S]*<AppRouteFallback \/>/);
   assert.match(app, /case 'metadata':[\s\S]*<MetadataRouteFallback \/>/);
   assert.match(app, /case 'history':[\s\S]*<ArchiveListRouteFallback title="阅读历史" \/>/);
   assert.match(app, /case 'watchlist':[\s\S]*<ArchiveListRouteFallback title="待看档案" \/>/);
   assert.match(app, /case 'dedupe':[\s\S]*<DedupeRouteFallback \/>/);
   assert.match(app, /case 'upload':[\s\S]*<UploadRouteFallback \/>/);
   assert.match(app, /<Suspense fallback=\{getRouteFallback\(route\)\}>/);
-  assert.match(app, /function ReaderRouteFallback\(\)[\s\S]*reader-route-fallback-stage-frame reader-stage-frame[\s\S]*reader-route-fallback-slot reader-stage-slot[\s\S]*reader-route-fallback-nav-row/);
-  assert.match(css, /\.reader-route-fallback-stage-layout\s*\{[\s\S]*max-width:\s*1300px;[\s\S]*padding:\s*24px 16px 0;/);
-  assert.match(css, /\.reader-route-fallback-stage-frame\s*\{[\s\S]*max-width:\s*850px;[\s\S]*height:\s*min\(calc\(100dvh - var\(--reader-route-toolbar-height\) - 24px - var\(--reader-route-nav-row-height\)\), calc\(\(100vw - 32px\) \* 2\)\);/);
-  assert.match(css, /\.reader-route-fallback-nav-row\s*\{[\s\S]*min-height:\s*var\(--reader-route-nav-row-height\);/);
-  assert.match(css, /@media \(max-width: 600px\)[\s\S]*\.reader-route-fallback\s*\{[\s\S]*--reader-route-nav-row-height:\s*92px;/);
+  assert.doesNotMatch(app, /ReaderRouteFallback|reader-route-fallback/);
+  assert.doesNotMatch(css, /reader-route-fallback/);
+});
+
+test('archive search preset menu animates out before unmounting', () => {
+  const search = read('src/components/ArchiveSearchBox.jsx');
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  for (const source of [search, home]) {
+    assert.match(source, /const presetMenuRef = useRef\(null\)/);
+    assert.match(source, /const presetToggleRef = useRef\(null\)/);
+    assert.match(source, /const \[presetsClosing, setPresetsClosing\] = useState\(false\)/);
+    assert.match(source, /const requestPresetMenuClose = useCallback\(\(\) => \{/);
+    assert.match(source, /setPresetsClosing\(true\)/);
+    assert.match(source, /const handlePresetMenuAnimationEnd = useCallback\(\(event\) => \{/);
+    assert.match(source, /event\.target !== event\.currentTarget/);
+    assert.match(source, /presetMenuRef\.current\?\.contains\(event\.target\)/);
+    assert.match(source, /presetToggleRef\.current\?\.contains\(event\.target\)/);
+    assert.match(source, /document\.addEventListener\('pointerdown', close/);
+    assert.match(source, /document\.addEventListener\('focusin', close/);
+    assert.match(source, /document\.addEventListener\('keydown', close/);
+    assert.match(source, /event\.type === 'keydown'/);
+    assert.match(source, /event\.key === 'Escape'/);
+    assert.match(source, /setShowPresets\(false\)/);
+    assert.match(source, /is-closing/);
+    assert.match(source, /onAnimationEnd=\{handlePresetMenuAnimationEnd\}/);
+    assert.match(source, /aria-hidden=\{presetsClosing\}/);
+  }
+  assert.match(css, /@keyframes presetMenuExit/);
+  assert.match(css, /\.archive-search-presets\.is-closing\s*\{[^}]*animation:\s*presetMenuExit 140ms[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.archive-search-presets\.is-closing[^}]*animation-duration:\s*1ms;/s);
 });
 
 test('history and watchlist keep skeletons while async local state hydrates', () => {
@@ -221,6 +251,15 @@ test('history and watchlist keep skeletons while async local state hydrates', ()
   assert.match(watchlist, /<ArchiveListLoadingGrid count=\{8\} displayMode=\{archiveDisplayMode\}/);
   assert.match(css, /\.archive-list-loading-grid\s*\{/);
   assert.match(css, /\.archive-list-loading-card\s*\{/);
+  for (const source of [history, watchlist]) {
+    assert.match(source, /archive-list-loading-card\$\{displayMode === 'compact' \? ' is-compact' : ''\}/);
+    for (const slot of ['title', 'progress', 'date', 'author', 'tags']) {
+      assert.match(source, new RegExp(`archive-list-loading-${slot}`));
+    }
+  }
+  assert.match(css, /\.archive-list-loading-card\.is-compact\s*\{[^}]*width:\s*100%;[^}]*min-height:\s*48px;[^}]*padding:\s*8px 14px;/s);
+  assert.match(css, /\.archive-list-loading-card\.is-compact\s*\{[^}]*grid-template-columns:\s*minmax\(0, 2\.5fr\) minmax\(54px, 0\.45fr\) minmax\(104px, 0\.75fr\) minmax\(130px, 1fr\) minmax\(220px, 2fr\)/s);
+  assert.match(css, /@media \(max-width:\s*680px\)[\s\S]*\.archive-list-loading-card\.is-compact\s*\{[^}]*grid-template-areas:\s*"title progress" "date author" "tags tags"/s);
 });
 
 test('history and watchlist narrow actions fill wrapped rows and use shared summary radius', () => {
@@ -229,13 +268,13 @@ test('history and watchlist narrow actions fill wrapped rows and use shared summ
   const css = read('src/index.css');
   const narrowCss = css.slice(css.lastIndexOf('@media (max-width: 600px)'), css.indexOf('@media (hover: none)'));
 
-  assert.match(history, /className="history-page"/);
-  assert.match(watchlist, /className="history-page watchlist-page"/);
+  assert.match(history, /className="history-page page-workspace"/);
+  assert.match(watchlist, /className="history-page watchlist-page page-workspace"/);
   assert.match(narrowCss, /\.history-page-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
   assert.match(narrowCss, /\.history-page-actions\s*\{[\s\S]*?justify-content:\s*flex-start;/);
   assert.match(narrowCss, /\.history-page-actions \.btn\s*\{[\s\S]*?flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);/);
   assert.match(narrowCss, /\.history-page-actions \.btn\s*\{[\s\S]*?min-width:\s*max-content;/);
-  assert.match(css, /\.history-page-summary\s*\{[\s\S]*?border-radius:\s*var\(--radius-chip\);/);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*?border-radius:\s*var\(--radius-xs\);/);
 });
 
 test('skeleton shimmer keeps a stable base fill and recommendation placeholders use shared classes', () => {
@@ -243,7 +282,7 @@ test('skeleton shimmer keeps a stable base fill and recommendation placeholders 
   const css = read('src/index.css');
   assert.match(css, /\.shimmer-strip\s*\{[^}]*background-color:\s*var\(--reader-skeleton-base\);[^}]*background-image:\s*linear-gradient/s);
   assert.match(css, /\.shimmer-strip\s*\{[^}]*background-repeat:\s*no-repeat;/s);
-  assert.match(css, /:root\[data-theme="light"\] \.shimmer-strip\s*\{[^}]*background-image:\s*linear-gradient/s);
+  assert.match(css, /html\[data-theme="light"\] \.shimmer-strip\s*\{[^}]*background-image:\s*linear-gradient/s);
   assert.match(recommendations, /className="recommendation-loading-card"/);
   assert.match(recommendations, /className="recommendation-loading-cover shimmer-strip"/);
   assert.match(css, /\.recommendation-loading-card\s*\{[^}]*flex:\s*0 0 150px;[^}]*contain:\s*layout paint style;/s);
@@ -252,26 +291,40 @@ test('skeleton shimmer keeps a stable base fill and recommendation placeholders 
 });
 
 test('metadata error statuses dismiss automatically', () => {
-  const page = read('src/pages/MetadataPage.jsx');
+  const toast = read('src/components/Toast.jsx');
   const css = read('src/index.css');
-  assert.match(page, /TOAST_DURATION_MS = 3600/);
-  assert.match(page, /TOAST_ERROR_DURATION_MS = 7000/);
-  assert.match(page, /const \[toasts, setToasts\] = useState\(\[\]\)/);
-  assert.match(page, /setToasts\(current => \[\.\.\.current, \{ id, text, type, closing: false, autoHide, duration \}\]\)/);
-  assert.match(page, /setTimeout\(\(\) => closeStatus\(id\), duration\)/);
-  assert.match(page, /className="metadata-toast-stack"/);
-  assert.doesNotMatch(page, /className="metadata-status-wrap"/);
-  assert.match(page, /className="metadata-status-progress"/);
-  assert.match(css, /\.metadata-toast-stack\s*\{[^}]*position:\s*fixed;[^}]*left:\s*max\(16px, calc\(var\(--app-safe-area-left\) \+ 16px\)\)/s);
-  assert.match(css, /@keyframes metadata-status-enter/);
-  assert.match(css, /@keyframes metadata-status-exit/);
-  assert.match(css, /@keyframes metadata-status-progress[\s\S]*scaleX\(0\)/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.metadata-toast-stack[\s\S]*?\.metadata-status-progress[\s\S]*?animation:\s*none\s*!important/);
+  assert.match(toast, /TOAST_DURATION_MS = 3600/);
+  assert.match(toast, /TOAST_ERROR_DURATION_MS = 7000/);
+  assert.match(toast, /setToasts\(\(current\) => \[\.\.\.current, \{ id, text: message, type, closing: false, autoHide, duration: toastDuration \}\]\)/);
+  assert.match(toast, /setTimeout\(\(\) => closeToast\(id\), toastDuration\)/);
+  assert.match(toast, /className="toast-progress"/);
+  assert.match(css, /\.toast-stack\s*\{[^}]*position:\s*fixed;[^}]*left:\s*max\(16px, calc\(var\(--app-safe-area-left\) \+ 16px\)\)/s);
+  assert.match(css, /@keyframes toast-enter/);
+  assert.match(css, /@keyframes toast-exit/);
+  assert.match(css, /@keyframes toast-progress[\s\S]*scaleX\(0\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toast-stack[\s\S]*?\.toast-progress[\s\S]*?animation:\s*none\s*!important/);
+});
+
+test('task4 recommendations keep stateful presentation in semantic classes', () => {
+  const app = read('src/App.jsx');
+  const search = read('src/components/ArchiveSearchBox.jsx');
+  const recommendations = read('src/components/Recommendations.jsx');
+  const pages = read('src/styles/pages.css');
+
+  for (const source of [app, search, recommendations]) {
+    assert.doesNotMatch(source, /className="(?:input-glass|glass-panel)\b/);
+    assert.doesNotMatch(source, /className="btn"(?:\s|>)/);
+    assert.doesNotMatch(source, /style=\{\{/);
+  }
+  assert.match(recommendations, /recommendation-panel\$\{collapsed \? ' is-collapsed' : ''\}/);
+  assert.match(recommendations, /recommendation-content\$\{loading \? ' is-loading' : ''\}/);
+  assert.match(pages, /\.recommendation-panel\.is-collapsed\s*\{[^}]*max-height:\s*46px/);
+  assert.match(pages, /\.recommendation-content\.is-loading\s*\{[^}]*padding:\s*4px 0/);
 });
 
 test('metadata status cards contain long plugin messages', () => {
   const css = read('src/index.css');
-  assert.match(css, /\.metadata-status-card\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(css, /\.toast-card\s*\{[^}]*box-sizing:\s*border-box;[^}]*overflow-wrap:\s*anywhere;/s);
 });
 
 test('metadata plugins merge returned title, summary, and tags into the editable form', () => {
@@ -303,7 +356,7 @@ test('metadata tag entry rejects an already attached tag without hiding its sugg
   assert.doesNotMatch(suggestions, /excludeTags|excludedTagKeys/);
   assert.match(page, /const incomingTags = parseTags\(value\)/);
   assert.match(page, /nextTags\.length === form\.tags\.length/);
-  assert.match(page, /showStatus\(`标签已存在：\$\{incomingTags\[0\]\}`, 'error'\)/);
+  assert.match(page, /showToast\(`标签已存在：\$\{incomingTags\[0\]\}`, 'error'\)/);
 });
 
 test('metadata save updates visible archive state and writes metadata cache immediately', () => {
@@ -333,12 +386,71 @@ test('upload result rows keep a stable one-line status layout', () => {
   assert.match(css, /\.upload-task-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
   assert.match(css, /\.upload-task-row\s*\{[^}]*min-height:\s*40px;/s);
   assert.doesNotMatch(css, /\.upload-status-text/);
-  assert.match(css, /\.upload-status-dot\.is-queued\s*\{[^}]*background:\s*var\(--text-sub\)/s);
+  assert.match(css, /\.upload-status-dot\.is-queued\s*\{[^}]*background:\s*var\(--text-secondary\)/s);
   assert.match(css, /\.upload-status-dot\.is-running\s*\{[^}]*background:\s*var\(--accent\)/s);
-  assert.match(css, /\.upload-status-dot\.is-success\s*\{[^}]*background:\s*var\(--good\)/s);
+  assert.match(css, /\.upload-status-dot\.is-success\s*\{[^}]*background:\s*var\(--positive\)/s);
   assert.match(css, /\.upload-status-dot\.is-failed\s*\{[^}]*background:\s*var\(--danger\)/s);
-  assert.match(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--glass-border\)/s);
+  assert.match(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--border-subtle\)/s);
   assert.doesNotMatch(css, /\.upload-title-icon\s*\{[^}]*border-color:\s*var\(--danger-border\)/s);
+});
+
+test('transient notifications use the shared toast module', () => {
+  const toast = read('src/components/Toast.jsx');
+  const main = read('src/main.jsx');
+  const metadata = read('src/pages/MetadataPage.jsx');
+  const home = read('src/pages/Home.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  const css = read('src/index.css');
+  assert.match(toast, /export function ToastProvider/);
+  assert.match(toast, /export function useToast/);
+  assert.match(toast, /className="toast-stack"/);
+  assert.match(main, /<ToastProvider>\s*<App \/>\s*<\/ToastProvider>/s);
+  assert.match(metadata, /useToast/);
+  assert.match(home, /useToast/);
+  assert.match(reader, /useToast/);
+  assert.doesNotMatch(metadata, /const \[toasts, setToasts\] = useState\(\[\]\)/);
+  assert.doesNotMatch(home, /const \[toasts, setToasts\] = useState\(\[\]\)/);
+  assert.doesNotMatch(reader, /const \[srToast, setSrToast\] = useState\(''\)/);
+  assert.doesNotMatch(home, /className="metadata-toast-stack"/);
+  assert.doesNotMatch(metadata, /className="metadata-toast-stack"/);
+  assert.doesNotMatch(reader, /className="metadata-toast-stack"/);
+  assert.match(css, /\.toast-stack\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*100002/s);
+  assert.match(css, /\.toast-card\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+});
+
+test('config export selects whole groups in one flat list', () => {
+  const dialog = read('src/components/ConfigExportDialog.jsx');
+  const css = read('src/index.css');
+  for (const title of [
+    '服务器地址与 API Key',
+    'Worker 端点与访问 Token',
+    'E-Hentai Cookie 与评论',
+    '阅读器、封面与档案显示',
+    '已读状态与筛选条件',
+    '主题与自定义配色',
+    '图片缓存上限',
+  ]) assert.match(dialog, new RegExp(`title: '${title}'`));
+  assert.match(dialog, /CONFIG_GROUPS\.map\(\(group\) => group\.title\)/);
+  assert.match(dialog, /CONFIG_GROUPS[\s\S]{0,80}\.filter\([\s\S]*\.flatMap\(\(group\) => group\.keys\.map\(\(\[key\]\) => key\)\)/);
+  assert.match(dialog, /CONFIG_GROUPS\.map\(\(group\) => \([\s\S]*label=\{group\.title\}/);
+  assert.doesNotMatch(dialog, /group\.keys\.map\(\(\[key, label\]\)/);
+  assert.doesNotMatch(dialog, /<fieldset|<legend/);
+  assert.match(css, /\.config-export-list\s*\{[^}]*border:/s);
+  assert.match(css, /\.config-export-item\s*\{[^}]*border-bottom:/s);
+  assert.doesNotMatch(css, /\.config-export-group\s*\{/);
+});
+
+test('reader setting hints escape the scroll container and participate in viewport collision sizing', () => {
+  const hint = read('src/components/SettingHint.jsx');
+  const css = read('src/index.css');
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(hint, /<Tooltip\.Portal>/);
+  assert.match(hint, /settings-hint-bubble-portal/);
+  assert.match(hint, /positionMethod="fixed"/);
+  assert.doesNotMatch(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*inline-size:\s*max-content;/s);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px, calc\(100vw - 32px\)\)/s);
+  assert.match(reader, /width: 'min\(440px, calc\(100vw - 32px\)\)'/);
 });
 
 test('upload modes share settings tabs, animate as equal-height layers, and auto-queue URLs', () => {
@@ -390,12 +502,10 @@ test('upload task rows animate on insert and before list clearing', () => {
 
 test('tag suggestion panel hides scrollbars without reserving a hidden gutter', () => {
   const suggestions = read('src/components/TagSuggest.jsx');
+  const primitives = read('src/styles/primitives.css');
   const css = read('src/index.css');
-  assert.match(suggestions, /className="dropdown-animate no-scrollbar tag-suggest-panel"/);
-  assert.match(suggestions, /scrollbarGutter:\s*'auto'/);
-  assert.match(suggestions, /overflowX:\s*'clip'/);
-  assert.match(suggestions, /contain:\s*'layout paint'/);
-  assert.match(suggestions, /paddingRight:\s*0/);
+  assert.match(suggestions, /className="dropdown-animate no-scrollbar tag-suggest-panel popover"/);
+  assert.match(primitives, /\.tag-suggest-panel\s*\{[^}]*scrollbar-gutter:\s*auto;[^}]*overflow-x:\s*clip;[^}]*contain:\s*layout paint;[^}]*padding-right:\s*0;/s);
   assert.match(css, /\.no-scrollbar\s*\{[^}]*scrollbar-gutter:\s*auto;/s);
 });
 
@@ -410,8 +520,13 @@ test('mobile settings panel clips horizontal overflow and keeps consistent scrol
 
 test('archive tag hover panels clip hidden scroll gutters and isolate scroll layout', () => {
   const card = read('src/components/ArchiveCard.jsx');
-  assert.match(card, /className="no-scrollbar archive-tag-panel archive-compact-tag-panel"[\s\S]*overflowY:\s*'auto',[\s\S]*overflowX:\s*'clip',[\s\S]*scrollbarGutter:\s*'auto',[\s\S]*contain:\s*'layout paint'/);
-  assert.match(card, /className="no-scrollbar archive-tag-panel"[\s\S]*overflowY:\s*'auto',[\s\S]*overflowX:\s*'clip',[\s\S]*scrollbarGutter:\s*'auto',[\s\S]*contain:\s*'layout paint'/);
+  const pages = read('src/styles/pages.css');
+  assert.match(card, /archive-tag-panel archive-compact-tag-panel/);
+  assert.match(card, /className=\{`no-scrollbar archive-tag-panel\$\{closing/);
+  for (const selector of ['.archive-tag-panel', '.archive-tag-group', '.archive-tag-group-row']) {
+    assert.match(pages, new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`));
+  }
+  assert.match(pages, /\.archive-tag-panel\s*\{[^}]*overflow-y:\s*auto;[^}]*overflow-x:\s*clip;[^}]*scrollbar-gutter:\s*auto;[^}]*contain:\s*layout paint;/s);
 });
 
 test('archive card grid avoids re-render churn for unchanged large result sets', () => {
@@ -540,12 +655,14 @@ test('dedupe date range uses an adaptive styled calendar instead of the native p
   assert.doesNotMatch(picker, /<select/);
   assert.match(picker, /2000 \+ index/);
   assert.doesNotMatch(picker, /1900 \+ index/);
-  assert.match(picker, /width: '126px', minWidth: '126px'/);
-  assert.match(picker, /width: '100px', minWidth: '100px'/);
+  assert.match(picker, /className="date-picker-year-select"/);
+  assert.match(picker, /className="date-picker-month-select"/);
   assert.match(picker, /event\?\.target\?\.closest\?\.\('\[data-select-dropdown="true"\]'\)/);
   assert.match(picker, /data-select-dropdown/);
   assert.match(css, /\.date-picker-trigger/);
   assert.match(css, /\.date-picker-popover/);
+  assert.match(read('src/styles/primitives.css'), /\.custom-select-root\.is-compact\.date-picker-year-select\s*\{[^}]*width:\s*126px;[^}]*min-width:\s*126px;/s);
+  assert.match(read('src/styles/primitives.css'), /\.custom-select-root\.is-compact\.date-picker-month-select\s*\{[^}]*width:\s*100px;[^}]*min-width:\s*100px;/s);
 });
 
 test('dedupe bulk group toggle lives below scan stats and its context menu stays compact', () => {
@@ -554,18 +671,19 @@ test('dedupe bulk group toggle lives below scan stats and its context menu stays
   const css = read('src/index.css');
   assert.match(page, /function StatsPanel\([\s\S]*aria-pressed=\{allGroupsSelected\}[\s\S]*全选分组/);
   assert.match(page, /<StatsPanel[\s\S]*allGroupsSelected=\{allGroupsSelected\}/);
+  assert.match(page, /onToggleAllGroups=\{\(\) => \{[\s\S]*setManuallyTouchedGroupKeys\(\(prev\) => new Set\(\[\.\.\.prev, \.\.\.allGroupKeys\]\)\)/);
   assert.match(page, /\['选中档案', selectedArchiveCount\]/);
   assert.match(page, /\['选中分组', selectedGroupCount\]/);
   assert.match(page, /function StatsPanel\([\s\S]*智能选择[\s\S]*>\s*执行\s*</);
   assert.doesNotMatch(page, />\s*删除选中\s*<|>\s*标记分组不重复\s*</);
   assert.match(page, /function DateRangePanel\([\s\S]*检测范围[\s\S]*>重置</);
-  assert.match(page, /<h2 style=\{\{ margin: 0, fontWeight: 800, fontSize: '16px'[^}]*\}\}>检测范围<\/h2>/);
+  assert.match(page, /<h2 style=\{\{ margin: 0, fontWeight: 'var\(--font-weight-bold\)', fontSize: 'var\(--font-size-lg\)'[^}]*\}\}>检测范围<\/h2>/);
   assert.doesNotMatch(page, /按档案入库日期筛选，默认范围包含全部档案/);
   assert.match(page, /function DateRangePanel\([\s\S]*\{running \? '处理中…' : '开始检测'\}/);
   assert.doesNotMatch(page, /<header[\s\S]*智能选择[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*开始检测[\s\S]*<\/header>/);
   assert.doesNotMatch(page, /<header[\s\S]*选择全部分组标记为不重复[\s\S]*<\/header>/);
-  assert.match(menu, /const width = 150/);
+  assert.match(menu, /<Menu\.Popup className="archive-context-menu dedupe-archive-context-menu/);
   assert.doesNotMatch(css, /\.dedupe-archive-context-menu\s*\{[^}]*width:\s*190px/);
 });
 
@@ -586,7 +704,7 @@ test('metadata navigation, races, and operations are guarded', () => {
 test('Reader recovery reacts to cache fallback and live direction/crop changes', () => {
   const source = read('src/pages/Reader.jsx');
   assert.match(source, /\[assetCacheOnly, currentIndex,[^\]]*settings\.direction,[^\]]*webtoonActive\]/);
-  assert.match(source, /\[applyZoomAtPoint, scheduleZoomTransform, settings\.direction, viewMode, webtoonActive\]/);
+  assert.match(source, /\[applyZoomAtPoint,[^\]]*scheduleZoomTransform, settings\.direction, viewMode, webtoonActive\]/);
   assert.match(source, /\[cropBorders, isReady, imgSrc\]/);
   assert.match(source, /keepalive: true/);
 });
@@ -596,15 +714,34 @@ test('Reader layouts share page order while normal and immersive renderers stay 
   assert.match(source, /buildReaderSpreads/);
   assert.match(source, /imgCurrSecondRef/);
   assert.match(source, /settings\.rotateWidePagesEnabled && wide/);
-  assert.match(source, /getContainedHalfFrame\(naturalSize, shellSize, cropSide\)/);
-  assert.match(source, /clipPath: cropSide === 'left' \? 'inset\(0 50% 0 0\)'/);
+  assert.match(source, /getContainedHalfFrame\(naturalSize, shellSize, cropSide, cropBorders \? cropInsets : undefined\)/);
+  assert.match(source, /clipPath: getBorderCropClipPath\(cropFrame\.clipInsets\)/);
   assert.match(source, /maxWidth: showRotate \? `\$\{shellSize\.height\}px`/);
+  assert.match(source, /cropInsets = detectImageBorderInsets\(decodedImage\)/);
+  assert.match(source, /storeCropInsets\(image, decoded\.image\)/);
+  assert.match(source, /image\.dataset\.cropInsets/);
+  assert.match(source, /settings\.cropBordersEnabled,[^\]]*settings\.rotateWidePagesEnabled/);
   assert.match(source, /resizeObserver = new ResizeObserver/);
   assert.match(source, /data-webtoon=\{webtoonActive \? 'true' : 'false'\}/);
   assert.match(source, /onMouseDown=\{webtoonActive \? undefined : handlePointerDown\}/);
   assert.match(source, /!webtoonActive && settings\.autoTurnActive/);
   assert.match(source, /settings\.autoTurnActive, currentIndex, splitPart, currentSpreadIndex/);
   assert.doesNotMatch(source, /splitWide=\{settings\.splitWidePagesEnabled\}/);
+});
+
+test('automatic border cropping is grouped with reading layout controls', () => {
+  const source = read('src/pages/Reader.jsx');
+  const generalPanel = source.slice(
+    source.indexOf('id="reader-settings-panel-general"'),
+    source.indexOf('{/* 阅读 */}'),
+  );
+  const readingPanel = source.slice(
+    source.indexOf('id="reader-settings-panel-reading"'),
+    source.indexOf('{/* 其他（含超分） */}'),
+  );
+  assert.doesNotMatch(generalPanel, /自动裁白边/);
+  assert.match(readingPanel, /自动裁白边/);
+  assert.ok(readingPanel.indexOf('自动裁白边') < readingPanel.indexOf('拆分宽页'));
 });
 
 test('Reader toolbar has three measured states and page commits preserve transient indicators', () => {
@@ -682,16 +819,219 @@ test('immersive Reader replaces its top toolbar with side-aware corner controls'
   assert.match(reader, /ToolbarGlyph name="close"/);
   assert.match(reader, /const immersiveDoublePageGap = Math\.min\(6,/);
   assert.match(reader, /getImmersiveSpreadSlotStyle/);
-  assert.match(css, /\.reader-immersive-controls\s*\{[^}]*bottom:\s*calc\(env\(safe-area-inset-bottom, 0px\) \+ 52px\);/s);
+  assert.match(css, /\.reader-immersive-controls\s*\{[^}]*bottom:\s*calc\(var\(--app-safe-area-bottom\) \+ 16px\);/s);
   assert.match(css, /\.reader-immersive-controls\[data-visible="true"\]/);
   assert.match(css, /cubic-bezier\(0\.34,\s*1\.56,\s*0\.64,\s*1\)/);
   assert.match(reader, /if \(showDrawer\) return;/);
   assert.match(reader, /onWheel=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(css, /\.reader-immersive-controls\[data-visible="true"\]\s+\.reader-immersive-control-button/);
   assert.match(css, /background:\s*var\(--reader-control-bg\)/);
-  assert.match(css, /\.reader-immersive-trigger\s*\{[^}]*width:\s*max\(32px,\s*7vw\);/s);
+  assert.match(css, /\.reader-immersive-trigger\s*\{[^}]*width:\s*clamp\(72px,\s*18vw,\s*160px\);/s);
   assert.match(reader, /\{\['left', 'right'\]\.map\(\(side\) => \(/);
   assert.match(reader, /data-visible=\{immersiveControlsSide === side \? 'true' : 'false'\}/);
+});
+
+test('auto turn controls report state changes through the shared toast', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const handleToggleAutoTurn = useCallback\(\(\) => \{[\s\S]*showToast\(next \? '已开启自动翻页' : '已停止自动翻页', 'info'\)/);
+  assert.match(reader, /onClick=\{handleToggleAutoTurn\}/);
+  assert.match(reader, /onClick=\{\(\) => \{ handleToggleAutoTurn\(\); revealImmersiveControls\(side\); \}\}/);
+  assert.match(reader, /settings\.autoTurnActive && !webtoonActive && pageReady/);
+  assert.doesNotMatch(reader, /settings\.autoTurnActive && viewMode === 'immersive'/);
+  assert.match(reader, /if \(viewMode !== 'immersive'\) \{[\s\S]{0,220}autoTurnActive: false/);
+});
+
+test('normal Reader navigation keeps auto-turn and super-resolution controls in its loading skeleton', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /data-reader-normal-navigation/);
+  assert.match(reader, /data-reader-nav-skeleton=\{!canNavigate \? 'true' : 'false'\}/);
+  assert.match(reader, /data-reader-nav-action="auto-turn"[\s\S]{0,500}settings\.autoTurnActive \? 'pause' : 'play'/);
+  assert.match(reader, /data-reader-nav-action="left"/);
+  assert.match(reader, /data-reader-nav-page-label/);
+  assert.match(reader, /data-reader-nav-action="right"/);
+  assert.match(reader, /data-reader-nav-action="super-resolution"[\s\S]{0,700}srArchiveEnabled \? 'superResolution' : 'superResolutionOff'/);
+});
+
+test('super-resolution reuses preload count and uses directional state glyphs', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const settings = read('src/lib/readerSettings.js');
+  const glyphs = read('src/components/AppGlyphs.jsx');
+  assert.doesNotMatch(reader, /预超分数量|srPreloadCount/);
+  assert.match(settings, /delete next\.srPreloadCount/);
+  assert.match(glyphs, /case 'superResolution':[\s\S]*?M5\.25 18\.75 18\.75 5\.25/);
+  assert.match(glyphs, /case 'superResolutionOff':[\s\S]*?M4\.5 4\.5 19\.5 19\.5/);
+  assert.doesNotMatch(glyphs, /case 'superResolution':[\s\S]*?stroke="var\(/);
+  assert.doesNotMatch(glyphs, /case 'superResolutionOff':[\s\S]*?stroke="var\(/);
+  assert.match(reader, /预超分页数与“预加载”数量一致/);
+  assert.match(reader, /value=\{settings\.srModel\}[\s\S]{0,300}disabled=\{!settings\.srEnabled\}/);
+  assert.match(reader, /label="自动启用超分"[^>]*disabled=\{!settings\.srEnabled\}/);
+  assert.match(reader, /value=\{srThresholdInput\}[\s\S]{0,300}disabled=\{!settings\.srEnabled\}/);
+});
+
+test('Reader model selector explains each super-resolution option', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const select = read('src/components/CustomSelect.jsx');
+
+  assert.match(reader, /<span className="settings-row-title">超分模型<\/span>/);
+  assert.doesNotMatch(reader, /<SettingHint text=\{srModel\?\.description/);
+  assert.match(select, /option\.description/);
+  assert.match(select, /SettingHint/);
+});
+
+test('Reader confirms archive super-resolution for oversized pages and keeps those pages original', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /currentPageTooLargeForSuperResolution/);
+  assert.match(reader, /图片过大、不适合超分时/);
+  assert.doesNotMatch(reader, /settings\.srEnabled && !currentPageTooLargeForSuperResolution/);
+  assert.match(reader, /open=\{srOversizedConfirmOpen\}[\s\S]{0,500}仍然启用/);
+  assert.match(reader, /currentPageTooLargeForSuperResolution && !allowOversized/);
+  assert.match(reader, /isSuperResolutionPageTooLarge\(size, srManifest\?\.scale\)/);
+});
+
+test('Reader gives visible super-resolution critical priority and preserves original fallback', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /createSuperResolutionRuntime\(\)/);
+  assert.match(reader, /runtime\.init\(srManifest\)/);
+  assert.match(reader, /processSuperResolutionImageSource\(src, \{/);
+  assert.match(reader, /sourceUrl = visibleSourceRef\.current;[\s\S]{0,500}processSuperResolutionImageSource/);
+  assert.match(reader, /commitPageImage\(originalResolved, originalDecoded,/);
+  assert.match(reader, /sourceUrl = visibleSourceRef\.current[\s\S]{0,500}processSuperResolutionImageSource/);
+  assert.match(reader, /commitImmersiveImage\(originalDecoded,[\s\S]{0,240}startSuperResolutionUpgrade/);
+  assert.match(reader, /keepAlive: true/);
+  assert.match(reader, /getForegroundSuperResolutionPageIndices\(\{/);
+  assert.match(reader, /activeSpread,[\s\S]{0,180}foregroundSuperResolutionPageIndices\.has\(pageIndex\)/);
+  assert.match(reader, /loadSpread\(\[imgLeftRef, imgLeftSecondRef\], leftSpread, IMAGE_LOAD_PRIORITY\.ADJACENT\)/);
+  assert.match(reader, /loadSpread\(\[imgRightRef, imgRightSecondRef\], rightSpread, IMAGE_LOAD_PRIORITY\.ADJACENT\)/);
+  assert.match(reader, /function getSuperResolutionForPage\(pageIndex, foreground = true\)/);
+  assert.match(reader, /superResolution=\{getSuperResolutionForPage\([\s\S]{0,100}foregroundSuperResolutionPageIndices\.has\(/);
+  assert.doesNotMatch(reader, /superResolution=\{getSuperResolutionForPage\(index\)\}/);
+  assert.match(reader, /readyPrecisionRef\.current\?\.startsWith\(`\$\{precision\}:`\)/);
+  assert.match(reader, /originalAlreadyReady && superResolution/);
+  assert.match(reader, /reader-webtoon-flow-immersive[\s\S]{0,1000}priority=\{index === currentIndex\s*\? IMAGE_LOAD_PRIORITY\.CRITICAL\s*:\s*\(Math\.abs\(index - currentIndex\) === 1\s*\? IMAGE_LOAD_PRIORITY\.ADJACENT\s*:\s*IMAGE_LOAD_PRIORITY\.PRELOAD\)\}/);
+  assert.match(reader, /fullPrecision: true,/);
+  assert.match(reader, /scheduleSuperResolutionUpgrade\([\s\S]{0,1800}priority,/);
+  assert.match(reader, /decodeTickets\.forEach\(\(ticket\) => ticket\.cancel\(\)\)/);
+});
+
+test('Reader pauses super-resolution during interaction without restarting completed tiles', () => {
+  const reader = read('src/pages/Reader.jsx');
+
+  assert.match(reader, /srRuntimeContext\.runtime\.pause\(\)/);
+  assert.match(reader, /runtime\.resume\(\)/);
+  assert.doesNotMatch(reader, /srInteractionGeneration/);
+  assert.match(reader, /cancelVisibleSuperResolutionJobs\(\);[\s\S]{0,120}runtime\.dispose\(\)/);
+});
+
+test('Reader snapshots do not persist immersive mode or image transforms', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.doesNotMatch(reader, /viewMode: viewModeSnapshotRef\.current/);
+  assert.doesNotMatch(reader, /showHeader:/);
+  assert.doesNotMatch(reader, /zoomScale: zoomScaleRef\.current/);
+  const snapshotCall = reader.match(/saveReaderSnapshot\(\{([\s\S]*?)\}\);/)?.[1] || '';
+  assert.doesNotMatch(snapshotCall, /(?:viewMode|zoomScale|panX|panY):/);
+  assert.match(reader, /const \[viewMode, setViewMode\] = useState\('normal'\)/);
+  assert.match(reader, /const \[zoomScale, setZoomScale\] = useState\(1\.0\)/);
+  assert.match(reader, /const \[panX, setPanX\] = useState\(0\)/);
+  assert.match(reader, /const \[panY, setPanY\] = useState\(0\)/);
+});
+
+test('Reader sequentially super-resolves future preload pages before previously read pages', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /import \{[^}]*putImage[^}]*\} from '\.\.\/lib\/imageCache';/s);
+  assert.match(reader, /getSuperResolutionCacheKey/);
+  assert.match(reader, /cacheKey:\s*getSuperResolutionCacheKey\(/);
+  assert.match(reader, /getCachedSource:\s*getCachedImage/);
+  assert.match(reader, /cacheResult:\s*putImage/);
+  assert.match(reader, /function scheduleSuperResolutionPreload/);
+  assert.match(reader, /super-resolution:\$\{cacheKey\}/);
+  assert.match(reader, /getSuperResolutionPreloadPageIndices\(\{/);
+  assert.match(reader, /for \(const pageIndex of \[\.\.\.forward, \.\.\.read\]\)/);
+  assert.match(reader, /activeTicket = scheduleSuperResolutionPreload/);
+  assert.match(reader, /await activeTicket\.promise/);
+});
+
+test('Reader preview decoding uses super-resolution output dimensions', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /sourceSize: (?:pendingSuperResolutionSource|pendingSource) \|\| sourceSize/);
+  assert.match(reader, /sourceSize: superResolutionSource,/);
+});
+
+test('Reader disposes immersive super-resolution URLs after image refs detach', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const immersiveSuperResolutionSourceRegistryRef = useRef\(new Set\(\)\)/);
+  assert.match(reader, /registry\?\.add\(source\)/);
+  assert.match(reader, /registry\?\.delete\(previous\)/);
+  assert.match(reader, /disposeImmersiveSuperResolutionSources\(immersiveSuperResolutionSourceRegistryRef\.current\)/);
+});
+
+test('Reader silently falls back for unsupported super-resolution images', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /resolveSuperResolutionFailure/);
+  assert.match(reader, /disableArchiveSuperResolution\(\)/);
+  assert.match(reader, /超分失败，已关闭并显示原图/);
+});
+
+test('Reader exits immersive mode without disabling super-resolution but stops auto turn', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const exitBody = reader.match(/const exitImmersiveMode = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[[^\]]*\]\);/)?.[1] || '';
+  assert.doesNotMatch(exitBody, /disableArchiveSuperResolution/);
+  assert.match(exitBody, /settings\.autoTurnActive/);
+  assert.match(exitBody, /autoTurnActive: false/);
+});
+
+test('automatic archive super-resolution is independent of Reader view mode', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const automaticEffect = reader.match(/\/\/ 自动超分：[\s\S]*?useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[[^\]]*\]\);/)?.[1] || '';
+  assert.match(automaticEffect, /resolveArchiveSuperResolutionState/);
+  assert.doesNotMatch(automaticEffect, /viewMode|immersive/);
+});
+
+test('super-resolution output dimensions never replace original page dimensions', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /if \(recordSourceSize\) onNaturalSize\?\.\(pageIndex, resolvedNaturalSize\);/);
+  assert.match(reader, /commitPageImage\(originalResolved, originalDecoded, null, `\$\{precision\}:original`, true, true\)/);
+  assert.match(reader, /commitImmersiveImage\(originalDecoded, `\$\{precision\}:original`, null, true\)/);
+});
+
+test('Reader queues a manual super-resolution enable while the runtime is still initializing', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /if \(next && !srRuntimeContext && srRuntimeError\)/);
+  assert.match(reader, /srArchiveManualRef\.current = \{[\s\S]*enabled: next/);
+  assert.match(reader, /超分模型仍在初始化，初始化完成后将自动启用。/);
+  assert.match(reader, /if \(!settings\.srEnabled\) \{\s*srArchiveManualRef\.current = null;/);
+  assert.match(reader, /srArchiveManualRef\.current = null;\s*setSrArchiveEnabled\(false\);/);
+});
+
+test('Waifu2x model is served locally and Real-CUGAN requires WebGPU', () => {
+  const sr = read('src/lib/superResolution.js');
+  const real = read('src/lib/realCugan.js');
+  assert.match(sr, /url: '\/models\/waifu2x-cunet-art-scale2x\/scale2x\.onnx'/);
+  assert.match(sr, /url: '\/models\/waifu2x-cunet-art-scale2x\/scale2x-fp16\.onnx'/);
+  assert.equal(fs.existsSync(new URL('../public/models/waifu2x-cunet-art-scale2x/scale2x-fp16.onnx', import.meta.url)), true);
+  assert.match(real, /tfjs-backend-webgpu/);
+  assert.doesNotMatch(real, /tfjs-backend-(?:webgl|wasm)/);
+});
+
+test('Reader retries FP32 once when the FP16 Waifu2x profile cannot initialize', () => {
+  const reader = read('src/pages/Reader.jsx');
+
+  assert.match(reader, /selectWaifu2xManifest/);
+  assert.match(reader, /selectWaifu2xManifest\(srSupport\.adapterInfo, srFailedProfileIds\)/);
+  assert.equal(reader.match(/shouldFallbackWaifu2xProfile\(\{ modelValue: srModel\?\.value, manifest: srManifest, adapterInfo: srSupport\.adapterInfo \}\)/g)?.length, 2);
+  assert.match(reader, /setSrFailedProfileIds/);
+});
+
+test('Reader resets zoom and pan whenever immersive mode is exited', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const exitImmersiveMode = useCallback\(\(\) => \{/);
+  assert.match(reader, /zoomScaleRef\.current = 1\.0;/);
+  assert.match(reader, /panRef\.current = \{ x: 0, y: 0, startX: 0, startY: 0, originX: 0, originY: 0 \};/);
+  assert.match(reader, /onClick=\{exitImmersiveMode\} title="退出沉浸模式"/);
+  assert.doesNotMatch(reader, /onClick=\{\(\) => \{ setViewMode\('normal'\); hideImmersiveControls\(\); \}\}/);
+  assert.match(reader, /resolveImmersivePinchScale\(rawScale\)/);
+  assert.match(reader, /applyZoomAtPoint\([\s\S]{0,180}false,\s*true,[\s\S]{0,20}\);/);
+  assert.match(reader, /if \(s > 3\.0\) target = 3\.0/);
+  assert.match(reader, /if \(s < 1\.0\) target = 1\.0/);
 });
 
 test('build and proxy hardening are reproducible', () => {
@@ -736,29 +1076,10 @@ test('Docker publish runs only when runtime image inputs change', () => {
 
 test('login import feedback stays outside the height-limited form and expires', () => {
   const app = read('src/App.jsx');
-  const css = read('src/index.css');
-  assert.match(app, /className="login-stack-notice"/);
-  assert.match(app, /setTimeout\(\(\) => setLoginNotice\(null\), 3000\)/);
-  assert.match(css, /\.login-stack-notice\s*\{[^}]*width:\s*100%/s);
-});
-
-test('archive grids use native flex wrapping with shared card sizing', () => {
-  const css = read('src/index.css');
-  const home = read('src/pages/Home.jsx');
-  const history = read('src/pages/HistoryPage.jsx');
-  const watchlist = read('src/pages/WatchlistPage.jsx');
-  const grid = read('src/components/ArchiveGrid.jsx');
-  const pagination = read('src/lib/archivePagination.js');
-  assert.match(css, /\.archive-grid\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*center;/s);
-  assert.match(css, /\.archive-grid\s*>\s*\.archive-card-wrap\.is-wide\s*\{[^}]*flex:\s*0\s+1\s+var\(--archive-wide-card-width,\s*316px\);[^}]*width:\s*min\(var\(--archive-wide-card-width,\s*316px\),\s*100%\);[^}]*max-width:\s*100%;/s);
-  assert.match(css, /\.archive-grid\s*>\s*\.archive-card-wrap\.is-wide\s*>\s*\.archive-card-shell\s*\{[^}]*width:\s*100%\s*!important;/s);
-  assert.doesNotMatch(css, /grid-auto-flow/);
-  assert.doesNotMatch(css, /grid-column:\s*span 2/);
-  assert.doesNotMatch(grid, /observeArchiveGridLayout/);
-  assert.doesNotMatch(pagination, /observeArchiveGridLayout/);
-  assert.match(home, /<ArchiveGrid/);
-  assert.match(history, /<ArchiveGrid/);
-  assert.match(watchlist, /<ArchiveGrid/);
+  const main = read('src/main.jsx');
+  assert.match(app, /showToast\(err\.message \|\| '无法连接到服务器/);
+  assert.match(app, /showToast\(`已导入 \$\{count\} 项配置`, 'success'\)/);
+  assert.match(main, /<ToastProvider>/);
 });
 
 test('home uses its 720px tablet breakpoint for archive spacing and pagination', () => {
@@ -774,27 +1095,28 @@ test('home uses its 720px tablet breakpoint for archive spacing and pagination',
 
 test('history page header has ordered narrow-screen layout hooks', () => {
   const css = read('src/index.css');
+  const historyTokens = read('src/styles/tokens.css');
   const history = read('src/pages/HistoryPage.jsx');
   const watchlist = read('src/pages/WatchlistPage.jsx');
 
-  assert.match(history, /className="history-page"/);
-  assert.match(history, /className="history-page-header"/);
+  assert.match(history, /className="history-page page-workspace"/);
+  assert.match(history, /className="history-page-header page-header"/);
   assert.match(history, /className="history-page-title-block"/);
   assert.match(history, /className="history-page-title-row"/);
-  assert.match(history, /className="history-section-header"/);
+  assert.match(history, /className="history-section-header archive-toolbar"/);
   assert.match(history, /className="history-section-actions"/);
   assert.match(history, /className="history-section-toolbar"/);
   assert.doesNotMatch(history, /className="history-hide-read-toggle"/);
   assert.doesNotMatch(history, /handleToggleHideRead|setHideRead\(/);
   assert.match(history, /className="history-summary-part"/);
   assert.match(history, /className="history-page-actions"/);
-  assert.ok(history.indexOf('className="history-page-title"') < history.indexOf('className="history-page-summary"'));
+  assert.ok(history.indexOf('className="history-page-title"') < history.indexOf('className="history-page-summary page-summary"'));
   assert.ok(history.indexOf('className="history-section-actions"') < history.indexOf('className="history-section-toolbar"'));
   assert.ok(history.indexOf('className="history-section-toolbar"') < history.indexOf('<ArchiveSearchBox'));
-  assert.match(watchlist, /className="history-page watchlist-page"/);
+  assert.match(watchlist, /className="history-page watchlist-page page-workspace"/);
   assert.match(watchlist, /className="history-page-title-row"/);
   assert.match(watchlist, /className="history-page-actions"/);
-  assert.match(watchlist, /className="history-section-header"/);
+  assert.match(watchlist, /className="history-section-header archive-toolbar"/);
   assert.match(watchlist, /className="history-section-actions"/);
   assert.match(css, /\.history-page-header\s*\{/);
   assert.match(css, /\.history-page-actions\s*\{/);
@@ -804,27 +1126,30 @@ test('history page header has ordered narrow-screen layout hooks', () => {
   assert.match(css, /\.history-section-toolbar\s*\{/);
   assert.match(css, /\.history-summary-part\s*\{/);
   assert.doesNotMatch(css, /\.history-hide-read-toggle/);
-  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-2\);[\s\S]*border:\s*1px solid var\(--glass-border\);[\s\S]*border-radius:\s*var\(--radius-chip\);/s);
+  assert.match(css, /\.history-page-summary\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*var\(--font-size-sm\);[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*var\(--font-weight-semibold\);[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*var\(--radius-xs\);/s);
+  assert.match(historyTokens, /--surface-subtle:/);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-header\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*align-items:\s*stretch;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-title-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*auto\)\s+minmax\(0,\s*1fr\);[\s\S]*align-items:\s*center;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-summary\s*\{[\s\S]*justify-self:\s*end;[\s\S]*text-align:\s*right;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-summary-part\s*\{[\s\S]*display:\s*block;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*justify-content:\s*flex-start;/s);
   assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-section-header\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
-  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions \.btn\s*\{[\s\S]*width:\s*auto;[\s\S]*flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);[\s\S]*font-size:\s*13px;[\s\S]*text-align:\s*center;/s);
+  assert.match(css, /@media \(max-width:\s*600px\)[\s\S]*\.history-page-actions \.btn\s*\{[\s\S]*width:\s*auto;[\s\S]*flex:\s*1 1 calc\(\(100% - 20px\) \/ 3\);[\s\S]*font-size:\s*var\(--font-size-body\);[\s\S]*text-align:\s*center;/s);
 });
 
 test('home archive toolbar count is styled and empty cold restore fetches archives', () => {
   const home = read('src/pages/Home.jsx');
   const css = read('src/index.css');
+  const pages = read('src/styles/pages.css');
 
   assert.match(home, /className="archive-count-badge"/);
   assert.match(home, /className="archive-toolbar-actions"/);
-  assert.match(home, /className="archive-toolbar-summary"[\s\S]*alignItems:\s*'center'/);
+  assert.match(home, /className="archive-toolbar-summary"/);
   assert.match(home, /const hasHydratedArchives = homeSnapshot && Array\.isArray\(homeSnapshot\.archives\) && homeSnapshot\.archives\.length > 0;/);
   assert.match(home, /if \(coldRestoreRef\.current && hasHydratedArchives\) return;/);
   assert.match(home, /if \(!archiveCatalogDirty && navigationRestoreRef\.current && hasHydratedArchives\)/);
-  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*'Noto Sans SC Variable', system-ui, sans-serif;[\s\S]*font-size:\s*12px;[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*520;[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-2\);[\s\S]*border:\s*1px solid var\(--glass-border\);[\s\S]*border-radius:\s*999px;/s);
+  assert.match(css, /\.archive-count-badge\s*\{[\s\S]*font-family:\s*inherit;[\s\S]*font-size:\s*var\(--font-size-sm\);[\s\S]*font-synthesis:\s*none;[\s\S]*font-variant-numeric:\s*tabular-nums;[\s\S]*font-weight:\s*var\(--font-weight-semibold\);[\s\S]*line-height:\s*1\.35;[\s\S]*background:\s*var\(--surface-subtle\);[\s\S]*border:\s*1px solid var\(--border-subtle\);[\s\S]*border-radius:\s*999px;/s);
+  assert.match(pages, /\.archive-toolbar-summary\s*\{[\s\S]*align-items:\s*center;/s);
   assert.match(css, /\.archive-toolbar-summary h2,[\s\S]*\.archive-toolbar-summary h2 > span\s*\{[\s\S]*white-space:\s*nowrap;/s);
 });
 
@@ -834,17 +1159,30 @@ test('archive title uses one cross-platform two-line geometry contract', () => {
   const workflow = read('.github/workflows/mobile-build.yml');
   assert.match(layout, /export const ARCHIVE_CARD_TITLE_GAP = 8;/);
   assert.match(layout, /export const ARCHIVE_CARD_TITLE_SLOT_HEIGHT = 43\.7;/);
-  assert.match(card, /const ARCHIVE_TITLE_FONT_SIZE = 13;/);
-  assert.match(card, /const ARCHIVE_TITLE_LINE_HEIGHT = 1\.5;/);
-  assert.match(card, /const ARCHIVE_TITLE_GLYPH_SAFETY_PX = 3;/);
-  assert.match(card, /height:\s*`\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
-  assert.match(card, /WebkitLineClamp:\s*2/);
-  assert.match(card, /height:\s*'3em'/);
-  assert.match(card, /paddingBottom:\s*`\$\{ARCHIVE_TITLE_GLYPH_SAFETY_PX\}px`/);
-  assert.match(card, /boxSizing:\s*'content-box'/);
+  assert.doesNotMatch(card, /height:\s*`\$\{ARCHIVE_CARD_TITLE_SLOT_HEIGHT\}px`/);
+  assert.doesNotMatch(card, /'--archive-title-font-size'|--archive-title-font-size/);
+  assert.doesNotMatch(card, /'--archive-title-line-height'|--archive-title-line-height/);
+  assert.doesNotMatch(card, /'--archive-title-glyph-safety'|--archive-title-glyph-safety/);
+  assert.doesNotMatch(card, /height:\s*`\$\{ARCHIVE_CARD_META_ROW_HEIGHT\}px`/);
+  assert.match(read('src/styles/pages.css'), /\.archive-title-slot\s*\{[^}]*height:\s*43\.7px;/s);
+  const pages = read('src/styles/pages.css');
+  assert.match(pages, /\.archive-title\s*\{[^}]*font-size:\s*var\(--font-size-body\);/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*line-height:\s*1\.5;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*-webkit-line-clamp:\s*2;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*height:\s*3em;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*padding-bottom:\s*3px;/s);
+  assert.match(pages, /\.archive-title\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(read('src/styles/pages.css'), /\.archive-card-meta\s*\{[^}]*height:\s*14\.85px;/s);
   assert.doesNotMatch(card, /document\.createRange\(\)/);
   assert.doesNotMatch(card, /titleLayoutIndex|titleMeasurementKeyRef|fontRevision/);
   assert.match(workflow, /getWebView\(\)\.getSettings\(\)\.setTextZoom\(100\)/);
+});
+
+test('long archive text wraps inside dialogs and operation feedback', () => {
+  const css = read('src/index.css');
+  assert.match(css, /\.confirm-dialog-title\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(css, /\.confirm-dialog-message\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(css, /\.dedupe-failure-message\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/s);
 });
 
 test('mobile wrapper sends system back through web history before exiting', () => {
@@ -882,16 +1220,18 @@ test('iOS wrapper sends the left-edge gesture through web history', () => {
 test('mobile settings respect safe areas and reveal animations release compositor layers', () => {
   const home = read('src/pages/Home.jsx');
   const css = read('src/index.css');
+  const primitives = read('src/styles/primitives.css');
   const customSelect = read('src/components/CustomSelect.jsx');
 
   assert.match(home, /className="settings-overlay"/);
-  assert.match(home, /className="glass-panel settings-panel"/);
+  assert.match(home, /className="surface settings-panel\b/);
   assert.match(css, /\.settings-panel\s*\{[^}]*max-height:\s*100%;/s);
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-top:\s*max\(24px,\s*calc\(var\(--app-safe-area-top\) \+ 16px\)\);/s);
   assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.settings-overlay\s*\{[\s\S]*padding-bottom:\s*max\(24px,\s*calc\(var\(--app-safe-area-bottom\) \+ 16px\)\);/s);
   assert.match(css, /\.settings-control\s*\{[^}]*flex:\s*0 0 148px;[^}]*width:\s*148px;/s);
-  assert.match(customSelect, /display:\s*'flex'[^}]*gap:\s*'8px'/s);
-  assert.match(customSelect, /<span style=\{\{[^}]*flex:\s*1[^}]*minWidth:\s*0[^}]*textOverflow:\s*'ellipsis'/s);
+  assert.match(customSelect, /className="field custom-select-trigger"/);
+  assert.match(primitives, /\.custom-select-trigger\s*\{[^}]*display:\s*flex;[^}]*gap:\s*8px;/s);
+  assert.match(primitives, /\.custom-select-value\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;[^}]*text-overflow:\s*ellipsis;/s);
   assert.match(css, /@keyframes sectionReveal\s*\{[\s\S]*to\s*\{[^}]*transform:\s*none;/s);
 });
 
@@ -904,7 +1244,7 @@ test('fullscreen application panels keep their controls outside system bars', ()
   assert.match(reader, /className="reader-thumbnail-drawer-overlay"/);
   assert.match(reader, /className="reader-panel-surface reader-thumbnail-drawer-panel"/);
   assert.match(reader, /data-side=\{drawerSide\}/);
-  assert.match(css, /--app-safe-area-top:\s*var\(--lrr-android-safe-top,\s*env\(safe-area-inset-top,\s*0px\)\);/);
+  assert.match(read('src/styles/tokens.css'), /--app-safe-area-top:\s*var\(--lrr-android-safe-top,\s*env\(safe-area-inset-top,\s*0px\)\);/);
   assert.match(css, /\.reader-thumbnail-drawer-panel\s*\{[^}]*padding-top:\s*calc\(24px \+ var\(--app-safe-area-top\)\);[^}]*padding-bottom:\s*calc\(24px \+ var\(--app-safe-area-bottom\)\);/s);
   assert.match(css, /\.reader-thumbnail-drawer-panel\[data-side="left"\]\s*\{[^}]*padding-left:\s*calc\(24px \+ var\(--app-safe-area-left\)\);/s);
   assert.match(css, /\.reader-thumbnail-drawer-panel\[data-side="right"\]\s*\{[^}]*padding-right:\s*calc\(24px \+ var\(--app-safe-area-right\)\);/s);
@@ -954,7 +1294,8 @@ test('reader overlays do not mutate background geometry and settings use remaini
   assert.match(reader, /document\.addEventListener\('wheel', containReaderOverlayScroll, \{ capture: true, passive: false \}\)/);
   assert.match(reader, /document\.addEventListener\('touchmove', containReaderOverlayScroll, \{ capture: true, passive: false \}\)/);
   assert.ok((reader.match(/data-reader-overlay-scroll/g) || []).length >= 4);
-  assert.match(select, /data-select-dropdown="true"[\s\S]*overscrollBehavior:\s*'contain'[\s\S]*touchAction:\s*'pan-y'/s);
+  assert.match(select, /data-select-dropdown="true"/);
+  assert.match(read('src/styles/primitives.css'), /\.custom-select-list\s*\{[^}]*overscroll-behavior:\s*contain;[^}]*touch-action:\s*pan-y;/s);
 });
 
 test('configuration transfer warning and settings layers stay concise and isolated', () => {
@@ -966,6 +1307,7 @@ test('configuration transfer warning and settings layers stay concise and isolat
   assert.doesNotMatch(dialog, /message=\{isExport/);
   assert.match(dialog, /className="config-transfer-warning"/);
   assert.match(css, /\.confirm-dialog-title\s*\{[^}]*text-align:\s*center;/s);
+  assert.match(css, /\.confirm-dialog\s*\{[^}]*position:\s*fixed;[^}]*translate:\s*-50% -50%;[^}]*z-index:\s*200000;/s);
   assert.doesNotMatch(css, /\.confirm-dialog:has\(\.config-transfer-field\)\s+\.confirm-dialog-title/);
   assert.match(css, /\.config-transfer-warning\s*\{[^}]*background:[^}]*text-align:\s*center;/s);
   assert.match(home, /className="settings-panel-footer"/);
@@ -1124,9 +1466,9 @@ test('Reader sizes panels by viewport and opens the thumbnail drawer from its tr
   assert.match(reader, /setDrawerSide\(side\);[\s\S]*requestAnimationFrame\(\(\) => setShowDrawer\(true\)\)/s);
   assert.doesNotMatch(reader, /onClick=\{\(\) => \{[^}]*setDrawerSide\(/);
   assert.equal((reader.match(/openThumbnailDrawer\(/g) || []).length >= 2, true);
-  assert.match(reader, /width:\s*'min\(380px, calc\(100vw - 40px\)\)'/);
+  assert.match(reader, /width:\s*'min\(440px, calc\(100vw - 32px\)\)'/);
   assert.match(reader, /justifyContent:\s*drawerSide === 'left' \? 'flex-start' : 'flex-end'/);
-  assert.match(reader, /translateX\(\$\{drawerSide === 'left' \? '-100%' : '100%'\}\)/);
+  assert.match(reader, /translate3d\(\$\{drawerSide === 'left' \? '-100%' : '100%'\},0,0\)/);
   assert.doesNotMatch(reader, /indicatorEl\.addEventListener\('transitionend'/);
   assert.doesNotMatch(reader, /ro\.observe\(indicatorEl\)/);
 });
@@ -1172,9 +1514,98 @@ test('Reader sticky flow owns secondary panels and keeps their requests mounted 
 test('normal Reader holds old spread geometry until every target slot is decoded', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /getPendingSpreadRenderState/);
-  assert.match(reader, /normalSpreadRenderState\.units\.map/);
+  assert.match(reader, /normalSpreadRenderState\.units\.forEach/);
   assert.match(reader, /slotIndex < normalSpreadRenderState\.visibleSlotCount/);
-  assert.match(reader, /handleNormalSpreadUnitReady/);
+  assert.match(reader, /handleNormalPageDecoded/);
+  assert.match(reader, /targetSpread\.every\(\(unit\) => normalReadyPageIndicesRef\.current\.has/);
+});
+
+test('home animates only a newly inserted watchlist card and respects reduced motion', () => {
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  assert.match(home, /getNewlyAddedArchiveId/);
+  assert.match(home, /className=\{[^}]*home-carousel-card-enter/);
+  assert.match(css, /\.home-carousel-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-carousel-card-enter 280ms/s);
+  assert.match(css, /@keyframes home-carousel-card-enter\s*\{[\s\S]*translateY\(10px\) scale\(0\.98\)[\s\S]*translateY\(0\) scale\(1\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-carousel-card-enter\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
+});
+
+test('home keeps successfully removed watchlist cards until their exit animation completes', () => {
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+  assert.match(home, /getRemovedArchiveIds/);
+  assert.match(home, /watchlistExitIds/);
+  assert.match(home, /matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/);
+  assert.match(home, /setTimeout\([\s\S]{0,500}, 220\)/);
+  assert.match(home, /className=\{[^}]*home-carousel-card-exit/);
+  assert.doesNotMatch(home, /await removeWatchlistItem\(archiveId\);\s*setWatchlist\(\(prev\) => prev\.filter/);
+  assert.match(css, /\.home-carousel-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*home-carousel-card-exit 220ms/s);
+  assert.match(css, /@keyframes home-carousel-card-exit\s*\{[\s\S]*translateY\(0\) scale\(1\)[\s\S]*translateY\(8px\) scale\(0\.98\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.home-carousel-card-exit\s+\.archive-card-shell\s*\{[^}]*animation:\s*none\s*!important/s);
+});
+
+test('home continue-reading cards reuse carousel entrance and successful-exit motion', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /historyEntranceIds/);
+  assert.match(home, /historyExitIds/);
+  assert.match(home, /addEventListener\('lrr:history-changed'/);
+  assert.match(home, /historyMotionReadyRef/);
+  assert.match(home, /if \(!historyMotionReadyRef\.current\)/);
+  assert.match(home, /getVisibleContinueReadingItems\(historyRef\.current, hideReadRef\.current\)/);
+  assert.match(home, /getVisibleContinueReadingItems\(next, nextHideRead\)/);
+  assert.match(home, /const handleToggleHideRead = useCallback\(\(\) => \{\s*setHideRead\(!hideReadRef\.current\)\.catch/s);
+  assert.match(home, /if \(!historyExitTimerRef\.current\) setHistory\(getHistory\(\)\)/);
+  assert.match(home, /hist-\$\{h\.id\}[\s\S]{0,250}home-carousel-card-exit[\s\S]{0,180}home-carousel-card-enter/);
+  assert.doesNotMatch(home, /await removeHistoryItem\(archiveId\);\s*setHistory\(\(prev\) => prev\.filter/);
+});
+
+test('settings tooltips keep viewport collision positioning and compact home actions share one height', () => {
+  const hint = read('src/components/SettingHint.jsx');
+  const primitives = read('src/styles/primitives.css');
+  const pages = read('src/styles/pages.css');
+  const css = read('src/index.css');
+  assert.doesNotMatch(primitives, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*relative/s);
+  assert.match(hint, /positionMethod="fixed"/);
+  assert.doesNotMatch(css, /\.settings-hint-bubble-portal\s*\{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.settings-hint-bubble-portal\s*\{[^}]*max-inline-size:\s*min\(320px,\s*calc\(100vw - 32px\)\)/s);
+  assert.match(pages, /\.home-actions \.btn\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*6px 10px;[^}]*line-height:\s*1\.2;/s);
+  assert.match(pages, /\.home-compact-action\s*\{[^}]*min-height:\s*32px;[^}]*padding:\s*5px 10px;[^}]*line-height:\s*1\.25;/s);
+  assert.match(css, /\.theme-mode-btn\s*\{[^}]*width:\s*34px;[^}]*min-width:\s*34px;[^}]*height:\s*34px;/s);
+  assert.match(css, /\.settings-row-title\s*\{[^}]*font-size:\s*var\(--font-size-md\);[^}]*font-weight:\s*var\(--font-weight-semibold\)/s);
+  assert.match(primitives, /\.custom-select-value\s*\{[^}]*font-size:\s*var\(--font-size-md\);[^}]*font-weight:\s*var\(--font-weight-semibold\)/s);
+});
+
+test('home and recommendation actions share compact typography and centered theme icon', () => {
+  const pages = read('src/styles/pages.css');
+  const css = read('src/index.css');
+  assert.match(pages, /\.home-actions \.btn\s*\{[^}]*font-size:\s*var\(--font-size-body\);[^}]*font-weight:\s*var\(--font-weight-semibold\)/s);
+  assert.match(pages, /\.recommendation-refresh\s*\{[^}]*min-height:\s*32px;[^}]*padding:\s*5px 10px;[^}]*font-size:\s*var\(--font-size-sm\);[^}]*line-height:\s*1\.25;/s);
+  assert.match(css, /\.theme-mode-btn\s*\{[^}]*min-height:\s*34px;[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+});
+
+test('dedupe route fallback mirrors the initial page without post-scan sections', () => {
+  const app = read('src/App.jsx');
+  const css = read('src/index.css');
+  assert.match(app, /dedupe-route-fallback-header/);
+  assert.match(app, /dedupe-route-fallback-scope/);
+  assert.match(app, /dedupe-route-fallback-empty/);
+  assert.match(app, /Array\.from\(\{ length: 4 \}/);
+  assert.match(app, /Array\.from\(\{ length: 2 \}/);
+  assert.doesNotMatch(app, /dedupe-route-fallback-progress/);
+  assert.doesNotMatch(app, /dedupe-route-fallback-scan/);
+  assert.doesNotMatch(app, /<RouteSkeletonCards count=\{6\}/);
+  assert.match(css, /\.dedupe-route-fallback-header\s*\{/);
+  assert.match(css, /\.dedupe-route-fallback-scope\s*\{/);
+  assert.match(css, /\.dedupe-route-fallback-empty\s*\{/);
+});
+
+test('operational archive pages use compact buttons and category states never shift', () => {
+  const pages = read('src/styles/pages.css');
+  const css = read('src/index.css');
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  assert.match(pages, /\.dedupe-page \.btn:not\(\.btn-icon\),\s*\.history-page \.btn:not\(\.btn-icon\)\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*6px 10px;[^}]*font-size:\s*var\(--font-size-body\);[^}]*line-height:\s*1\.2;/s);
+  assert.match(css, /\.archive-category-button:hover:not\(:disabled\),\s*\.archive-category-button:active:not\(:disabled\),\s*\.archive-category-button\.is-active\s*\{[^}]*transform:\s*none;/s);
+  assert.doesNotMatch(dedupe, /onClick=\{onReset\}[^>]*style=\{\{/);
 });
 
 test('Home paginates archive searches without periodic list replacement', () => {
@@ -1215,6 +1646,23 @@ test('Worker-dependent controls are hidden without a valid Worker configuration'
   assert.match(ehFavoriteSync, /hasValidWorkerConfig\(\)/);
 });
 
+test('Home random skeleton ignores stale concurrent refreshes', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /const randomFetchSeqRef = useRef\(0\)/);
+  assert.match(home, /const requestSeq = \+\+randomFetchSeqRef\.current/);
+  assert.match(home, /requestSeq !== randomFetchSeqRef\.current/);
+  assert.match(home, /if \(requestSeq === randomFetchSeqRef\.current\) setRandomsLoading\(false\)/);
+  assert.match(home, /if \(requestSeq === randomFetchSeqRef\.current\) setRandomsRefreshing\(false\)/);
+});
+
+test('recommendation skeleton ignores stale refresh results', () => {
+  const recommendations = read('src/components/Recommendations.jsx');
+  assert.match(recommendations, /const recommendationRequestSeqRef = useRef\(0\)/);
+  assert.match(recommendations, /const requestSeq = \+\+recommendationRequestSeqRef\.current/);
+  assert.match(recommendations, /requestSeq !== recommendationRequestSeqRef\.current/);
+  assert.match(recommendations, /if \(requestSeq === recommendationRequestSeqRef\.current\) setLoading\(false\)/);
+});
+
 test('EH cookie settings provide a Worker-backed check action', () => {
   const home = read('src/pages/Home.jsx');
   const worker = read('worker.js');
@@ -1223,8 +1671,8 @@ test('EH cookie settings provide a Worker-backed check action', () => {
   assert.match(home, /\/eh\/check/);
   assert.match(home, /eh-cookie-check-btn/);
   assert.match(home, /data\.cookie && data\.cookie !== cookie/);
-  assert.match(home, /metadata-toast-stack/);
-  assert.match(home, /showStatus\(/);
+  assert.match(home, /useToast/);
+  assert.match(home, /showToast\(/);
   assert.match(worker, /url\.pathname === '\/eh\/check'/);
   assert.match(worker, /removeCookieValue\(cookie, 'igneous'\)/);
   assert.match(worker, /writeCookieValue\(cookie, 'igneous', igneous\)/);
@@ -1249,12 +1697,12 @@ test('manual history cleanup locks page interactions and reports removed records
 
   assert.match(handler, /setMenu\(null\)/);
   assert.match(handler, /const removed = await runHistoryExistenceCheck\(\{ force: true \}\)/);
-  assert.match(handler, /if \(removed > 0\) setNotice\(`已清理 \$\{removed\} 条失效记录。`\)/);
-  assert.match(handler, /catch \(error\)[\s\S]*setNotice\(`清理失败：\$\{error\?\.message \|\| '未知错误'\}`\)/);
+  assert.match(handler, /if \(removed > 0\) showToast\(`已清理 \$\{removed\} 条失效记录。`, 'success'\)/);
+  assert.match(handler, /catch \(error\)[\s\S]*showToast\(`清理失败：\$\{error\?\.message \|\| '未知错误'\}`, 'error'\)/);
   assert.match(handler, /finally \{\s*setChecking\(false\)/);
   assert.match(history, /onClick=\{handleSyncHistory\}[\s\S]*?disabled=\{syncing \|\| checking\}/);
   assert.match(history, /<section[^>]*inert=\{checking \? '' : undefined\}[^>]*aria-busy=\{checking\}/);
-  assert.match(history, /<button className="btn" onClick=\{onBack\}>返回<\/button>/);
+  assert.match(history, /<button className="btn btn-secondary" onClick=\{onBack\}>返回<\/button>/);
 });
 
 test('archive multi-select exposes a checkbox indicator and keyboard semantics', () => {
@@ -1263,14 +1711,14 @@ test('archive multi-select exposes a checkbox indicator and keyboard semantics',
   const css = read('src/index.css');
 
   assert.match(card, /className=\{`archive-card-selection-checkbox\$\{selected \? ' is-selected' : ''\}`\}/);
-  assert.match(card, /className=\{`glass-panel archive-card-shell\$\{selected \? ' is-selected' : ''\}`\}/);
+  assert.match(card, /className=\{`surface archive-card-shell\$\{selected \? ' is-selected' : ''\}`\}/);
   assert.match(card, /role=\{selectionMode \? 'checkbox' : (?:undefined|'button')\}/);
   assert.match(card, /aria-checked=\{selectionMode \? selected : undefined\}/);
   assert.match(card, /onKeyDown=\{\(event\) => \{/);
   assert.match(card, /event\.key !== 'Enter' && event\.key !== ' '/);
   assert.match(css, /\.archive-card-shell\.is-selected\s*\{[^}]*box-shadow:[^}]*inset 0 0 0/s);
   assert.match(css, /\.archive-card-shell\.is-selected::after\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*border:\s*2px solid var\(--accent\);[^}]*pointer-events:\s*none;/s);
-  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:\s*0 0 0 2px var\(--surface-1\)/s);
+  assert.match(css, /\.archive-card-selection-checkbox\.is-selected\s*\{[^}]*background:\s*var\(--accent\);[^}]*box-shadow:\s*0 0 0 2px var\(--surface\)/s);
   assert.doesNotMatch(css, /\.archive-card-selection-checkbox\.is-selected::after\s*\{[^}]*filter:/s);
   assert.match(home, /className="archive-count-badge archive-selection-count-badge"/);
 });
@@ -1295,6 +1743,7 @@ test('dedupe operation feedback uses shared progress and failure components', ()
   assert.equal(fs.existsSync(failureUrl), true, 'shared deletion failure dialog is missing');
 
   const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const css = read('src/index.css');
   const progress = fs.readFileSync(progressUrl, 'utf8');
   const failure = fs.readFileSync(failureUrl, 'utf8');
   assert.match(dedupe, /import ExecutionProgressPanel from '\.\.\/components\/ExecutionProgressPanel'/);
@@ -1302,6 +1751,7 @@ test('dedupe operation feedback uses shared progress and failure components', ()
   assert.doesNotMatch(dedupe, /function ExecutionProgressPanel/);
   assert.doesNotMatch(dedupe, /copyEhFailureUrls|copyStatus/);
   assert.match(progress, /dedupe-execution-progress-track/);
+  assert.match(css, /\.dedupe-execution-progress-detail\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(failure, /E-Hentai 收藏夹删除失败/);
   assert.match(failure, /LANraragi 删除失败/);
   assert.match(failure, /report\?\.lrrHeading \|\| 'LANraragi 删除失败'/);
@@ -1376,7 +1826,7 @@ test('dedupe reports EH failures even when no gallery URL can be resolved', () =
   assert.match(handler, /ehFailures\.push\(\{ url: galleryUrl/);
 });
 
-test('archive context menus toggle LANraragi Favorites and expose async status', () => {
+test('archive context menus toggle LANraragi Favorites and use shared toast errors', () => {
   const home = read('src/pages/Home.jsx');
   const menu = read('src/components/ArchiveContextMenu.jsx');
   const dedupeMenu = read('src/components/DedupeArchiveContextMenu.jsx');
@@ -1395,13 +1845,39 @@ test('archive context menus toggle LANraragi Favorites and expose async status',
     assert.match(source, /setArchiveFavorite/);
     assert.match(source, /加入收藏夹/);
     assert.match(source, /移出收藏夹/);
-    assert.match(source, /favoriteError\s*&&/);
-    assert.match(source, /aria-live="polite"/);
+    assert.match(source, /const \{ showToast \} = useToast\(\)/);
+    assert.match(source, /showToast\(`读取收藏状态失败：\$\{error\?\.message \|\| '未知错误'\}`, 'error'\)/);
+    assert.match(source, /showToast\(`\$\{favorite \? '移出收藏夹' : '加入收藏夹'\}失败：\$\{error\?\.message \|\| '未知错误'\}`, 'error'\)/);
+    assert.doesNotMatch(source, /favoriteError|setFavoriteError|archive-context-menu-status/);
   }
   assert.match(menu, /加入待看/);
   assert.match(menu, /移出待看/);
   assert.doesNotMatch(menu, /取消待看/);
   assert.doesNotMatch(css, /\.archive-context-menu-status\s*\{[^}]*min-height/s);
+});
+
+test('dedupe, deletion reports, and random recommendations use shared toast feedback', () => {
+  const dedupe = read('src/pages/DeduplicatePage.jsx');
+  const failureDialog = read('src/components/ArchiveDeletionFailureDialog.jsx');
+  const home = read('src/pages/Home.jsx');
+
+  assert.match(dedupe, /catch \(err\) \{[\s\S]*?showToast\(err\.message \|\| '检测失败', 'error'\)/);
+  assert.match(dedupe, /setStatus\('没有可保存的重复分组'\);\s*showToast\('没有可保存的重复分组', 'info'\)/);
+  assert.match(failureDialog, /const \{ showToast \} = useToast\(\)/);
+  assert.match(failureDialog, /showToast\('已复制 E-Hentai 失败链接', 'success'\)/);
+  assert.match(failureDialog, /showToast\('复制失败，请手动复制链接', 'error'\)/);
+  assert.doesNotMatch(failureDialog, /copyStatus|setCopyStatus|dedupe-failure-copy-status/);
+  assert.match(home, /if \(!background && !silent\)\s*showToast\(`随机推荐获取失败：\$\{e\?\.message \|\| '未知错误'\}`, 'error'\)/);
+  assert.doesNotMatch(home, /console\.error\('随机推荐获取失败'/);
+});
+
+test('dedupe cards use one shared selection mark and no item divider', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const css = read('src/styles/pages.css');
+  const index = read('src/index.css');
+  assert.doesNotMatch(page, /className="dedupe-card-selected-mark"/);
+  assert.doesNotMatch(css, /\.dedupe-card-item\s*\{[^}]*border-bottom:/s);
+  assert.doesNotMatch(index, /\.dedupe-card-selected-mark\s*\{/);
 });
 
 test('active categories remain selected while applying and clearing text filters', () => {
@@ -1411,7 +1887,7 @@ test('active categories remain selected while applying and clearing text filters
   assert.match(home, /!hasActiveTextFilter && \(isUntaggedMode \|\| isStaticCategoryMode\)/);
   assert.match(home, /category:\s*!isUntaggedMode \? selectedCategoryOverride\?\.id : ''/);
   assert.match(home, /untaggedOnly:\s*isUntaggedMode/);
-  assert.match(home, /const handleSearch = \(\) => \{\s*applyFilter\(filter\.query, filter\.sortBy, filter\.order, selectedCategory\);/);
+  assert.match(home, /const handleSearch = \(\) => \{\s*if \(!hasArchiveSearchQuery\(filter\.query\)\) return;\s*applyFilter\(filter\.query, filter\.sortBy, filter\.order, selectedCategory\);/);
   const clearFilter = home.match(/const clearFilter = \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   assert.doesNotMatch(clearFilter, /setSelectedCategory\(null\)/);
 });
@@ -1480,6 +1956,7 @@ test('touch surfaces suppress native WebKit tap highlight globally', () => {
 
 test('ordinary UI controls use semantic colors in both themes', () => {
   const css = read('src/index.css');
+  const tokens = read('src/styles/tokens.css');
   const recommendations = read('src/components/Recommendations.jsx');
   const history = read('src/pages/HistoryPage.jsx');
   const dedupe = read('src/pages/DeduplicatePage.jsx');
@@ -1492,12 +1969,8 @@ test('ordinary UI controls use semantic colors in both themes', () => {
   const archiveCard = read('src/components/ArchiveCard.jsx');
   const tagSuggest = read('src/components/TagSuggest.jsx');
 
-  assert.match(css, /--warning-text:/);
-  assert.match(css, /--warning-surface:/);
-  assert.match(css, /--warning-border:/);
-  assert.match(css, /--good-text:/);
-  assert.match(css, /--good-surface:/);
-  assert.match(css, /--good-border:/);
+  assert.match(tokens, /--warning-soft:/);
+  assert.match(tokens, /--positive-soft:/);
   assert.doesNotMatch(css, /#ffd2d0|#fbbf24|#fca5a5|#6ee7b7|#62d48b|#80dca2|#ff8e8e|#5fcf8b/);
   assert.doesNotMatch(recommendations, /#e3e9f3|#a7b1c2|#ccc|rgba\(255,255,255/);
   assert.doesNotMatch(history, /#e8edf5|linear-gradient\(90deg, rgba\(255,255,255/);
@@ -1512,10 +1985,12 @@ test('ordinary UI controls use semantic colors in both themes', () => {
   assert.doesNotMatch(home, /rgba\(255,255,255,0\.0[34568]\)/);
   assert.doesNotMatch(dedupe, /rgba\(255,255,255,0\.035\)|rgba\(148,163,184,0\.16\)/);
   assert.doesNotMatch(archiveCard, /rgba\(255,255,255,0\.0[25]\)|transition:\s*'all/);
-  assert.match(archiveCard, /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-main\)\)/);
-  assert.match(tagSuggest, /color-mix\(in srgb, \$\{nsColor\} 40%, var\(--text-main\)\)/);
-  assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-sub\)/s);
-  assert.match(css, /\.upload-notice\s*\{[^}]*background:\s*var\(--warning-surface\)[^}]*border:\s*1px solid var\(--warning-border\)/s);
+  assert.match(archiveCard, /'--tag-ns-color': group\.color/);
+  assert.match(read('src/styles/pages.css'), /color-mix\(in srgb, var\(--tag-ns-color\) 40%, var\(--text-primary\)\)/);
+  assert.match(tagSuggest, /className="tag-suggest-badge" style=\{\{ '--tag-suggest-ns-color': nsColor \}\}/);
+  assert.match(read('src/styles/primitives.css'), /\.tag-suggest-badge\s*\{[\s\S]*color-mix\(in srgb, var\(--tag-suggest-ns-color\) 40%, var\(--text-primary\)\)/);
+  assert.match(css, /\.archive-page-thumbnail-placeholder\s*\{[^}]*color:\s*var\(--text-secondary\)/s);
+  assert.match(css, /\.upload-notice\s*\{[^}]*background:\s*var\(--warning-soft\)[^}]*border:\s*1px solid var\(--warning\)/s);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.toggle-switch-track[\s\S]*?\.archive-card-selection-checkbox/);
 });
 
@@ -1541,9 +2016,9 @@ test('light theme uses opaque paper surfaces and synchronizes browser theme colo
   const theme = read('src/lib/theme.js');
   const html = read('index.html');
   assert.match(html, /<meta name="color-scheme" content="dark light" \/>/);
-  assert.match(css, /:root\[data-theme="light"\][\s\S]*--page-bg:\s*#f4f0e8;/);
-  assert.match(css, /:root\[data-theme="light"\][\s\S]*--glass-bg:\s*#fffdf8;/);
-  assert.match(css, /:root\[data-theme="light"\][\s\S]*--text-muted:\s*#8a8278;/);
+  assert.match(read('src/styles/tokens.css'), /:root\[data-theme="light"\][\s\S]*--canvas:\s*#f2efe8;/);
+  assert.match(read('src/styles/tokens.css'), /:root\[data-theme="light"\][\s\S]*--surface:\s*#fcfaf5;/);
+  assert.match(read('src/styles/tokens.css'), /:root\[data-theme="light"\][\s\S]*--text-muted:\s*#948d82;/);
   assert.match(theme, /querySelector\?\.\('\[data-theme-color\]'\)/);
   assert.match(theme, /setAttribute\('content',/);
   assert.doesNotMatch(html, /maximum-scale|user-scalable=no/);
@@ -1558,13 +2033,13 @@ test('archive cards, custom selects, and overlays expose complete keyboard seman
   assert.match(card, /role=\{selectionMode \? 'checkbox' : 'button'\}/);
   assert.match(card, /tabIndex=\{!disabled \? 0 : -1\}/);
   assert.match(card, /event\.key !== 'Enter' && event\.key !== ' '/);
-  assert.match(select, /role="listbox"/);
-  assert.match(select, /role="option"/);
-  assert.match(select, /e\.key === 'ArrowDown'/);
+  assert.match(select, /<Select\.List/);
+  assert.match(select, /<Select\.Item/);
+  assert.match(select, /<Select\.Trigger/);
   assert.match(home, /role="dialog"[\s\S]*aria-modal="true"/);
   assert.match(reader, /role="dialog"[\s\S]*aria-modal="true"/);
   assert.match(reader, /<button[\s\S]*data-reader-drawer-page/);
-  assert.match(dialog, /event\.key !== 'Tab'/);
+  assert.match(dialog, /<Dialog\.Popup/);
 });
 
 test('settings dialog keeps initial focus on first control instead of dialog fallback', () => {
@@ -1575,16 +2050,18 @@ test('settings dialog keeps initial focus on first control instead of dialog fal
   assert.doesNotMatch(home, /getFocusable\(\)\[0\]\?\.focus\(\)\s*\|\|\s*dialog\?\.focus\(\)/);
 });
 
-test('dark theme restores a calm black-blue palette and uses an independent dark overlay token', () => {
+test('dark theme uses the warm archive atelier palette and an independent overlay token', () => {
+  const tokens = read('src/styles/tokens.css');
   const css = read('src/index.css');
-  const darkTheme = css.match(/:root,\s*:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+  const darkTheme = tokens.match(/:root,\s*:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\s*\}/)?.[1] || '';
 
-  assert.match(darkTheme, /--page-bg:\s*#0f1115/i);
-  assert.match(darkTheme, /--surface-1:\s*#171b23/i);
-  assert.match(darkTheme, /--surface-2:\s*#202633/i);
-  assert.match(darkTheme, /--accent:\s*#4a9ff0/i);
-  assert.match(darkTheme, /--overlay-bg:\s*rgba\(0,\s*0,\s*0,\s*0\.74\)/i);
-  assert.match(css, /\.settings-overlay\s*\{[\s\S]*background:\s*var\(--overlay-bg\)/s);
+  assert.match(darkTheme, /--canvas:\s*#0b0c0a/i);
+  assert.match(darkTheme, /--surface:\s*#11120f/i);
+  assert.match(darkTheme, /--surface-subtle:\s*#0d0e0b/i);
+  assert.match(darkTheme, /--accent:\s*#d16a57/i);
+  assert.match(darkTheme, /--overlay:\s*rgba\(0,\s*0,\s*0,\s*0\.72\)/i);
+  assert.match(darkTheme, /--reader-stage:\s*var\(--surface-inset\)/i);
+  assert.match(css, /\.settings-overlay\s*\{[\s\S]*background:\s*var\(--overlay\)/s);
   assert.doesNotMatch(css, /\.settings-overlay\s*\{[\s\S]*background:\s*color-mix\(in srgb, var\(--text-main\)/s);
 });
 
@@ -1625,24 +2102,24 @@ test('custom theme palette normalizes, persists, generates semantic tokens, and 
   applyThemePalette(palette, { root, resolvedTheme: 'light' });
   assert.equal(properties.get('--accent'), createCustomThemeTokens(palette, 'light')['--accent']);
   const commentTokens = createCustomThemeTokens({ accent: '#4a9ff0', secondary: '#79b8ff', background: '#000000' }, 'dark');
-  assert.equal(commentTokens['--page-bg'], '#000000', 'user black background stays pure black');
-  assert.notEqual(commentTokens['--comment-card-bg'], commentTokens['--surface-2']);
-  assert.notEqual(commentTokens['--comment-card-border'], commentTokens['--glass-border']);
-  assert.equal(commentTokens['--comment-card-bg'], '#292c2f');
-  assert.equal(commentTokens['--comment-card-border'], '#415a78');
-  assert.equal(commentTokens['--comment-uploader-border'], '#5c88b9');
+  assert.equal(commentTokens['--canvas'], '#000000', 'user black background stays pure black');
+  assert.ok(commentTokens['--surface']);
+  assert.ok(commentTokens['--border-strong']);
+  assert.ok(commentTokens['--comment-card-bg']);
+  assert.ok(commentTokens['--comment-card-border']);
+  assert.ok(commentTokens['--comment-uploader-border']);
   assert.ok(commentTokens['--comment-user']);
   assert.ok(commentTokens['--comment-text']);
   // Custom backgrounds keep their hue; luminance is clamped for readability
   // instead of being washed out by a fixed blend.
   const blueTokens = createCustomThemeTokens({ accent: '#4a9ff0', secondary: '#79b8ff', background: '#3366cc' }, 'dark');
-  assert.equal(blueTokens['--page-bg'], '#2d59b3');
-  assert.match(blueTokens['--page-bg'], /^#(2|3|4|5)[0-9a-f]{5}$/i, 'dark canvas stays dark-ish');
+  assert.equal(blueTokens['--canvas'], '#2d59b3');
+  assert.match(blueTokens['--canvas'], /^#(2|3|4|5)[0-9a-f]{5}$/i, 'dark canvas stays dark-ish');
   // Default palettes are untouched by the clamping logic.
   const defaultDark = createCustomThemeTokens({ accent: '#4a9ff0', secondary: '#79b8ff', background: '#0f1115' }, 'dark');
-  assert.equal(defaultDark['--page-bg'], '#0f1115');
+  assert.equal(defaultDark['--canvas'], '#0f1115');
   const defaultLight = createCustomThemeTokens({ accent: '#b74632', secondary: '#70784f', background: '#f4f0e8' }, 'light');
-  assert.equal(defaultLight['--page-bg'], '#f4f0e8');
+  assert.equal(defaultLight['--canvas'], '#f4f0e8');
   applyThemePalette(null, { root, resolvedTheme: 'light' });
   assert.equal(properties.has('--accent'), false);
   assert.equal(writeStoredThemePalette(null, storage), null);
@@ -1658,25 +2135,24 @@ test('continue-reading and watchlist heading hover keeps background transparent 
 test('EH comments use semantic theme tokens without fixed uploader colors', () => {
   const comments = read('src/components/EhComments.jsx');
   const css = read('src/index.css');
+  const tokens = read('src/styles/tokens.css');
   const state = read('src/lib/ehCommentsState.js');
   assert.doesNotMatch(comments, /#d77f12|#ff9800/);
   assert.match(css, /\.eh-comment-card\s*\{[\s\S]*background:\s*var\(--comment-card-bg\)/s);
   assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*border-left-color:\s*var\(--comment-uploader-border\)/s);
   assert.match(css, /\.eh-comment-card\.is-uploader\s*\{[\s\S]*background:\s*var\(--comment-uploader-bg\)/s);
   assert.match(css, /\.eh-comment-input\s*\{[\s\S]*background:\s*var\(--comment-input-bg\)/s);
-  assert.match(css, /--comment-header-bg:\s*#[0-9a-f]{6};/i);
-  assert.match(css, /--comment-content-bg:\s*#[0-9a-f]{6};/i);
-  assert.match(css, /--comment-card-bg:\s*#1a2532;/);
-  assert.match(css, /--comment-card-border:\s*#465d78;/);
-  assert.match(css, /--comment-positive:\s*#72eaa1;/);
-  assert.match(css, /--comment-uploader-border:\s*#6398cc;/);
-  assert.match(css, /--comment-user:\s*#75aee8;/);
-  assert.match(css, /--comment-text:\s*#e6edf7;/);
+  assert.match(tokens, /--comment-header-bg:\s*var\(--surface\);/i);
+  assert.match(tokens, /--comment-content-bg:\s*var\(--surface-subtle\);/i);
+  assert.match(tokens, /--comment-card-bg:\s*var\(--surface-raised\);/);
+  assert.match(tokens, /--comment-card-border:\s*var\(--border-strong\);/);
+  assert.match(tokens, /--comment-positive:\s*var\(--positive\);/);
+  assert.match(tokens, /--comment-uploader-border:\s*var\(--secondary\);/);
   assert.match(comments, /const scoreClass = c\.score > 0 \? 'var\(--comment-positive\)'/);
-  assert.match(comments, /style=\{\{ color: scoreClass, fontWeight: 'bold', fontSize: '12px' \}\}/);
+  assert.match(comments, /style=\{\{ color: scoreClass, fontWeight: 'var\(--font-weight-bold\)', fontSize: 'var\(--font-size-sm\)' \}\}/);
   assert.match(comments, /borderLeftColor: c\.isUploader \? 'var\(--comment-uploader-border\)' : 'var\(--comment-card-border\)'/);
   assert.match(comments, /color: c\.isEditable \? 'var\(--comment-user-self\)' : 'var\(--comment-user\)'/);
-  assert.match(comments, /fontSize: '14px', lineHeight: '1\.7', color: 'var\(--comment-text\)'/);
+  assert.match(comments, /fontSize: 'var\(--font-size-md\)', lineHeight: '1\.7', color: 'var\(--comment-text\)'/);
   assert.doesNotMatch(comments, /eh-comment-card-header|eh-comment-content|eh-comment-time|eh-comment-score|eh-vote-button is-up/);
   assert.match(comments, /M8 11L3 3H13L8 11Z/);
   assert.match(css, /\.eh-comment-input::-webkit-resizer[^}]*background:\s*transparent;/s);
@@ -1692,15 +2168,30 @@ test('EH comments use semantic theme tokens without fixed uploader colors', () =
 });
 
 test('home sections clip their own collapsed carousel edges instead of leaking borders', () => {
-  const css = read('src/index.css');
-  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\s*\{[\s\S]*overflow:\s*hidden;/s);
-  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\s*\{[\s\S]*min-width:\s*0;/s);
+  const css = read('src/styles/pages.css');
+  assert.match(css, /\.home-shell\s*>\s*\.surface\s*\{[\s\S]*overflow:\s*hidden;/s);
+  assert.match(css, /\.home-shell\s*>\s*\.surface\s*\{[\s\S]*min-width:\s*0;/s);
 });
 
-test('home glass panels do not keep transform reveal layers after resize', () => {
-  const css = read('src/index.css');
-  assert.match(css, /\.home-shell\s*>\s*\.glass-panel\.section-reveal\s*\{[\s\S]*animation:\s*none;[\s\S]*opacity:\s*1;[\s\S]*transform:\s*none;/s);
+test('home surfaces do not keep transform reveal layers after resize', () => {
+  const css = read('src/styles/pages.css');
+  assert.match(css, /\.home-shell\s*>\s*\.surface\.section-reveal\s*\{[\s\S]*animation:\s*none;[\s\S]*opacity:\s*1;[\s\S]*transform:\s*none;/s);
 });
+
+test('recommendation cards isolate internal overflow from carousel scroll width', () => {
+  const css = read('src/styles/pages.css');
+  assert.match(css, /\.recommendation-content\s*\{[\s\S]*min-width:\s*0;/s);
+  assert.match(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\s*\{[\s\S]*flex:\s*0\s*0\s*auto;[\s\S]*min-width:\s*0;/s);
+  assert.match(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\.is-wide\s*\{[\s\S]*flex-basis:\s*var\(--archive-wide-card-width,[^)]+\);[\s\S]*width:\s*var\(--archive-wide-card-width,[^)]+\);[\s\S]*max-width:\s*none;/s);
+  assert.doesNotMatch(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\.is-wide\s*\{[^}]*min\([^}]*100%/s);
+  assert.match(css, /\.recommendation-content\s*>\s*\.archive-card-wrap\s*>\s*\.archive-card-shell\s*\{[\s\S]*overflow:\s*hidden;/s);
+});
+
+test('recommendation carousel does not retain resolved blank-area diagnostics', () => {
+  const recommendations = read('src/components/Recommendations.jsx');
+  assert.doesNotMatch(recommendations, /REC-BLANK|recBlankTimerRef|reportRecTrailingBlank/);
+});
+
 test('custom themes keep independent light and dark palettes and migrate the legacy single palette', () => {
   const theme = read('src/lib/theme.js');
   assert.match(theme, /DEFAULT_THEME_PALETTES/);
@@ -1738,6 +2229,19 @@ test('custom color picker accepts canonical hex values and converts between RGB/
   assert.equal(parseHexColor('#12xz45'), null);
   assert.deepEqual(rgbToHsl({ r: 255, g: 0, b: 0 }), { h: 0, s: 100, l: 50 });
   assert.equal(hslToHex({ h: 120, s: 100, l: 50 }), '#00ff00');
+});
+
+test('custom color picker hue slider follows captured pointer drags', () => {
+  const picker = read('src/components/ThemeColorPicker.jsx');
+  assert.match(picker, /const hueRef = useRef\(null\)/);
+  assert.match(picker, /const hueDraggingRef = useRef\(false\)/);
+  assert.match(picker, /const updateHue = useCallback\(\(event\) => \{/);
+  assert.match(picker, /hueRef\.current\?\.getBoundingClientRect\(\)/);
+  assert.match(picker, /const handleHuePointerDown = \(event\) => \{[\s\S]{0,240}hueDraggingRef\.current = true;[\s\S]{0,240}setPointerCapture\?\.\(event\.pointerId\)[\s\S]{0,240}updateHue\(event\)/);
+  assert.match(picker, /onPointerMove=\{\(event\) => \{ if \(hueDraggingRef\.current\) updateHue\(event\); \}\}/);
+  assert.match(picker, /onPointerUp=\{stopHueDragging\}/);
+  assert.match(picker, /onPointerCancel=\{stopHueDragging\}/);
+  assert.match(picker, /onLostPointerCapture=\{stopHueDragging\}/);
 });
 
 test('config transfer includes and validates the split custom theme palette', () => {
@@ -1818,12 +2322,28 @@ test('custom palette picker escapes settings clipping, stays above the modal, an
   assert.match(css, /\.theme-color-picker-trigger:hover,[\s\S]*background:\s*var\(--surface-inset\)/s);
 });
 
-test('release version is 1.5.2 across package manifests', () => {
-  const packageJson = read('package.json');
-  const packageLock = read('package-lock.json');
-  assert.match(packageJson, /"version":\s*"1\.5\.2"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.2"/);
-  assert.match(packageLock, /"version":\s*"1\.5\.2"[\s\S]*?"packages":\s*\{[\s\S]*?"":\s*\{[\s\S]*?"version":\s*"1\.5\.2"/);
+test('catalog edge controls expose semantic picker controls and class-driven version sizing', () => {
+  const picker = read('src/components/ThemeColorPicker.jsx');
+  const version = read('src/components/AppVersion.jsx');
+  const pages = read('src/styles/pages.css');
+  assert.match(picker, /className="btn btn-secondary btn-icon theme-color-picker-trigger"/);
+  assert.match(picker, /className="btn btn-quiet btn-icon theme-color-picker-eyedropper"/);
+  assert.match(picker, /className=\{`field theme-color-picker-input\$\{invalid \? ' is-error' : ''\}`\}/);
+  assert.match(picker, /className="field theme-color-picker-input"/);
+  const buttonOpenings = [...picker.matchAll(/<button\b[^>]*>/g)].map(([opening]) => opening);
+  assert.equal(buttonOpenings.length, 2);
+  buttonOpenings.forEach((opening) => assert.match(opening, /className="btn /));
+  assert.equal((picker.match(/className=(?:"field |\{`field )/g) || []).length, 2);
+  assert.match(picker, /style=\{\{ backgroundColor: hexDraft \}\}/);
+  assert.match(picker, /top: `\$\{popoverPosition\?\.top \|\| 0\}px`,[\s\S]*left: `\$\{popoverPosition\?\.left \|\| 0\}px`,[\s\S]*visibility: popoverPosition \? 'visible' : 'hidden'/);
+  assert.match(picker, /style=\{\{ backgroundImage: saturationBackground \}\}/);
+  assert.match(picker, /style=\{\{ background: hueBackground \}\}/);
+  assert.match(picker, /style=\{\{ left: `\$\{hsl\.s\}%`, top: `\$\{100 - hsl\.l\}%`, background: hexDraft \}\}/);
+  assert.match(picker, /style=\{\{ left: `\$\{\(hsl\.h \/ 359\) \* 100\}%` \}\}/);
+  assert.doesNotMatch(version, /style=\{\{ fontSize:/);
+  assert.match(version, /className=\{`app-version-link\$\{compact \? ' is-compact' : ''\}`\}/);
+  assert.match(pages, /\.app-version-link\s*\{[^}]*font-size:\s*var\(--font-size-sm\);/s);
+  assert.match(pages, /\.app-version-link\.is-compact\s*\{[^}]*font-size:\s*var\(--font-size-xs\);/s);
 });
 
 test('sync data survives scope switches and failed flushes', () => {
@@ -1851,4 +2371,26 @@ test('sync data survives scope switches and failed flushes', () => {
   // Legacy data migrates into the first scope only.
   assert.match(scope, /const marker = `lrr_legacy_migrated_v1:\$\{base\}`/);
   assert.match(scope, /!localStorage\.getItem\(marker\)/);
+});
+
+test('normal reader stage follows the theme while immersive mode remains black', () => {
+  const tokens = read('src/styles/tokens.css');
+  assert.match(tokens, /--reader-stage:\s*var\(--surface-inset\)/i);
+  assert.match(tokens, /--immersive-bg:\s*#000/i);
+});
+
+test('reader thumbnail drawer coalesces scroll work and animates backdrop blur', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const drawer = reader.slice(reader.indexOf('/* ===== Thumbnail Drawer ===== */'));
+  assert.match(reader, /drawerViewportFrameRef/);
+  assert.match(reader, /requestAnimationFrame\(updateDrawerViewport/);
+  assert.match(drawer, /backdropFilter: showDrawer \? 'blur\(4px\)' : 'blur\(0px\)'/);
+  assert.match(drawer, /WebkitBackdropFilter: showDrawer \? 'blur\(4px\)' : 'blur\(0px\)'/);
+  assert.match(drawer, /backdrop-filter 0\.25s ease/);
+});
+
+test('empty archive search is a no-op', () => {
+  const home = read('src/pages/Home.jsx');
+  const handler = home.match(/const handleSearch = \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.match(handler, /if \(!hasArchiveSearchQuery\(filter\.query\)\) return;/);
 });

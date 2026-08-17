@@ -29,6 +29,8 @@ export default function ThemeColorPicker({ label, value, onChange }) {
   const popoverRef = useRef(null);
   const saturationRef = useRef(null);
   const draggingRef = useRef(false);
+  const hueRef = useRef(null);
+  const hueDraggingRef = useRef(false);
   const [popoverPosition, setPopoverPosition] = useState(null);
 
   useEffect(() => {
@@ -116,6 +118,23 @@ export default function ThemeColorPicker({ label, value, onChange }) {
     updateSaturationLightness(event);
   };
 
+  const updateHue = useCallback((event) => {
+    const bounds = hueRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0) return;
+    const nextHue = clamp(((event.clientX - bounds.left) / bounds.width) * 359, 0, 359);
+    emitHsl({ ...hsl, h: nextHue });
+  }, [emitHsl, hsl]);
+
+  const handleHuePointerDown = (event) => {
+    hueDraggingRef.current = true;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateHue(event);
+  };
+
+  const stopHueDragging = () => {
+    hueDraggingRef.current = false;
+  };
+
   const handleHexCommit = () => {
     const next = parseHexColor(hexDraft);
     if (!next) {
@@ -168,7 +187,7 @@ export default function ThemeColorPicker({ label, value, onChange }) {
         <button
           type="button"
           ref={triggerRef}
-          className="theme-color-picker-trigger"
+          className="btn btn-secondary btn-icon theme-color-picker-trigger"
           aria-label={`${label}当前颜色，点击编辑`}
           aria-expanded={isOpen}
           aria-haspopup="dialog"
@@ -217,6 +236,7 @@ export default function ThemeColorPicker({ label, value, onChange }) {
         </div>
         <div className="theme-color-picker-hue-row">
           <div
+            ref={hueRef}
             className="theme-color-picker-hue"
             role="slider"
             tabIndex={0}
@@ -225,11 +245,11 @@ export default function ThemeColorPicker({ label, value, onChange }) {
             aria-valuemax="359"
             aria-valuenow={Math.round(hsl.h)}
             style={{ background: hueBackground }}
-            onPointerDown={(event) => {
-              const bounds = event.currentTarget.getBoundingClientRect();
-              const nextHue = clamp(((event.clientX - bounds.left) / bounds.width) * 359, 0, 359);
-              emitHsl({ ...hsl, h: nextHue });
-            }}
+            onPointerDown={handleHuePointerDown}
+            onPointerMove={(event) => { if (hueDraggingRef.current) updateHue(event); }}
+            onPointerUp={stopHueDragging}
+            onPointerCancel={stopHueDragging}
+            onLostPointerCapture={stopHueDragging}
             onKeyDown={(event) => {
               if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
               event.preventDefault();
@@ -238,7 +258,7 @@ export default function ThemeColorPicker({ label, value, onChange }) {
           >
             <span className="theme-color-picker-hue-thumb" style={{ left: `${(hsl.h / 359) * 100}%` }} />
           </div>
-          <button type="button" className="theme-color-picker-eyedropper" onClick={handleEyeDropper} aria-label={`${label}吸管取色`} title="从屏幕取色">
+          <button type="button" className="btn btn-quiet btn-icon theme-color-picker-eyedropper" onClick={handleEyeDropper} aria-label={`${label}吸管取色`} title="从屏幕取色">
             <ToolbarGlyph name="eyedropper" size={17} />
           </button>
         </div>
@@ -247,6 +267,7 @@ export default function ThemeColorPicker({ label, value, onChange }) {
             <span>HEX</span>
             <input
               type="text"
+              className={`field theme-color-picker-input${invalid ? ' is-error' : ''}`}
               inputMode="text"
               spellCheck={false}
               value={hexDraft}
@@ -261,7 +282,7 @@ export default function ThemeColorPicker({ label, value, onChange }) {
             {['r', 'g', 'b'].map((channel) => (
               <label key={channel}>
                 <span>{channel.toUpperCase()}</span>
-                <input type="text" inputMode="numeric" value={rgb[channel]} readOnly aria-label={`${label} ${channel.toUpperCase()} 值`} />
+                <input className="field theme-color-picker-input" type="text" inputMode="numeric" value={rgb[channel]} readOnly aria-label={`${label} ${channel.toUpperCase()} 值`} />
               </label>
             ))}
           </div>

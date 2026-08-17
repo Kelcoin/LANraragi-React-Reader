@@ -53,7 +53,7 @@ export default function ConfigTransferDialog({ open, mode = 'export', initialVal
       dismissOnBackdrop={false}
       onConfirm={isExport ? onCancel : submit}
       actionsBefore={isExport ? (
-        <button type="button" className="btn" onClick={copyValue}>
+        <button type="button" className="btn btn-secondary" onClick={copyValue}>
           {copied ? '已复制' : '复制'}
         </button>
       ) : null}
@@ -66,7 +66,7 @@ export default function ConfigTransferDialog({ open, mode = 'export', initialVal
         <textarea
           id={inputId}
           data-config-transfer-input
-          className="input-glass"
+          className="field"
           name="config-transfer"
           autoComplete="off"
           spellCheck={false}

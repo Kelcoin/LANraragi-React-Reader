@@ -1,7 +1,7 @@
 {
   "name": "readoshi",
   "private": true,
-  "version": "1.5.2",
+  "version": "1.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 27789",
@@ -12,8 +12,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@base-ui/react": "1.7.0",
     "@fontsource-variable/noto-sans-jp": "^5.2.10",
     "@fontsource-variable/noto-sans-sc": "^5.2.10",
+    "@tensorflow/tfjs-backend-webgpu": "4.22.0",
+    "@tensorflow/tfjs-converter": "4.22.0",
+    "@tensorflow/tfjs-core": "4.22.0",
+    "onnxruntime-web": "1.27.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

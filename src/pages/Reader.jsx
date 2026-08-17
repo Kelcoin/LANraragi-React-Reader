@@ -1,16 +1,30 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { encodeApiKey, lrrApi } from '../lib/api';
-import { flushHistorySync, getHistory, saveHistory, getHideRead, removeHistoryItem, loadHistoryState } from '../lib/history';
+import { flushHistorySync, getHistory, saveHistory, getHideRead, pruneHistoryItems, removeHistoryItem, loadHistoryState } from '../lib/history';
 import { clampProgressPage } from '../lib/historyProgressCache';
-import { getWatchlist, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItem } from '../lib/watchlist';
+import { getWatchlist, loadWatchlistState, mergeWatchlistProgress, pruneWatchlistItem, removeWatchlistItem } from '../lib/watchlist';
 import { getReaderArchiveListMeta } from '../lib/readerArchiveList';
 import { isArchiveMissingError } from '../lib/historyMaintenance';
 import { translateTag, categorizeTags } from '../lib/tags';
-import { getCachedImage, getImage, primeImage, deleteImageKeys, IMAGE_LOAD_PRIORITY } from '../lib/imageCache';
+import { getCachedImage, getImage, primeImage, putImage, deleteImageKeys, IMAGE_LOAD_PRIORITY } from '../lib/imageCache';
 import { createImageDecodeQueue } from '../lib/imageLoadQueue';
 import { decodeImageSource, getReaderPreviewSource } from '../lib/readerPreviewDecode';
-import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange } from '../lib/readerSettings';
+import { DEFAULT_READER_SETTINGS, READER_SETTINGS_KEY, normalizeReaderSettings, prepareReaderSettingsForArchiveChange, sanitizeUnsignedIntegerInput } from '../lib/readerSettings';
+import {
+  SUPER_RESOLUTION_MODELS,
+  cancelVisibleSuperResolutionJobs,
+  createSuperResolutionRuntime,
+  detectSuperResolutionSupport,
+  getSuperResolutionCacheKey,
+  getSuperResolutionModel,
+  processSuperResolutionImageSource,
+  scheduleSuperResolutionUpgrade,
+  selectWaifu2xManifest,
+  shouldFallbackWaifu2xProfile,
+  validateSuperResolutionManifest,
+  verifySuperResolutionSupport,
+} from '../lib/superResolution';
 import {
   clearArchiveProgressMarker,
   getArchiveProgressPercent,
@@ -21,22 +35,36 @@ import {
 } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
 import { rememberArchiveProgressInCatalog } from '../lib/archiveMetadataCache';
-import { getReaderSkeletonToolbarGroups } from '../lib/readerSkeletonLayout';
 import { createReaderRenderState, getReaderCapabilities, loadReaderBootstrapResource, readerRenderReducer } from '../lib/readerRenderPipeline';
 import {
   getReaderArchivePanelModel,
   getReaderArchivePanelWindow,
+  getForegroundSuperResolutionPageIndices,
+  getSuperResolutionPreloadPageIndices,
+  getSettingsPaneNaturalHeight,
   getCenteredToolbarTitleWidth,
   getDrawerRowStride,
   getContentLanguage,
   isIosWebKitPlatform,
   isReaderMobileViewport,
+  isSuperResolutionPageTooLarge,
+  IMMERSIVE_DOUBLE_TAP_MS,
+  resolveImmersiveClickZone,
+  resolveImmersiveDoubleTapScale,
+  resolveImmersivePinchScale,
+  resolveImmersiveTapAction,
+  resolveImmersiveZoomPan,
   resolvePageIndicatorPlacement,
   resolveReaderToolbarMode,
+  scheduleSuperResolutionResume,
+  subscribeSuperResolutionInteraction,
+  rememberReaderToolbarFullWidth,
+  resolveArchiveSuperResolutionState,
+  resolveSuperResolutionFailure,
 } from '../lib/readerUiState';
 import { computeContainedImageRect } from '../lib/pageIndicatorLayout';
 import { classifyWebtoonSeams, compareSeamPixels, sampleImageSeam } from '../lib/webtoonDetector';
-import { detectImageBorderInsets } from '../lib/readerImageTransform';
+import { detectImageBorderInsets, getBorderCropCenterTranslation, getBorderCropClipPath } from '../lib/readerImageTransform';
 import { getWorkerUrl, getSyncToken, hasValidWorkerConfig } from '../lib/worker-config';
 import { getBootState, markBackground, loadReaderSnapshot, saveReaderSnapshot } from '../lib/sessionState';
 import { getStoredServerInfo, loadServerInfo } from '../lib/serverInfoCache';
@@ -45,6 +73,8 @@ import { filterRandomArchives, getRandomHideRead } from '../lib/randomArchiveFil
 import Recommendations from '../components/Recommendations';
 import EhComments from '../components/EhComments';
 import ConfirmDialog from '../components/ConfirmDialog';
+import SettingHint from '../components/SettingHint';
+import { useToast } from '../components/Toast';
 import CustomSelect from '../components/CustomSelect';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { HomeSectionGlyph, NamespaceGlyph, stripDecoratedLabel, ToolbarGlyph } from '../components/AppGlyphs';
@@ -66,6 +96,25 @@ import {
 } from '../lib/readerLayout';
 
 const readerImageDecodeQueue = createImageDecodeQueue({ maxConcurrent: 3 });
+const immersiveSuperResolutionSources = new WeakMap();
+
+function replaceImmersiveSuperResolutionSource(image, source = null, registry = null) {
+  const previous = immersiveSuperResolutionSources.get(image);
+  if (previous !== source) {
+    previous?.dispose();
+    registry?.delete(previous);
+  }
+  if (source) {
+    immersiveSuperResolutionSources.set(image, source);
+    registry?.add(source);
+  }
+  else immersiveSuperResolutionSources.delete(image);
+}
+
+function disposeImmersiveSuperResolutionSources(registry) {
+  registry.forEach((source) => source.dispose());
+  registry.clear();
+}
 
 // Pre-generate the scaled preview for an adjacent page while the decode queue
 // is idle. The page blob comes from the shared fetch queue (key-deduped with
@@ -159,12 +208,44 @@ async function resolvePageImageSource(pageUrl, {
   }, { priority });
 }
 
+function scheduleSuperResolutionPreload(pageUrl, superResolution) {
+  const cacheKey = getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution?.manifest);
+  return scheduleSuperResolutionUpgrade(
+    readerImageDecodeQueue,
+    `super-resolution:${cacheKey}`,
+    async (signal) => {
+      if (await getCachedImage(cacheKey)) return true;
+      const src = await resolvePageImageSource(pageUrl, { priority: IMAGE_LOAD_PRIORITY.PRELOAD });
+      if (!src || signal.aborted) return false;
+      const result = await processSuperResolutionImageSource(src, {
+        ...superResolution,
+        signal,
+        cacheKey,
+        getCachedSource: getCachedImage,
+        cacheResult: putImage,
+      });
+      result.dispose();
+      return true;
+    },
+  );
+}
+
 const DRAWER_COLUMNS = 3;
 const DRAWER_GAP = 12;
 const DRAWER_OVERSCAN_ROWS = 4;
 const DRAWER_TRANSITION_MS = 300;
 const IMMERSIVE_TOUCH_ACTIVATION_GUARD_MS = 500;
 const READER_OVERLAY_SCROLL_SELECTOR = '[data-reader-overlay-scroll], [data-select-dropdown="true"]';
+const EMPTY_BORDER_CROP_INSETS = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
+
+function readImmersiveCropInsets(image) {
+  try {
+    return JSON.parse(image?.dataset?.cropInsets || '') || EMPTY_BORDER_CROP_INSETS;
+  } catch {
+    return EMPTY_BORDER_CROP_INSETS;
+  }
+}
+
 const PageImage = React.forwardRef(({
   pageUrl,
   pageIndex,
@@ -187,6 +268,8 @@ const PageImage = React.forwardRef(({
   previewDecodeEnabled = false,
   fullPrecision = false,
   sourceSize,
+  superResolution = null,
+  onSuperResolutionError,
 }, fwdRef) => {
   const [imgSrc, setImgSrc] = useState(null);
   const [loadState, setLoadState] = useState(() => (pageUrl ? 'loading' : 'idle'));
@@ -197,6 +280,7 @@ const PageImage = React.forwardRef(({
   const readyPageUrlRef = useRef(null);
   const readyPrecisionRef = useRef(null);
   const visibleSourceRef = useRef(null);
+  const superResolutionSourceRef = useRef(null);
   const imgRef = useRef(null);
   const shellRef = useRef(null);
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
@@ -236,11 +320,15 @@ const PageImage = React.forwardRef(({
   }, []);
 
   useLayoutEffect(() => {
-    const precisionKey = previewDecodeEnabled && !fullPrecision ? 'optimized' : 'full';
-    const preserveReadySource = readyPageUrlRef.current === pageUrl && readyPrecisionRef.current === precisionKey;
+    const precision = previewDecodeEnabled && !fullPrecision ? 'optimized' : 'full';
+    const precisionKey = `${precision}:original`;
+    const preserveReadySource = readyPageUrlRef.current === pageUrl
+      && readyPrecisionRef.current?.startsWith(`${precision}:`)
+      && !!visibleSourceRef.current;
     if (preserveReadySource) {
       setShowLoadingStatus(false);
       setNetworkPending(false);
+      onReady?.(pageIndex);
       return undefined;
     }
 
@@ -253,6 +341,8 @@ const PageImage = React.forwardRef(({
       readyPageUrlRef.current = null;
       readyPrecisionRef.current = null;
       visibleSourceRef.current = null;
+      superResolutionSourceRef.current?.dispose();
+      superResolutionSourceRef.current = null;
       setLoadState('idle');
       setImgSrc(null);
       return undefined;
@@ -281,18 +371,12 @@ const PageImage = React.forwardRef(({
         setNetworkPending(false);
         if (src) {
           if (serializedDecode) {
-            decodeTicket = readerImageDecodeQueue.schedule(`page:${pageUrl}:${requestSeq}`, async (signal) => {
-              if (!isMounted || requestSeq !== requestSeqRef.current) return;
-              const resolved = await getReaderPreviewSource(src, {
-                enabled: previewDecodeEnabled,
-                fullPrecision,
-                sourceSize,
-                signal,
-              });
-              const decoded = await decodeImageSource(resolved.src, { signal });
-              if (!isMounted || requestSeq !== requestSeqRef.current || !imgRef.current) return;
+            const commitPageImage = (resolved, decoded, source, readyKey, notifyReady = false, recordSourceSize = false) => {
+              if (!isMounted || requestSeq !== requestSeqRef.current || !imgRef.current) return false;
+              superResolutionSourceRef.current?.dispose();
+              superResolutionSourceRef.current = source;
               readyPageUrlRef.current = pageUrl;
-              readyPrecisionRef.current = precisionKey;
+              readyPrecisionRef.current = readyKey;
               visibleSourceRef.current = resolved.src;
               const resolvedNaturalSize = {
                 width: resolved.width || decoded.width,
@@ -303,13 +387,31 @@ const PageImage = React.forwardRef(({
                 try { nextCropInsets = detectImageBorderInsets(decoded.image); } catch {}
               }
               setNaturalSize(resolvedNaturalSize);
-              onNaturalSize?.(pageIndex, resolvedNaturalSize);
+              if (recordSourceSize) onNaturalSize?.(pageIndex, resolvedNaturalSize);
               setCropInsets(nextCropInsets);
               setImgSrc(resolved.src);
               setLoadState('ready');
-              onReady?.(pageIndex);
-            }, priority);
-            await decodeTicket.promise;
+              if (notifyReady) onReady?.(pageIndex);
+              return true;
+            };
+            const originalAlreadyReady = readyPageUrlRef.current === pageUrl
+              && readyPrecisionRef.current?.startsWith(`${precision}:`)
+              && !!visibleSourceRef.current;
+            if (!originalAlreadyReady) {
+              decodeTicket = readerImageDecodeQueue.schedule(`page:${pageUrl}:${requestSeq}`, async (signal) => {
+                if (!isMounted || requestSeq !== requestSeqRef.current) return;
+                const originalResolved = await getReaderPreviewSource(src, {
+                  enabled: previewDecodeEnabled,
+                  fullPrecision,
+                  sourceSize,
+                  signal,
+                });
+                const originalDecoded = await decodeImageSource(originalResolved.src, { signal });
+                commitPageImage(originalResolved, originalDecoded, null, `${precision}:original`, true, true);
+              }, priority);
+              await decodeTicket.promise;
+            }
+            readyPrecisionRef.current = precisionKey;
             return;
           }
           setImgSrc(src);
@@ -339,6 +441,71 @@ const PageImage = React.forwardRef(({
       decodeTicket?.cancel();
     };
   }, [allowNetworkFallback, cacheOnly, cropBorders, fullPrecision, onError, onLoadStart, onNaturalSize, onReady, pageIndex, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize]);
+
+  useEffect(() => {
+    if (!serializedDecode || !superResolution || readyPageUrlRef.current !== pageUrl || !visibleSourceRef.current) return undefined;
+    let active = true;
+    let ticket = null;
+    let pendingSource = null;
+    const precision = previewDecodeEnabled && !fullPrecision ? 'optimized' : 'full';
+    const enhancedKey = `${precision}:${superResolution.manifest?.id ?? 'original'}`;
+    const sourceUrl = visibleSourceRef.current;
+    ticket = scheduleSuperResolutionUpgrade(
+      readerImageDecodeQueue,
+      `super-resolution:${pageUrl}:${superResolution.manifest?.id ?? 'model'}`,
+      async (signal) => {
+        try {
+          pendingSource = await processSuperResolutionImageSource(sourceUrl, {
+            ...superResolution,
+            signal,
+            keepAlive: true,
+            cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
+            getCachedSource: getCachedImage,
+            cacheResult: putImage,
+          });
+          const enhancedResolved = await getReaderPreviewSource(pendingSource.src, {
+            enabled: previewDecodeEnabled,
+            fullPrecision: true,
+            sourceSize: pendingSource || sourceSize,
+            signal,
+          });
+          const enhancedDecoded = await decodeImageSource(enhancedResolved.src, { signal });
+          if (!active || readyPageUrlRef.current !== pageUrl || !imgRef.current) {
+            pendingSource?.dispose();
+            return;
+          }
+          if (pendingSource && enhancedResolved.src !== pendingSource.src) {
+            pendingSource.dispose();
+            pendingSource = null;
+          }
+          superResolutionSourceRef.current?.dispose();
+          superResolutionSourceRef.current = pendingSource;
+          pendingSource = null;
+          visibleSourceRef.current = enhancedResolved.src;
+          readyPrecisionRef.current = enhancedKey;
+          setNaturalSize({ width: enhancedResolved.width || enhancedDecoded.width, height: enhancedResolved.height || enhancedDecoded.height });
+          setImgSrc(enhancedResolved.src);
+          setLoadState('ready');
+        } catch (error) {
+          pendingSource?.dispose();
+          pendingSource = null;
+          if (error?.name !== 'AbortError') onSuperResolutionError?.(error);
+        }
+      },
+      priority,
+    );
+    ticket.promise.catch(() => {});
+    return () => {
+      active = false;
+      ticket?.cancel();
+      pendingSource?.dispose();
+    };
+  }, [fullPrecision, onSuperResolutionError, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize, superResolution]);
+
+  useEffect(() => () => {
+    superResolutionSourceRef.current?.dispose();
+    superResolutionSourceRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!networkPending) {
@@ -388,7 +555,16 @@ const PageImage = React.forwardRef(({
   const isWide = isReady && isWidePageSize(naturalSize);
   const showCrop = isWide && !!cropSide;
   const showRotate = isWide && rotateWide;
-  const cropFrame = showCrop ? getContainedHalfFrame(naturalSize, shellSize, cropSide) : null;
+  const cropFrame = showCrop
+    ? getContainedHalfFrame(naturalSize, shellSize, cropSide, cropBorders ? cropInsets : undefined)
+    : null;
+  const cropTranslation = getBorderCropCenterTranslation(cropInsets);
+  const imageTransform = [
+    showRotate ? 'rotate(90deg)' : style?.transform,
+    cropBorders && (cropTranslation.xPercent || cropTranslation.yPercent)
+      ? `translate(${cropTranslation.xPercent}%, ${cropTranslation.yPercent}%)`
+      : null,
+  ].filter(Boolean).join(' ') || undefined;
   const pageShellStyle = isReady ? style : {
     ...style,
     width: '100%',
@@ -434,9 +610,9 @@ const PageImage = React.forwardRef(({
           WebkitUserDrag: 'none',
           MozUserSelect: 'none',
           msUserSelect: 'none',
-          transform: showRotate ? 'rotate(90deg)' : style?.transform,
+          transform: imageTransform,
           transformOrigin: 'center center',
-          ...(cropBorders ? { clipPath: `inset(${cropInsets.top * 100}% ${cropInsets.right * 100}% ${cropInsets.bottom * 100}% ${cropInsets.left * 100}%)` } : {}),
+          ...(cropBorders ? { clipPath: getBorderCropClipPath(cropInsets) } : {}),
         }}
       />
       {cropFrame && (
@@ -454,7 +630,7 @@ const PageImage = React.forwardRef(({
             maxWidth: 'none',
             maxHeight: 'none',
             objectFit: 'fill',
-            clipPath: cropSide === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)',
+            clipPath: getBorderCropClipPath(cropFrame.clipInsets),
             userSelect: 'none',
             pointerEvents: isImmersive ? 'none' : 'auto',
           }}
@@ -478,10 +654,10 @@ const PageImage = React.forwardRef(({
             color: loadState === 'error' ? 'var(--danger)' : 'var(--text-main)',
           }}
         >
-          <div style={{ fontSize: 'clamp(18px, 2.2vw, 28px)', lineHeight: 1.35, fontWeight: 750, letterSpacing: '0.3px', textWrap: 'balance' }}>
+          <div style={{ fontSize: 'clamp(18px, 2.2vw, 28px)', lineHeight: 1.35, fontWeight: 'var(--font-weight-bold)', letterSpacing: '0.3px', textWrap: 'balance' }}>
             {loadState === 'error' ? (errorLabel || '图片加载失败') : (loadingLabel || '正在加载图像…')}
           </div>
-          <div style={{ fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 600, color: loadState === 'error' ? 'var(--danger-text)' : 'var(--text-sub)' }}>
+          <div style={{ fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 'var(--font-weight-semibold)', color: loadState === 'error' ? 'var(--danger-text)' : 'var(--text-sub)' }}>
             {loadState === 'error' ? '稍后可再次翻页重试' : (loadingHint || '图像就绪后会立即显示')}
           </div>
         </div>
@@ -588,7 +764,6 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
         left: 'max(20px, calc(var(--app-safe-area-left) + 12px))',
         zIndex: 9999,
         padding: 0,
-        borderRadius: '14px',
         width: 'min(360px, calc(100vw - 40px))',
         boxSizing: 'border-box',
         maxHeight: `calc(100dvh - ${top}px - max(12px, calc(var(--app-safe-area-bottom) + 8px)))`,
@@ -597,14 +772,13 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
         overscrollBehavior: 'contain',
         touchAction: 'pan-y',
         WebkitOverflowScrolling: 'touch',
-        boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
         border: '1px solid var(--reader-control-border)',
         transition: 'height 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
       <div ref={contentRef} style={{ padding: '18px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '12px', borderBottom: '1px solid var(--reader-control-border)', paddingBottom: '8px' }}>
-        <span style={{ fontSize: '13px', color: 'var(--accent)', fontWeight: 600 }}>{title}</span>
+        <span style={{ fontSize: 'var(--font-size-body)', color: 'var(--accent)', fontWeight: 'var(--font-weight-semibold)' }}>{title}</span>
         <div className="reader-panel-tabs" role="group" aria-label="档案列表类型">
           {[
             ['history', '阅读历史'],
@@ -624,7 +798,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
         </div>
       </div>
       {items.length === 0 ? (
-        <div style={{ fontSize: '12px', color: 'var(--text-sub)', padding: '8px 0', display: 'grid', gap: '10px' }}>
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-sub)', padding: '8px 0', display: 'grid', gap: '10px' }}>
           <span>{emptyMessage}</span>
           {onRetry && <button type="button" className="reader-panel-view-more" onClick={onRetry}>重试</button>}
         </div>
@@ -645,7 +819,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
               .slice(0, 6);
             const meta = getReaderArchiveListMeta(item, type);
             const progressPct = getArchiveProgressPercent(item);
-            const showProgress = progressPct != null && shouldShowArchiveProgress(progressBarVisibility, type !== 'random');
+            const showProgress = progressPct != null && shouldShowArchiveProgress(progressBarVisibility, type === 'history');
 
             return (
               <div
@@ -673,23 +847,23 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
               >
                 <ReaderArchiveThumb archiveId={id} cacheOnly={cacheOnly} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {item.title}
                   </div>
                   {displayTags.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '4px' }}>
                       {displayTags.map((tag, index) => (
-                        <span key={index} style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'color-mix(in srgb, var(--surface-3) 84%, var(--text-sub))', border: '1px solid color-mix(in srgb, var(--glass-border-hover) 58%, transparent)', whiteSpace: 'nowrap' }}>{tag}</span>
+                        <span key={index} style={{ fontSize: 'var(--font-size-2xs)', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-sub)', background: 'color-mix(in srgb, var(--surface-3) 84%, var(--text-sub))', border: '1px solid color-mix(in srgb, var(--glass-border-hover) 58%, transparent)', whiteSpace: 'nowrap' }}>{tag}</span>
                       ))}
                     </div>
                   )}
                 </div>
                 <div style={{ flexShrink: 0, textAlign: 'right', minWidth: '52px' }}>
-                  <div style={{ fontSize: '10px', color: 'var(--text-sub)' }}>
+                  <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--text-sub)' }}>
                     {meta.timestamp ? new Date(meta.timestamp).toLocaleDateString() : ''}
                   </div>
                   {meta.progress && (
-                    <div style={{ fontSize: '10px', color: 'var(--accent)', marginTop: '2px' }}>{meta.progress}</div>
+                    <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--accent)', marginTop: '2px' }}>{meta.progress}</div>
                   )}
                 </div>
                 {onDelete && <button
@@ -700,7 +874,7 @@ function ReaderArchiveListPanel({ type, title, items, emptyMessage, cacheOnly, o
                   }}
                   style={{
                     background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                    fontSize: '16px', lineHeight: 1, padding: '2px 4px', borderRadius: '4px', flexShrink: 0,
+                    fontSize: 'var(--font-size-lg)', lineHeight: 1, padding: '2px 4px', borderRadius: '4px', flexShrink: 0,
                   }}
                   title={type === 'watchlist' ? '移出待看' : '删除历史'}
                   aria-label={type === 'watchlist' ? `将${item.title || '档案'}移出待看` : `删除${item.title || '档案'}的历史记录`}
@@ -823,7 +997,7 @@ function getNormalReaderFrameStyle(isMobile, toolbarHeight = 'var(--reader-toolb
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    boxShadow: '0 18px 50px rgba(0,0,0,0.34), inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent)',
+    boxShadow: 'var(--shadow-lg), inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent)',
     boxSizing: 'border-box',
   };
 }
@@ -839,7 +1013,7 @@ function getTopBarButtonStyle(isMobile, disabled = false) {
     borderRadius: '8px',
     cursor: disabled ? 'not-allowed' : 'pointer',
     fontSize: isMobile ? '16px' : '13px',
-    fontWeight: '500',
+    fontWeight: 'var(--font-weight-medium)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -871,10 +1045,14 @@ function getPageNavButtonStyle(isMobile) {
 function useReaderToolbarMode(isMobile, layoutKey = null) {
   const toolbarRef = useRef(null);
   const [mode, setMode] = useState(isMobile ? 'mobile' : 'full');
+  const modeRef = useRef(mode);
+  const fullRequiredWidthRef = useRef(0);
+  modeRef.current = mode;
 
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
     if (!toolbar) return undefined;
+    fullRequiredWidthRef.current = 0;
     const update = () => {
       const availableWidth = toolbar.clientWidth;
       const left = toolbar.querySelector('.reader-toolbar-group-left');
@@ -917,10 +1095,17 @@ function useReaderToolbarMode(isMobile, layoutKey = null) {
       const fullRightWidth = fullGroupWidth(right, 8);
       const iconLeftWidth = (leftButtons * 40) + (Math.max(0, leftButtons - 1) * 6);
       const iconRightWidth = (rightButtons * 40) + (Math.max(0, rightButtons - 1) * 6);
+      const measuredFullWidth = (Math.max(fullLeftWidth, fullRightWidth) * 2)
+        + titleWidth + horizontalPadding + groupGaps;
       const measured = {
-        full: (Math.max(fullLeftWidth, fullRightWidth) * 2) + titleWidth + horizontalPadding + groupGaps,
+        full: rememberReaderToolbarFullWidth({
+          previousWidth: fullRequiredWidthRef.current,
+          measuredWidth: measuredFullWidth,
+          mode: modeRef.current,
+        }),
         icons: (Math.max(iconLeftWidth, iconRightWidth) * 2) + titleWidth + horizontalPadding + groupGaps,
       };
+      fullRequiredWidthRef.current = measured.full;
       setMode(resolveReaderToolbarMode({
         isMobile,
         availableWidth,
@@ -952,142 +1137,6 @@ function ReaderToolbarButtonContent({ icon, label, size = 18 }) {
   );
 }
 
-function ReaderStageSkeleton({ title = '', hasMeta = false, hasPages = false, isMobile = false }) {
-  const { toolbarRef, mode } = useReaderToolbarMode(isMobile);
-  const compact = mode !== 'full';
-  const topBtnStyle = getTopBarButtonStyle(compact);
-  const toolbarGroups = getReaderSkeletonToolbarGroups(compact);
-  const pageNavBtnStyle = getPageNavButtonStyle(isMobile);
-  const frameStyle = getNormalReaderFrameStyle(isMobile);
-  return (
-    <div className="reader-root" style={{ minHeight: '100vh', background: 'transparent' }}>
-      <div style={skeletonViewportStyle}>
-        <div
-          ref={toolbarRef}
-          className="reader-toolbar"
-          data-reader-toolbar
-          data-mobile={isMobile ? 'true' : 'false'}
-          data-mode={mode}
-          data-compact={compact ? 'true' : 'false'}
-          style={{
-            padding: '14px 24px',
-            background: 'var(--reader-toolbar-bg)',
-            backdropFilter: 'blur(16px)',
-            borderBottom: '1px solid var(--reader-control-border)',
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-            columnGap: '16px',
-            alignItems: 'center',
-            position: 'relative',
-          }}
-        >
-          <div className="reader-toolbar-group reader-toolbar-group-left" style={{ gridColumn: '1', display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '16px', minWidth: 0 }}>
-            {toolbarGroups.left.map((label, index) => (
-              <div
-                key={index}
-                className="reader-toolbar-button reader-toolbar-skeleton"
-                style={{
-                  ...topBtnStyle,
-                  ...(compact ? { width: '40px', height: '40px', padding: 0 } : {}),
-                  color: 'transparent',
-                  background: 'var(--reader-skeleton-base)',
-                  borderColor: 'var(--reader-control-border)',
-                }}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-          {!compact && (
-            <div
-              className="reader-toolbar-title"
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 'min(var(--reader-toolbar-title-width, 240px), calc(100% - 48px))',
-                minWidth: 0,
-                height: '18px',
-                borderRadius: '8px',
-                background: title ? 'transparent' : 'var(--reader-skeleton-base)',
-                color: title ? 'var(--text-main)' : 'transparent',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                textAlign: 'center',
-                fontSize: '15px',
-                fontWeight: 700,
-              }}
-            >
-              <span className="reader-toolbar-title-content" style={{ display: 'inline-block' }}>
-                {title || 'loading'}
-              </span>
-            </div>
-          )}
-          {compact && <span style={{ minWidth: 0 }} />}
-          <div className="reader-toolbar-group reader-toolbar-group-right" style={{ gridColumn: '3', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: isMobile ? '6px' : '8px', minWidth: 0 }}>
-            {toolbarGroups.right.map((label, index) => (
-              <div
-                key={index}
-                className="reader-toolbar-button reader-toolbar-skeleton"
-                style={{
-                  ...topBtnStyle,
-                  ...(compact ? { width: '40px', height: '40px', padding: 0 } : {}),
-                  color: 'transparent',
-                  background: 'var(--reader-skeleton-base)',
-                  borderColor: 'var(--reader-control-border)',
-                }}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={normalReaderStageLayoutStyle}>
-          <div
-            className="reader-shell-pulse reader-stage-frame"
-            style={frameStyle}
-          >
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                maxWidth: '100%',
-                maxHeight: '100%',
-                minWidth: 0,
-                borderRadius: '8px',
-                background: 'var(--reader-skeleton-base)',
-                border: '1px solid var(--reader-control-border)',
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              <div className="shimmer-strip" style={{ position: 'absolute', inset: 0 }} />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: isMobile ? '18px' : '24px', padding: '20px 8px', flexShrink: 0 }}>
-            <div className="reader-skeleton-surface" style={pageNavBtnStyle} />
-            <div className="reader-skeleton-surface" style={{ width: hasPages ? '72px' : '96px', height: '18px', borderRadius: '8px' }} />
-            <div className="reader-skeleton-surface" style={pageNavBtnStyle} />
-          </div>
-        </div>
-
-        {hasMeta && (
-          <div style={{ maxWidth: '1300px', width: '100%', margin: '0 auto', padding: '0 16px 24px 16px' }}>
-            <div className="section-reveal section-reveal-delay-2" style={{ display: 'grid', gap: '20px' }}>
-              <div className="reader-panel-surface glass-panel" style={{ minHeight: '168px' }} />
-              <div className="reader-panel-surface glass-panel" style={{ minHeight: '220px' }} />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ReaderStageSlot({ status, onRetry }) {
   if (status === 'error') {
     return (
@@ -1115,6 +1164,7 @@ function ReaderStageSlot({ status, onRetry }) {
 }
 
 export default function Reader({ archiveId, onBack, coldRestoreBoot = false, incognito = false }) {
+  const { showToast } = useToast();
   const persistReadingProgress = !incognito;
   const workerReady = hasValidWorkerConfig();
   const bootState = getBootState();
@@ -1131,6 +1181,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const serverUrlRef = useRef((localStorage.getItem('lrr_server_url') || '').replace(/\/$/, ''));
   const serverInfoRef = useRef(getStoredServerInfo());
   const containerRef = useRef(null);
+  const settingsPanelRef = useRef(null);
+  const settingsPanelContentRef = useRef(null);
   // ===== Core States =====
   const [archive, setArchive] = useState(() => readerSnapshot?.archive || null);
   const [pages, setPages] = useState(() => Array.isArray(readerSnapshot?.pages) ? readerSnapshot.pages : []);
@@ -1160,12 +1212,28 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [bootstrapRetryToken, setBootstrapRetryToken] = useState(0);
 
   // ===== UI States =====
-  const [viewMode, setViewMode] = useState(() => readerSnapshot?.viewMode || 'normal');
+  const [viewMode, setViewMode] = useState('normal');
   const [showUI, setShowUI] = useState(true);
-  const [showHeader, setShowHeader] = useState(() => readerSnapshot?.showHeader ?? true);
+  const [showHeader, setShowHeader] = useState(true);
   const [showDrawer, setShowDrawer] = useState(false);
   const [drawerSide, setDrawerSide] = useState('right');
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState('general');
+  const [settingsPanelHeight, setSettingsPanelHeight] = useState(null);
+  const [srSupport, setSrSupport] = useState(() => {
+    const initial = detectSuperResolutionSupport();
+    return { ...initial, checking: initial.supported };
+  });
+  const [srArchiveEnabled, setSrArchiveEnabled] = useState(false);
+  const [srRuntimeContext, setSrRuntimeContext] = useState(null);
+  const [srRuntimeError, setSrRuntimeError] = useState('');
+  const [srFailedProfileIds, setSrFailedProfileIds] = useState(() => new Set());
+  const [srOversizedConfirmOpen, setSrOversizedConfirmOpen] = useState(false);
+  const srInitToastRequestedRef = useRef(false);
+  const srArchiveManualRef = useRef(null);
+  const srErrorToastKeyRef = useRef('');
+  const srInteractionPausedRef = useRef(false);
+  const srInteractionResumeTimerRef = useRef(null);
   const [showArchivePanel, setShowArchivePanel] = useState(false);
   const [immersiveControlsSide, setImmersiveControlsSide] = useState(null);
   const [archivePanelType, setArchivePanelType] = useState('history');
@@ -1177,8 +1245,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [coverSetPage, setCoverSetPage] = useState(0);
   const [coverConfirmPage, setCoverConfirmPage] = useState(0);
   const [progressClearing, setProgressClearing] = useState(false);
-  const [progressNotice, setProgressNotice] = useState('');
-  const [progressSyncNotice, setProgressSyncNotice] = useState('');
   const [thumbnailQueueState, setThumbnailQueueState] = useState('idle');
   const [thumbnailQueueRetryToken, setThumbnailQueueRetryToken] = useState(0);
   const [drawerPrefetchSet, setDrawerPrefetchSet] = useState(() => new Set());
@@ -1189,6 +1255,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [hideRead] = useState(getHideRead);
   const [randomHideRead] = useState(getRandomHideRead);
   const [isMobile, setIsMobile] = useState(() => isReaderMobileViewport(window.innerWidth));
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
   const { toolbarRef, mode: toolbarMode } = useReaderToolbarMode(isMobile, viewMode);
   const toolbarCompact = toolbarMode !== 'full';
   const isIosWebKit = useMemo(() => isIosWebKitPlatform(
@@ -1213,6 +1281,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       : 0,
     shownAt: 0,
   }));
+  const normalReadyPageIndicesRef = useRef(new Set());
   const { canShowMetadata, canShowPageCount, canNavigate, canRenderPage } = getReaderCapabilities(renderState, pages.length);
   const currentPageReady = canRenderPage
     && pageLoadPhase.status === 'ready'
@@ -1236,12 +1305,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }, [archiveId, canRenderPage]);
 
   // ===== Zoom =====
-  const [zoomScale, setZoomScale] = useState(() => readerSnapshot?.zoomScale || 1.0);
+  const [zoomScale, setZoomScale] = useState(1.0);
   const fullPrecisionDecode = zoomScale > 1.0;
 
   // ===== Pan (drag-to-scroll when zoomed) =====
-  const [panX, setPanX] = useState(() => readerSnapshot?.panX || 0);
-  const [panY, setPanY] = useState(() => readerSnapshot?.panY || 0);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
 
   // Reset pan offset whenever zoom returns to 100%
   useEffect(() => {
@@ -1259,6 +1328,137 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     } catch {}
     return { ...DEFAULT_READER_SETTINGS };
   });
+  const srModel = useMemo(() => getSuperResolutionModel(settings.srModel), [settings.srModel]);
+  const srManifest = useMemo(() => {
+    const candidate = srModel?.value === 'waifu2x'
+      ? selectWaifu2xManifest(srSupport.adapterInfo, srFailedProfileIds)
+      : srModel;
+    return validateSuperResolutionManifest(candidate) ? candidate : null;
+  }, [srFailedProfileIds, srModel, srSupport.adapterInfo]);
+  useEffect(() => {
+    setSrRuntimeContext(null);
+    setSrRuntimeError('');
+    if (!settings.srEnabled || !srManifest || !srSupport.supported || srSupport.checking) return undefined;
+
+    let active = true;
+    let runtime;
+    try {
+      runtime = createSuperResolutionRuntime();
+    } catch (error) {
+      const message = error?.message || '超分运行时创建失败';
+      setSrRuntimeError(message);
+      if (srInitToastRequestedRef.current) showToast(`超分初始化失败：${message}`, 'error');
+      srInitToastRequestedRef.current = false;
+      return undefined;
+    }
+    runtime.init(srManifest).then(({ backend }) => {
+      if (!active) return;
+      srInitToastRequestedRef.current = false;
+      setSrRuntimeContext({ runtime, manifest: srManifest, backend });
+    }).catch((error) => {
+      if (!active) return;
+      if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest, adapterInfo: srSupport.adapterInfo })) {
+        setSrFailedProfileIds((current) => {
+          if (current.has(srManifest.id)) return current;
+          const next = new Set(current);
+          next.add(srManifest.id);
+          return next;
+        });
+        return;
+      }
+      srArchiveManualRef.current = null;
+      setSrArchiveEnabled(false);
+      setSettingsState((current) => {
+        if (!current.srEnabled) return current;
+        const next = { ...current, srEnabled: false };
+        localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(next));
+        return next;
+      });
+      const message = error?.message || '模型初始化失败';
+      setSrRuntimeError(message);
+      if (srInitToastRequestedRef.current) showToast(`超分初始化失败：${message}`, 'error');
+      srInitToastRequestedRef.current = false;
+    });
+    return () => {
+      active = false;
+      cancelVisibleSuperResolutionJobs();
+      runtime.dispose();
+    };
+  }, [settings.srEnabled, showToast, srManifest, srModel, srSupport.checking, srSupport.supported]);
+  const disableArchiveSuperResolution = useCallback(() => {
+    srArchiveManualRef.current = {
+      archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
+      enabled: false,
+    };
+    cancelVisibleSuperResolutionJobs();
+    setSrArchiveEnabled(false);
+  }, [archive, archiveId]);
+
+  const handleSuperResolutionError = useCallback((error) => {
+    const failure = resolveSuperResolutionFailure(error);
+    if (!failure.notify) return;
+    if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest, adapterInfo: srSupport.adapterInfo })) {
+      setSrFailedProfileIds((current) => {
+        if (current.has(srManifest.id)) return current;
+        const next = new Set(current);
+        next.add(srManifest.id);
+        return next;
+      });
+      return;
+    }
+    if (failure.disable) disableArchiveSuperResolution();
+    const message = failure.webgpuShader
+      ? '此设备的 WebGPU 无法编译超分卷积着色器（onnxruntime-web Conv2dMM），已关闭超分。请更新系统 WebView 或浏览器后重试，或在阅读器设置中切换其他超分模型（如 Real-CUGAN）。'
+      : error?.message || '未知错误';
+    if (srErrorToastKeyRef.current === message) return;
+    srErrorToastKeyRef.current = message;
+    showToast(`超分失败，已关闭并显示原图：${message}`, 'error');
+  }, [disableArchiveSuperResolution, showToast, srManifest, srModel]);
+  const currentPageSize = pageSizes[currentIndex];
+  const currentPageTooLargeForSuperResolution = isSuperResolutionPageTooLarge(currentPageSize, srManifest?.scale);
+  const scheduledSrRuntimeContext = srRuntimeContext;
+  const activeSuperResolution = srArchiveEnabled && !currentPageTooLargeForSuperResolution
+    ? scheduledSrRuntimeContext
+    : null;
+  function getSuperResolutionForPage(pageIndex, foreground = true) {
+    if (!foreground || !srArchiveEnabled || !scheduledSrRuntimeContext) return null;
+    const size = pageSizes[pageIndex];
+    if (!(Number(size?.width) > 0 && Number(size?.height) > 0)) return null;
+    if (isSuperResolutionPageTooLarge(size, srManifest?.scale)) {
+      return null;
+    }
+    return scheduledSrRuntimeContext;
+  }
+  const pauseSuperResolutionForInteraction = useCallback(() => {
+    if (!srArchiveEnabled || !srRuntimeContext) return;
+    const runtime = srRuntimeContext.runtime;
+    if (!srInteractionPausedRef.current) {
+      srInteractionPausedRef.current = true;
+      srRuntimeContext.runtime.pause();
+    }
+    srInteractionResumeTimerRef.current = scheduleSuperResolutionResume({
+      currentTimer: srInteractionResumeTimerRef.current,
+      resume: () => {
+        srInteractionResumeTimerRef.current = null;
+        srInteractionPausedRef.current = false;
+        runtime.resume();
+      },
+    });
+  }, [srArchiveEnabled, srRuntimeContext]);
+
+  useEffect(() => () => {
+    if (srInteractionResumeTimerRef.current !== null) {
+      clearTimeout(srInteractionResumeTimerRef.current);
+      srInteractionResumeTimerRef.current = null;
+    }
+    if (srInteractionPausedRef.current) srRuntimeContext?.runtime.resume();
+    srInteractionPausedRef.current = false;
+  }, [srRuntimeContext]);
+
+  useEffect(() => {
+    if (!srArchiveEnabled) return undefined;
+    return subscribeSuperResolutionInteraction(window, pauseSuperResolutionForInteraction);
+  }, [pauseSuperResolutionForInteraction, srArchiveEnabled]);
   const [autoWebtoon, setAutoWebtoon] = useState(false);
   const [autoMangaEligible, setAutoMangaEligible] = useState(false);
   const [readerContainerWidth, setReaderContainerWidth] = useState(() => window.innerWidth);
@@ -1283,6 +1483,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }), [effectiveReadingLayout, pages.length, settings.direction, splitWidePages]);
   const currentSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: currentIndex, splitPart });
   const currentSpread = readerSpreads[Math.max(0, currentSpreadIndex)] || [];
+  const foregroundSuperResolutionPageIndices = getForegroundSuperResolutionPageIndices({
+    webtoonActive,
+    currentIndex,
+    currentSpread,
+  });
   const currentSpreadPageIndices = new Set(currentSpread.map((unit) => unit.pageIndex));
   const adjacentDecodePageIndices = [...new Set(
     getReaderDecodeWindow(readerSpreads, currentSpreadIndex)
@@ -1293,12 +1498,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [preloadInput, setPreloadInput] = useState(String(settings.preloadCount));
   const [decodeConcurrencyInput, setDecodeConcurrencyInput] = useState(String(settings.maxConcurrentDecodes));
   const [autoTurnInput, setAutoTurnInput] = useState(String(settings.autoTurnInterval));
+  const [srThresholdInput, setSrThresholdInput] = useState(String(settings.srAutoThreshold));
   const archiveRef = useRef(archive);
   const pagesRef = useRef(pages);
   const currentIndexRefSnapshot = useRef(currentIndex);
   const splitPartRef = useRef(splitPart);
   const displayedIndexRef = useRef(displayedIndex);
-  const viewModeSnapshotRef = useRef(viewMode);
   const pageLoadPhaseRef = useRef(pageLoadPhase);
   const bootstrapGenerationRef = useRef(0);
 
@@ -1307,7 +1512,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   useEffect(() => { currentIndexRefSnapshot.current = currentIndex; }, [currentIndex]);
   useEffect(() => { splitPartRef.current = splitPart; }, [splitPart]);
   useEffect(() => { displayedIndexRef.current = displayedIndex; }, [displayedIndex]);
-  useEffect(() => { viewModeSnapshotRef.current = viewMode; }, [viewMode]);
   useEffect(() => { pageLoadPhaseRef.current = pageLoadPhase; }, [pageLoadPhase]);
 
   useEffect(() => {
@@ -1346,13 +1550,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       currentIndex: currentIndexRefSnapshot.current,
       splitPart: splitPartRef.current,
       displayedIndex: displayedIndexRef.current,
-      viewMode: viewModeSnapshotRef.current,
-      showHeader,
-      zoomScale: zoomScaleRef.current,
-      panX: panRef.current.x,
-      panY: panRef.current.y,
     });
-  }, [archiveId, persistReadingProgress, showHeader]);
+  }, [archiveId, persistReadingProgress]);
   useEffect(() => {
     serverInfoRef.current = { ...(serverInfoRef.current || {}), server_tracks_progress: serverTracksProgress };
   }, [serverTracksProgress]);
@@ -1401,9 +1600,25 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setPreloadInput(String(next.preloadCount));
       setDecodeConcurrencyInput(String(next.maxConcurrentDecodes));
       setAutoTurnInput(String(next.autoTurnInterval));
+      setSrThresholdInput(String(next.srAutoThreshold));
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    verifySuperResolutionSupport().then((support) => {
+      if (!active) return;
+      setSrSupport({ ...support, checking: false });
+      if (!support.supported) {
+        cancelVisibleSuperResolutionJobs();
+        updateSettings((current) => current.srEnabled
+          ? { ...current, srEnabled: false }
+          : current);
+      }
+    });
+    return () => { active = false; };
+  }, [updateSettings]);
 
   useEffect(() => {
     readerImageDecodeQueue.setMaxConcurrent(settings.maxConcurrentDecodes);
@@ -1513,7 +1728,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         snapshotSaveTimerRef.current = null;
       }
     };
-  }, [archive, pages, currentIndex, splitPart, displayedIndex, viewMode, zoomScale, panX, panY, saveReaderStateSnapshot]);
+  }, [archive, pages, currentIndex, splitPart, displayedIndex, saveReaderStateSnapshot]);
 
   useEffect(() => {
     if (splitPart !== 1) return;
@@ -1619,6 +1834,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const imgLeftSecondRef = useRef(null);
   const imgRightRef = useRef(null);
   const imgRightSecondRef = useRef(null);
+  const immersiveSuperResolutionSourceRegistryRef = useRef(new Set());
   const leftDivRef = useRef(null);
   const rightDivRef = useRef(null);
   const immersiveLoadSeqRef = useRef(0);
@@ -1671,10 +1887,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         await lrrApi.updateProgress(id, targetPage, { keepalive });
         rememberArchiveProgressInCatalog(id, targetPage);
         highestLrrSyncedPageRef.current.set(id, targetPage);
-        setProgressSyncNotice('');
       })
       .catch(() => {
-        setProgressSyncNotice('阅读进度同步失败，将自动重试。');
+        showToast('阅读进度同步失败，将自动重试。', 'error');
         if ((highestLrrQueuedPageRef.current.get(id) || 0) === targetPage) {
           const oldTimer = lrrProgressRetryTimersRef.current.get(id);
           if (oldTimer) clearTimeout(oldTimer);
@@ -1693,7 +1908,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
     });
     return next;
-  }, [persistReadingProgress]);
+  }, [persistReadingProgress, showToast]);
 
   useEffect(() => {
     const flushProgress = ({ keepalive = false } = {}) => {
@@ -1724,7 +1939,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const webtoonContainerRef = useRef(null);
   const webtoonScrollRafRef = useRef(null);
   const lastTapRef = useRef(0);
-  const lastTapPosRef = useRef({ x: 0, y: 0 });
   const singleTapTimerRef = useRef(null);
   const pinchStartRef = useRef({ dist: 0, scale: 1.0, cx: 0, cy: 0 });
   const overshootTimerRef = useRef(null);
@@ -1732,6 +1946,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const lastTouchTimeRef = useRef(0);
   const immersiveControlsTimerRef = useRef(null);
   const immersiveTouchGuardUntilRef = useRef(0);
+  const immersiveIndicatorAnchorRef = useRef(null);
+  const pageIndicatorShouldShowRef = useRef(false);
 
   // ===== Pan refs =====
   const panRef = useRef({ x: panX, y: panY, startX: 0, startY: 0, originX: panX, originY: panY });
@@ -1740,6 +1956,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const hideImmersiveControls = useCallback(() => {
     if (immersiveControlsTimerRef.current) clearTimeout(immersiveControlsTimerRef.current);
     immersiveControlsTimerRef.current = null;
+    immersiveIndicatorAnchorRef.current = null;
     setImmersiveControlsSide(null);
   }, []);
 
@@ -1747,6 +1964,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const nextSide = side === 'left' ? 'left' : 'right';
     if (immersiveControlsTimerRef.current) clearTimeout(immersiveControlsTimerRef.current);
     immersiveControlsTimerRef.current = null;
+    if (!immersiveIndicatorAnchorRef.current) {
+      immersiveIndicatorAnchorRef.current = pageIndicatorShouldShowRef.current
+        ? (isMobileRef.current ? 'center' : 'right')
+        : 'none';
+    }
     setImmersiveControlsSide(nextSide);
   }, []);
 
@@ -1780,6 +2002,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       if (!wrapper) return;
       wrapper.style.transition = zoomTransformAnimatedRef.current ? 'transform 0.15s ease-out' : 'none';
       wrapper.style.transform = `translate3d(${panRef.current.x}px, ${panRef.current.y}px, 0) scale(${zoomScaleRef.current})`;
+      // React 只在虚拟样式变化时重写内联样式；非动画帧写入的 transition:none
+      // 若不主动恢复，会一直残留，导致下一次缩放（如翻页后的首次双击放大）瞬移。
+      if (!zoomTransformAnimatedRef.current) {
+        requestAnimationFrame(() => {
+          if (!zoomTransformFrameRef.current && wrapper.isConnected) {
+            wrapper.style.transition = 'transform 0.18s ease-out';
+          }
+        });
+      }
     });
   }, []);
 
@@ -1790,11 +2021,33 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     setZoomScale(zoomScaleRef.current);
   }, [scheduleZoomTransform]);
 
-  const applyZoomAtPoint = useCallback((nextScale, focalX = window.innerWidth / 2, focalY = window.innerHeight / 2, commit = true) => {
-    const prevScale = zoomScaleRef.current || 1;
-    let scale = Math.max(1, Math.min(5, nextScale));
+  const exitImmersiveMode = useCallback(() => {
+    if (wheelZoomCommitTimerRef.current) clearTimeout(wheelZoomCommitTimerRef.current);
+    wheelZoomCommitTimerRef.current = null;
+    zoomScaleRef.current = 1.0;
+    panRef.current = { x: 0, y: 0, startX: 0, startY: 0, originX: 0, originY: 0 };
+    scheduleZoomTransform();
+    setPanX(0);
+    setPanY(0);
+    setZoomScale(1.0);
+    hideImmersiveControls();
+    if (settings.autoTurnActive) {
+      updateSettings((current) => ({ ...current, autoTurnActive: false }));
+    }
+    setViewMode('normal');
+  }, [hideImmersiveControls, scheduleZoomTransform, settings.autoTurnActive, updateSettings]);
 
-    if (scale <= 1.01) {
+  const applyZoomAtPoint = useCallback((
+    nextScale,
+    focalX = window.innerWidth / 2,
+    focalY = window.innerHeight / 2,
+    commit = true,
+    allowLowerOvershoot = false,
+  ) => {
+    const prevScale = zoomScaleRef.current || 1;
+    let scale = Math.max(allowLowerOvershoot ? 0.9 : 1, Math.min(5, nextScale));
+
+    if (!allowLowerOvershoot && scale <= 1.01) {
       scale = 1;
       panRef.current = { x: 0, y: 0, startX: 0, startY: 0, originX: 0, originY: 0 };
       zoomScaleRef.current = scale;
@@ -1803,17 +2056,21 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return scale;
     }
 
-    const ratio = scale / Math.max(prevScale, 0.001);
     const originX = window.innerWidth / 2;
     const originY = window.innerHeight / 2;
-    const focalOffsetX = focalX - originX;
-    const focalOffsetY = focalY - originY;
-    const maxTx = Math.max(0, (scale - 1) * window.innerWidth / 2);
-    const maxTy = Math.max(0, (scale - 1) * window.innerHeight / 2);
-    const nextX = Math.max(-maxTx, Math.min(maxTx, ratio * panRef.current.x + (1 - ratio) * focalOffsetX));
-    const nextY = Math.max(-maxTy, Math.min(maxTy, ratio * panRef.current.y + (1 - ratio) * focalOffsetY));
-
-    panRef.current = { ...panRef.current, x: nextX, y: nextY };
+    panRef.current = {
+      ...panRef.current,
+      ...resolveImmersiveZoomPan({
+        previousScale: prevScale,
+        nextScale: scale,
+        panX: panRef.current.x,
+        panY: panRef.current.y,
+        focalX,
+        focalY,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      }),
+    };
     zoomScaleRef.current = scale;
     if (commit) commitZoomTransform(true);
     else scheduleZoomTransform();
@@ -1836,6 +2093,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const drawerReturnFocusRef = useRef(null);
   const drawerTransitionTimerRef = useRef(null);
   const drawerOpenFrameRef = useRef(null);
+  const drawerViewportFrameRef = useRef(null);
 
   const clearDrawerTransition = useCallback(() => {
     if (drawerTransitionTimerRef.current) {
@@ -1923,12 +2181,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const releaseReaderImageElements = useCallback(() => {
     [imgLeftRef.current, imgLeftSecondRef.current, imgCurrRef.current, imgCurrSecondRef.current, imgRightRef.current, imgRightSecondRef.current].forEach((image) => {
       if (!image) return;
+      replaceImmersiveSuperResolutionSource(image, null, immersiveSuperResolutionSourceRegistryRef.current);
       image.onload = null;
       image.onerror = null;
       image.style.display = 'none';
       image.removeAttribute('src');
       delete image.dataset.pageIndex;
       delete image.dataset.readerUnit;
+      delete image.dataset.cropInsets;
     });
   }, []);
 
@@ -1968,11 +2228,25 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const decodeTickets = [];
     const key = localStorage.getItem('lrr_api_key') || '';
 
+    const storeCropInsets = (image, decodedImage = image) => {
+      if (!settings.cropBordersEnabled) {
+        delete image.dataset.cropInsets;
+        return;
+      }
+      if (decodedImage === image && image.dataset.cropInsets) return;
+      let cropInsets = EMPTY_BORDER_CROP_INSETS;
+      try { cropInsets = detectImageBorderInsets(decodedImage); } catch {}
+      image.dataset.cropInsets = JSON.stringify(cropInsets);
+    };
+
     const applyUnitStyle = (image, unit) => {
       const sourceSize = {
         width: Number(image.dataset.sourceWidth) || image.naturalWidth,
         height: Number(image.dataset.sourceHeight) || image.naturalHeight,
       };
+      const cropInsets = settings.cropBordersEnabled
+        ? readImmersiveCropInsets(image)
+        : EMPTY_BORDER_CROP_INSETS;
       const wide = isWidePageSize(sourceSize);
       const cropped = wide && !!unit?.cropSide;
       const slot = image.parentElement;
@@ -1982,6 +2256,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           sourceSize,
           slotSize,
           unit.cropSide,
+          cropInsets,
         )
         : null;
       image.style.position = cropped ? 'absolute' : 'static';
@@ -1994,13 +2269,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       image.style.maxHeight = cropped ? 'none' : (rotated ? `${slotSize.width}px` : '100%');
       image.style.objectFit = cropped ? 'fill' : 'contain';
       image.style.clipPath = cropped
-        ? (unit.cropSide === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)')
-        : 'none';
-      image.style.transform = rotated ? 'rotate(90deg)' : 'none';
+        ? getBorderCropClipPath(cropFrame.clipInsets)
+        : (settings.cropBordersEnabled ? getBorderCropClipPath(cropInsets) : 'none');
+      const cropTranslation = getBorderCropCenterTranslation(cropInsets);
+      image.style.transform = [
+        rotated ? 'rotate(90deg)' : null,
+        !cropped && settings.cropBordersEnabled && (cropTranslation.xPercent || cropTranslation.yPercent)
+          ? `translate(${cropTranslation.xPercent}%, ${cropTranslation.yPercent}%)`
+          : null,
+      ].filter(Boolean).join(' ') || 'none';
       image.style.transformOrigin = 'center center';
     };
 
-    const loadImg = async (imgRef, unit, priority, preserveVisible = false) => {
+    const loadImg = async (imgRef, unit, priority, preserveVisible = false, superResolution = null) => {
       const pageUrl = unit ? pages[unit.pageIndex] : null;
       const pageIndex = unit?.pageIndex;
       if (!pageUrl || !imgRef.current) return false;
@@ -2026,7 +2307,84 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         if (!alive || loadSeq !== immersiveLoadSeqRef.current || !imgRef.current) return false;
         if (src) {
           const image = imgRef.current;
-          const precisionKey = settings.optimizedImageDecodeEnabled && !fullPrecisionDecode ? 'optimized' : 'full';
+          const precision = settings.optimizedImageDecodeEnabled && !fullPrecisionDecode ? 'optimized' : 'full';
+          const precisionKey = `${precision}:${superResolution?.manifest?.id ?? 'original'}`;
+          const commitImmersiveImage = (decoded, decodePrecision, superResolutionSource = null, recordSourceSize = false) => {
+            replaceImmersiveSuperResolutionSource(
+              image,
+              superResolutionSource,
+              immersiveSuperResolutionSourceRegistryRef.current,
+            );
+            image.src = decoded.src;
+            image.dataset.sourceWidth = String(decoded.width);
+            image.dataset.sourceHeight = String(decoded.height);
+            image.dataset.decodePrecision = decodePrecision;
+            image.dataset.pageIndex = String(pageIndex);
+            image.dataset.readerUnit = unitKey;
+            storeCropInsets(image, decoded.image);
+            if (recordSourceSize) {
+              setPageSizes((previous) => {
+                const current = previous[pageIndex];
+                if (current?.width === decoded.width && current?.height === decoded.height) return previous;
+                return { ...previous, [pageIndex]: { width: decoded.width, height: decoded.height } };
+              });
+            }
+            applyUnitStyle(image, unit);
+            image.style.display = '';
+          };
+          const startSuperResolutionUpgrade = () => {
+            if (!superResolution) return;
+            const upgradeTicket = scheduleSuperResolutionUpgrade(
+              readerImageDecodeQueue,
+              `immersive-super-resolution:${loadSeq}:${unitKey}`,
+              async (signal) => {
+                let superResolutionSource = null;
+                try {
+                  superResolutionSource = await processSuperResolutionImageSource(src, {
+                    ...superResolution,
+                    signal,
+                    keepAlive: true,
+                    cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
+                    getCachedSource: getCachedImage,
+                    cacheResult: putImage,
+                  });
+                  const resolved = await getReaderPreviewSource(superResolutionSource.src, {
+                    enabled: settings.optimizedImageDecodeEnabled,
+                    fullPrecision: true,
+                    sourceSize: superResolutionSource,
+                    signal,
+                  });
+                  const decoded = await decodeImageSource(resolved.src, { signal });
+                  if (resolved.src !== superResolutionSource.src) {
+                    superResolutionSource.dispose();
+                    superResolutionSource = null;
+                  }
+                  return {
+                    src: resolved.src,
+                    width: resolved.width || decoded.width,
+                    height: resolved.height || decoded.height,
+                    image: decoded.image,
+                    superResolutionSource,
+                  };
+                } catch (error) {
+                  superResolutionSource?.dispose();
+                  throw error;
+                }
+              },
+              priority,
+            );
+            decodeTickets.push(upgradeTicket);
+            upgradeTicket.promise.then((decoded) => {
+              if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current
+                || image.dataset.readerUnit !== unitKey) {
+                decoded.superResolutionSource?.dispose();
+                return;
+              }
+              commitImmersiveImage(decoded, precisionKey, decoded.superResolutionSource);
+            }).catch((error) => {
+              if (error?.name !== 'AbortError') handleSuperResolutionError(error);
+            });
+          };
           const imageAlreadyReady = image.dataset.pageIndex === String(pageIndex)
             && image.dataset.decodePrecision === precisionKey
             && image.complete
@@ -2034,8 +2392,23 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           if (imageAlreadyReady) {
             return () => {
               image.dataset.readerUnit = unitKey;
+              storeCropInsets(image);
               applyUnitStyle(image, unit);
               image.style.display = '';
+              return true;
+            };
+          }
+          const originalAlreadyReady = image.dataset.pageIndex === String(pageIndex)
+            && image.dataset.decodePrecision === `${precision}:original`
+            && image.complete
+            && image.naturalWidth > 0;
+          if (originalAlreadyReady && superResolution) {
+            return () => {
+              image.dataset.readerUnit = unitKey;
+              storeCropInsets(image);
+              applyUnitStyle(image, unit);
+              image.style.display = '';
+              startSuperResolutionUpgrade();
               return true;
             };
           }
@@ -2053,30 +2426,25 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 src: resolved.src,
                 width: resolved.width || decoded.width,
                 height: resolved.height || decoded.height,
+                image: decoded.image,
               };
             },
             priority,
           );
           decodeTickets.push(decodeTicket);
           const decoded = await decodeTicket.promise;
-          if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current) return false;
-          return () => {
+          if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current) {
+            decoded.superResolutionSource?.dispose();
+            return false;
+          }
+          const commit = () => {
             if (!alive || loadSeq !== immersiveLoadSeqRef.current || image !== imgRef.current) return false;
-            image.src = decoded.src;
-            image.dataset.sourceWidth = String(decoded.width);
-            image.dataset.sourceHeight = String(decoded.height);
-            image.dataset.decodePrecision = precisionKey;
-            image.dataset.pageIndex = String(pageIndex);
-            image.dataset.readerUnit = unitKey;
-            setPageSizes((previous) => {
-              const current = previous[pageIndex];
-              if (current?.width === decoded.width && current?.height === decoded.height) return previous;
-              return { ...previous, [pageIndex]: { width: decoded.width, height: decoded.height } };
-            });
-            applyUnitStyle(image, unit);
-            image.style.display = '';
+            const originalDecoded = decoded;
+            commitImmersiveImage(originalDecoded, `${precision}:original`, null, true);
+            startSuperResolutionUpgrade();
             return true;
           };
+          return commit;
         }
         return false;
       } catch {
@@ -2085,11 +2453,17 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     };
     const unloadImg = (imgRef) => {
       if (imgRef.current) {
+        replaceImmersiveSuperResolutionSource(
+          imgRef.current,
+          null,
+          immersiveSuperResolutionSourceRegistryRef.current,
+        );
         imgRef.current.src = '';
         imgRef.current.style.display = 'none';
         delete imgRef.current.dataset.pageIndex;
         delete imgRef.current.dataset.readerUnit;
         delete imgRef.current.dataset.decodePrecision;
+        delete imgRef.current.dataset.cropInsets;
       }
     };
 
@@ -2119,21 +2493,33 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         if (ref.current?.parentElement) resizeObserver.observe(ref.current.parentElement);
       }
     }
-    const loadSpread = async (refs, spread, priority, preserveVisible = false) => {
+    const loadSpread = async (refs, spread, priority, preserveVisible = false, superResolution = null) => {
+      const resolveSuperResolution = typeof superResolution === 'function'
+        ? superResolution
+        : () => superResolution;
       const first = spread[0]
-        ? loadImg(refs[0], spread[0], priority, preserveVisible)
+        ? loadImg(refs[0], spread[0], priority, preserveVisible, resolveSuperResolution(spread[0].pageIndex))
         : Promise.resolve(false);
       const second = spread[1]
-        ? loadImg(refs[1], spread[1], priority, preserveVisible)
+        ? loadImg(refs[1], spread[1], priority, preserveVisible, resolveSuperResolution(spread[1].pageIndex))
         : Promise.resolve(() => { unloadImg(refs[1]); return true; });
       const commits = await Promise.all([first, second]);
-      if (commits.some((commit) => typeof commit !== 'function')) return false;
+      if (commits.some((commit) => typeof commit !== 'function')) {
+        commits.forEach((commit) => commit?.dispose?.());
+        return false;
+      }
       let committed = true;
       commits.forEach((commit) => { committed = commit() && committed; });
       return committed;
     };
 
-    loadSpread([imgCurrRef, imgCurrSecondRef], activeSpread, IMAGE_LOAD_PRIORITY.CRITICAL, true).then((ok) => {
+    loadSpread(
+      [imgCurrRef, imgCurrSecondRef],
+      activeSpread,
+      IMAGE_LOAD_PRIORITY.CRITICAL,
+      true,
+      (pageIndex) => getSuperResolutionForPage(pageIndex, foregroundSuperResolutionPageIndices.has(pageIndex)),
+    ).then((ok) => {
       if (!alive || loadSeq !== immersiveLoadSeqRef.current) return;
       if (currentIndexRef.current !== idx || currentSpreadIndexRef.current !== activeSpreadIndex) return;
       if (ok) {
@@ -2158,12 +2544,29 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       decodeTickets.forEach((ticket) => ticket.cancel());
       resizeObserver?.disconnect();
     };
-  }, [assetCacheOnly, currentIndex, currentSpreadIndex, fullPrecisionDecode, pages, readerSpreads, settings.direction, settings.optimizedImageDecodeEnabled, settings.rotateWidePagesEnabled, viewMode, webtoonActive]);
+  }, [assetCacheOnly, currentIndex, currentSpreadIndex, fullPrecisionDecode, activeSuperResolution, handleSuperResolutionError, pages, readerSpreads, settings.direction, settings.optimizedImageDecodeEnabled, settings.cropBordersEnabled, settings.rotateWidePagesEnabled, viewMode, webtoonActive]);
+
+  useEffect(() => {
+    if (viewMode === 'immersive' && !webtoonActive) return;
+    [imgLeftRef.current, imgLeftSecondRef.current, imgCurrRef.current, imgCurrSecondRef.current, imgRightRef.current, imgRightSecondRef.current]
+      .forEach((image) => image && replaceImmersiveSuperResolutionSource(
+        image,
+        null,
+        immersiveSuperResolutionSourceRegistryRef.current,
+      ));
+    disposeImmersiveSuperResolutionSources(immersiveSuperResolutionSourceRegistryRef.current);
+  }, [viewMode, webtoonActive]);
+
+  useEffect(() => () => {
+    disposeImmersiveSuperResolutionSources(immersiveSuperResolutionSourceRegistryRef.current);
+  }, []);
 
   // ===== Immersive corner controls =====
   useEffect(() => {
+    if (viewMode !== 'immersive') immersiveIndicatorAnchorRef.current = null;
     return () => {
       if (immersiveControlsTimerRef.current) clearTimeout(immersiveControlsTimerRef.current);
+      if (viewMode === 'immersive') immersiveIndicatorAnchorRef.current = null;
     };
   }, [viewMode]);
 
@@ -2353,16 +2756,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           targetIndex: restoredIndex,
           shownAt: Date.now(),
         });
-        setViewMode(readerSnapshot.viewMode || 'normal');
-        setShowHeader(readerSnapshot.showHeader ?? true);
-        const restoredZoom = readerSnapshot.zoomScale || 1.0;
-        const restoredPanX = readerSnapshot.panX || 0;
-        const restoredPanY = readerSnapshot.panY || 0;
-        zoomScaleRef.current = restoredZoom;
-        panRef.current = { x: restoredPanX, y: restoredPanY, startX: 0, startY: 0, originX: restoredPanX, originY: restoredPanY };
-        setZoomScale(restoredZoom);
-        setPanX(restoredPanX);
-        setPanY(restoredPanY);
         dispatchRender({ type: 'reset', hasMetadata: !!restoredArchive, hasManifest: restoredPages.length > 0, hasSelection: true });
         return;
       }
@@ -2400,7 +2793,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         } catch (error) {
           if (!controller.signal.aborted) {
             dispatchRender({ type: 'error', resource: 'metadata', error });
-            if (isArchiveMissingError(error)) removeHistoryItem(archiveId).catch(() => {});
+            if (isArchiveMissingError(error)) pruneHistoryItems([archiveId]).catch(() => {});
           }
           throw error;
         }
@@ -2421,7 +2814,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         } catch (error) {
           if (!controller.signal.aborted) {
             dispatchRender({ type: 'error', resource: 'manifest', error });
-            if (isArchiveMissingError(error)) removeHistoryItem(archiveId).catch(() => {});
+            if (isArchiveMissingError(error)) pruneHistoryItems([archiveId]).catch(() => {});
           }
           throw error;
         }
@@ -2489,7 +2882,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       const totalPages = Number(archive.pagecount || pages.length) || 0;
       if (archiveId && totalPages > 0 && highestPage / totalPages > 0.8 && !watchlistAutoRemovedRef.current.has(archiveId)) {
         watchlistAutoRemovedRef.current.add(archiveId);
-        removeWatchlistItem(archiveId).catch(() => {});
+        pruneWatchlistItem(archiveId).catch(() => {});
       }
       if (serverTracksProgress && archiveId) {
         enqueueLrrProgressSync(archiveId, highestPage);
@@ -2501,6 +2894,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   // ===== Pointer down =====
   const handlePointerDown = useCallback((e) => {
     if (viewMode !== 'immersive' || webtoonActive) return;
+    pauseSuperResolutionForInteraction();
 
     const touches = e.touches;
     const isTouchEvent = !!touches;
@@ -2508,6 +2902,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (isTouchEvent && touches.length >= 2) {
       isZoomingRef.current = true;
       isSwipingRef.current = false;
+      // 双指落下即进入捏合：取消残留的单指平移状态，避免捏合结束后
+      // 误走 pan 收尾分支（会用旧 pan 值做一次带动画的钳制提交）。
+      isPanningRef.current = false;
       const dx = touches[0].clientX - touches[1].clientX;
       const dy = touches[0].clientY - touches[1].clientY;
       pinchStartRef.current = {
@@ -2530,23 +2927,20 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const clientY = isTouchEvent ? touches[0].clientY : e.clientY;
 
     // Double-tap detection (works in both 100% and zoomed states)
-    const dxTap = Math.abs(clientX - lastTapPosRef.current.x);
-    const dyTap = Math.abs(clientY - lastTapPosRef.current.y);
-    if (now - lastTapRef.current < 350 && dxTap < 30 && dyTap < 30) {
+    if (resolveImmersiveTapAction({ timestamp: now, lastTimestamp: lastTapRef.current }) === 'double-tap') {
       if (singleTapTimerRef.current) { clearTimeout(singleTapTimerRef.current); singleTapTimerRef.current = null; }
       lastTapRef.current = 0;
       skipNextClickRef.current = true;
-      const isZoomed = zoomScaleRef.current !== 1.0;
-      const w = window.innerWidth;
-      if (isZoomed) {
-        applyZoomAtPoint(1.0, clientX, clientY);
-      } else if (clientX >= w * 0.42 && clientX <= w * 0.58) {
-        applyZoomAtPoint(1.75, clientX, clientY);
-      }
+      isPanningRef.current = false;
+      isSwipingRef.current = false;
+      applyZoomAtPoint(
+        resolveImmersiveDoubleTapScale(zoomScaleRef.current),
+        clientX,
+        clientY,
+      );
       return;
     }
     lastTapRef.current = now;
-    lastTapPosRef.current = { x: clientX, y: clientY };
 
     if (zoomScaleRef.current !== 1.0) {
       isPanningRef.current = true;
@@ -2568,11 +2962,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (sctr) { sctr.style.transition = 'none'; sctr.style.transform = 'translateX(0px)'; }
     if (leftDivRef.current)  { leftDivRef.current.style.transition = 'none'; leftDivRef.current.style.transform = 'translateX(-100%)'; }
     if (rightDivRef.current) { rightDivRef.current.style.transition = 'none'; rightDivRef.current.style.transform = 'translateX(100%)'; }
-  }, [applyZoomAtPoint, viewMode, webtoonActive]);
+  }, [applyZoomAtPoint, pauseSuperResolutionForInteraction, viewMode, webtoonActive]);
 
   // ===== Pointer move (RAF-batched — translateX only, zero adjacent manipulation) =====
   const handlePointerMove = useCallback((e) => {
     if (viewMode !== 'immersive' || webtoonActive) return;
+    pauseSuperResolutionForInteraction();
 
     const touches = e.touches;
     if (touches && touches.length >= 2 && isZoomingRef.current) {
@@ -2580,12 +2975,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       const dy = touches[0].clientY - touches[1].clientY;
       const dist = Math.hypot(dx, dy);
       if (pinchStartRef.current.dist > 0) {
-        let scale = pinchStartRef.current.scale * (dist / pinchStartRef.current.dist);
-        if (scale > 3.15) scale = 3.15;
-        if (scale < 0.95) scale = 0.95;
-        const cx = (touches[0].clientX + touches[1].clientX) / 2;
-        const cy = (touches[0].clientY + touches[1].clientY) / 2;
-        applyZoomAtPoint(scale, cx, cy, false);
+        const rawScale = pinchStartRef.current.scale * (dist / pinchStartRef.current.dist);
+        const scale = resolveImmersivePinchScale(rawScale);
+        // 记录当前双指中点，松手 snap 时以释放位置（而非捏合起点）为焦点，
+        // 避免手指漂移后回弹方向跳错（表现为抽搐到对角再复位）。
+        pinchStartRef.current.cx = (touches[0].clientX + touches[1].clientX) / 2;
+        pinchStartRef.current.cy = (touches[0].clientY + touches[1].clientY) / 2;
+        applyZoomAtPoint(
+          scale,
+          pinchStartRef.current.cx,
+          pinchStartRef.current.cy,
+          false,
+          true,
+        );
       }
       return;
     }
@@ -2643,7 +3045,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         });
       }
     }
-  }, [applyZoomAtPoint, scheduleZoomTransform, settings.direction, viewMode, webtoonActive]);
+  }, [applyZoomAtPoint, pauseSuperResolutionForInteraction, scheduleZoomTransform, settings.direction, viewMode, webtoonActive]);
 
   // ===== Pointer up =====
   const handlePointerUp = useCallback(() => {
@@ -2737,7 +3139,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         animOut((deltaX > 0 ? 1 : -1) * window.innerWidth);
         scheduleReaderCleanupTimer(() => {
           flushSync(() => {
-            setViewMode('normal');
+            exitImmersiveMode();
           });
           resetAll();
         }, 150);
@@ -2782,14 +3184,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       return;
     }
 
-    const x = e.clientX;
-    const w = window.innerWidth;
-
-    if (x < w * 0.45) {
+    const zone = resolveImmersiveClickZone({ x: e.clientX, width: window.innerWidth });
+    singleTapTimerRef.current = setTimeout(() => {
+      singleTapTimerRef.current = null;
+      if (zone === 'previous') {
       settings.direction === 'ltr' ? handlePrevRef.current() : handleNextRef.current();
-    } else if (x > w * 0.55) {
+      } else if (zone === 'next') {
       settings.direction === 'ltr' ? handleNextRef.current() : handlePrevRef.current();
-    }
+      }
+    }, IMMERSIVE_DOUBLE_TAP_MS);
   }, [hideImmersiveControls, immersiveControlsSide, viewMode, settings.direction, webtoonActive]);
 
   // ===== Wheel zoom =====
@@ -2863,15 +3266,19 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         delete target.dataset.decodePrecision;
         delete target.dataset.sourceWidth;
         delete target.dataset.sourceHeight;
+        delete target.dataset.cropInsets;
         return;
       }
       target.src = source.currentSrc || source.src;
+      target.style.cssText = source.style.cssText;
       target.style.display = '';
       target.dataset.pageIndex = String(unit.pageIndex);
       target.dataset.readerUnit = source.dataset.readerUnit;
       target.dataset.decodePrecision = source.dataset.decodePrecision;
       target.dataset.sourceWidth = source.dataset.sourceWidth;
       target.dataset.sourceHeight = source.dataset.sourceHeight;
+      if (source.dataset.cropInsets) target.dataset.cropInsets = source.dataset.cropInsets;
+      else delete target.dataset.cropInsets;
     });
     return true;
   }, [currentSpreadIndex, readerSpreads, settings.direction, viewMode, webtoonActive]);
@@ -2880,7 +3287,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (pages.length === 0) return;
     const bounded = Math.max(0, Math.min(targetIndex, pages.length - 1));
     const promoted = promoteImmersiveTarget(bounded, targetSplitPart);
-    const visibleImmediately = assumeVisible || promoted;
+    const targetSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: bounded, splitPart: targetSplitPart });
+    const targetSpread = readerSpreads[Math.max(0, targetSpreadIndex)] || [];
+    const normalTargetReady = viewMode === 'normal' && !webtoonActive && targetSpread.length > 0
+      && targetSpread.every((unit) => normalReadyPageIndicesRef.current.has(unit.pageIndex));
+    const visibleImmediately = assumeVisible || promoted || normalTargetReady;
     void exitColdRestoreMode();
     if (resetZoom) {
       zoomScaleRef.current = 1.0;
@@ -2897,6 +3308,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (visibleImmediately) {
       setDisplayedIndex(bounded);
     }
+    if (bounded !== currentIndexRef.current) cancelVisibleSuperResolutionJobs();
     setSplitPart(targetSplitPart === 1 ? 1 : 0);
     setCurrentIndex(bounded);
     setPageLoadPhase((prev) => ({
@@ -2906,13 +3318,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       shownAt: visibleImmediately || bounded === prev.visibleIndex ? prev.shownAt : Date.now(),
     }));
     if (!preserveSwipePosition && swipeContainerRef.current) swipeContainerRef.current.style.transform = 'translateX(0px)';
-  }, [checkIndicatorOverlap, exitColdRestoreMode, pages.length, promoteImmersiveTarget, scheduleZoomTransform, showTransientPageIndicator, viewMode]);
+  }, [checkIndicatorOverlap, exitColdRestoreMode, pages.length, promoteImmersiveTarget, readerSpreads, scheduleZoomTransform, showTransientPageIndicator, viewMode, webtoonActive]);
   commitPageTargetRef.current = commitPageTarget;
 
   // ===== 3. Auto turn timer =====
   useEffect(() => {
     const pageReady = pageLoadPhase.status === 'ready' && pageLoadPhase.targetIndex === currentIndex;
-    if (settings.autoTurnActive && viewMode === 'immersive' && !webtoonActive && pageReady) {
+    if (settings.autoTurnActive && !webtoonActive && pageReady) {
       if (progressBarRef.current) {
         progressBarRef.current.style.transition = 'none';
         progressBarRef.current.style.width = '0%';
@@ -2929,18 +3341,23 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
     }
     return () => { if (autoTurnTimerRef.current) clearTimeout(autoTurnTimerRef.current); };
-  }, [settings.autoTurnActive, currentIndex, splitPart, currentSpreadIndex, settings.autoTurnInterval, viewMode, pageLoadPhase.status, pageLoadPhase.targetIndex, webtoonActive]);
+  }, [settings.autoTurnActive, currentIndex, splitPart, currentSpreadIndex, settings.autoTurnInterval, pageLoadPhase.status, pageLoadPhase.targetIndex, webtoonActive]);
 
   // ===== Page flip =====
   const handleNext = useCallback(() => {
     const target = getAdjacentSpreadLocation(readerSpreads, { pageIndex: currentIndex, splitPart }, 1);
     if (!target || currentSpreadIndex >= readerSpreads.length - 1) {
-      if (viewMode !== 'immersive') return;
-      setViewMode('normal');
+      if (viewMode !== 'immersive') {
+        if (settings.autoTurnActive) {
+          updateSettings((current) => ({ ...current, autoTurnActive: false }));
+        }
+        return;
+      }
+      exitImmersiveMode();
       return;
     }
     commitPageTarget(target.pageIndex, { targetSplitPart: target.splitPart, showIndicator: viewMode === 'immersive' });
-  }, [commitPageTarget, currentIndex, currentSpreadIndex, readerSpreads, splitPart, viewMode]);
+  }, [commitPageTarget, currentIndex, currentSpreadIndex, exitImmersiveMode, readerSpreads, settings.autoTurnActive, splitPart, updateSettings, viewMode]);
 
   const handlePrev = useCallback(() => {
     const target = getAdjacentSpreadLocation(readerSpreads, { pageIndex: currentIndex, splitPart }, -1);
@@ -2951,7 +3368,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const handleClearCurrentProgress = useCallback(async () => {
     if (!archive || progressClearing) return;
     setProgressClearing(true);
-    setProgressNotice('');
     try {
       const id = archive.arcid || archive.id;
       const retryTimer = lrrProgressRetryTimersRef.current.get(id);
@@ -2970,13 +3386,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       });
       setHistoryEntries(getHistory());
       commitPageTarget(0, { targetSplitPart: 0 });
-      setProgressNotice(result.fallback ? '服务器不支持清零，已回退到第一页。' : '阅读进度已清除，已返回第一页。');
+      showToast(result.fallback ? '服务器不支持清零，已回退到第一页。' : '阅读进度已清除，已返回第一页。', result.fallback ? 'info' : 'success');
     } catch (error) {
-      setProgressNotice(`清除阅读进度失败：${error?.message || '未知错误'}`);
+      showToast(`清除阅读进度失败：${error?.message || '未知错误'}`, 'error');
     } finally {
       setProgressClearing(false);
     }
-  }, [archive, commitPageTarget, progressClearing]);
+  }, [archive, commitPageTarget, progressClearing, showToast]);
 
   const handleNextRef = useRef(handleNext);
   const handlePrevRef = useRef(handlePrev);
@@ -3003,6 +3419,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   }, []);
 
   const handleWebtoonScroll = useCallback(() => {
+    pauseSuperResolutionForInteraction();
     if (webtoonScrollRafRef.current) return;
     webtoonScrollRafRef.current = requestAnimationFrame(() => {
       webtoonScrollRafRef.current = null;
@@ -3024,6 +3441,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       if (!Number.isInteger(bestIndex) || bestIndex < 0 || bestIndex === currentIndexRef.current) return;
       currentIndexRef.current = bestIndex;
       setSplitPart(0);
+      cancelVisibleSuperResolutionJobs();
       setCurrentIndex(bestIndex);
       setDisplayedIndex(bestIndex);
       setPageLoadPhase((previous) => ({
@@ -3033,7 +3451,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         shownAt: previous.shownAt,
       }));
     });
-  }, []);
+  }, [pauseSuperResolutionForInteraction]);
 
   useLayoutEffect(() => {
     if (!webtoonActive) return undefined;
@@ -3057,21 +3475,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     ));
   }, []);
 
-  const normalSpreadKey = currentSpread
-    .map((unit) => `${unit.pageIndex}:${unit.splitPart}`)
-    .join('|');
-  const normalSpreadReadyRef = useRef({ key: '', pages: new Set() });
-  if (normalSpreadReadyRef.current.key !== normalSpreadKey) {
-    normalSpreadReadyRef.current = { key: normalSpreadKey, pages: new Set() };
-  }
-  const handleNormalSpreadUnitReady = useCallback((pageIndex) => {
-    const readyState = normalSpreadReadyRef.current;
-    if (readyState.key !== normalSpreadKey) return;
-    readyState.pages.add(pageIndex);
-    if (currentSpread.every((unit) => readyState.pages.has(unit.pageIndex))) {
+  const handleNormalPageDecoded = useCallback((pageIndex) => {
+    normalReadyPageIndicesRef.current.add(pageIndex);
+    if (currentSpread.every((unit) => normalReadyPageIndicesRef.current.has(unit.pageIndex))) {
       handlePageVisualReady(currentIndex);
     }
-  }, [currentIndex, currentSpread, handlePageVisualReady, normalSpreadKey]);
+  }, [currentIndex, currentSpread, handlePageVisualReady]);
 
   const handlePageVisualError = useCallback((pageIndex) => {
     if (typeof pageIndex !== 'number') return;
@@ -3082,18 +3491,27 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     ));
   }, []);
 
-  const confirmRemoveHistory = useCallback(() => {
+  const confirmRemoveHistory = useCallback(async () => {
     if (!historyDeleteTarget?.id) return;
-    removeHistoryItem(historyDeleteTarget.id).catch(() => {});
-    setHistoryEntries(getHistory());
-    setHistoryDeleteTarget(null);
-  }, [historyDeleteTarget]);
+    try {
+      await removeHistoryItem(historyDeleteTarget.id);
+      setHistoryEntries(getHistory());
+      setHistoryDeleteTarget(null);
+    } catch (error) {
+      showToast(`删除历史记录失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [historyDeleteTarget, showToast]);
 
-  const handleRemoveWatchlist = useCallback((item) => {
+  const handleRemoveWatchlist = useCallback(async (item) => {
     const id = item?.id || item?.arcid;
     if (!id) return;
-    removeWatchlistItem(id).finally(() => setWatchlistEntries(getWatchlist()));
-  }, []);
+    try {
+      await removeWatchlistItem(id);
+      setWatchlistEntries(getWatchlist());
+    } catch (error) {
+      showToast(`移除待看档案失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [showToast]);
 
   const handleSetCover = useCallback(() => {
     if (!archiveId || pages.length === 0 || coverSetting) return;
@@ -3111,16 +3529,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setCoverConfirmPage(0);
       scheduleReaderCleanupTimer(() => setCoverSetPage((prev) => (prev === page ? 0 : prev)), 1800);
     } catch (err) {
-      alert(err.message || '设置封面失败');
+      showToast(err.message || '设置封面失败', 'error');
     } finally {
       setCoverSetting(false);
     }
-  }, [archiveId, coverConfirmPage, coverSetting, scheduleReaderCleanupTimer]);
+  }, [archiveId, coverConfirmPage, coverSetting, scheduleReaderCleanupTimer, showToast]);
 
   // ===== Back handler: immersive → normal mode, not home =====
   const handleGoBack = useCallback(() => {
     if (viewMode === 'immersive') {
-      setViewMode('normal');
+      exitImmersiveMode();
     } else {
       if (archive && pages.length > 0) {
         const highestPage = clampProgressPage(Math.max(
@@ -3135,7 +3553,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
       onBack();
     }
-  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, onBack, pages.length, persistReadingProgress, serverTracksProgress, viewMode]);
+  }, [archive, archiveId, currentSpread, enqueueLrrProgressSync, exitImmersiveMode, onBack, pages.length, persistReadingProgress, serverTracksProgress, viewMode]);
 
   // ===== Preload indices =====
   const getPreloadIndices = () => {
@@ -3272,6 +3690,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
   useEffect(() => {
     if (!showDrawer) {
+      if (drawerViewportFrameRef.current) {
+        cancelAnimationFrame(drawerViewportFrameRef.current);
+        drawerViewportFrameRef.current = null;
+      }
       setDrawerViewport((prev) => (prev.height === 0 && prev.scrollTop === 0 && prev.width === 0
         ? prev
         : { height: 0, scrollTop: 0, width: 0 }));
@@ -3281,15 +3703,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const el = drawerGridRef.current;
     if (!el) return undefined;
 
-    const updateViewport = () => {
+    let measuredHeight = el.clientHeight;
+    let measuredWidth = Math.max(0, Math.round(el.clientWidth - (isMobile ? 14 : 12)));
+    const updateDrawerViewport = () => {
+      drawerViewportFrameRef.current = null;
       const nextTop = el.scrollTop;
-      const nextHeight = el.clientHeight;
-      const paddingRight = Number.parseFloat(window.getComputedStyle(el).paddingRight) || 0;
-      const nextWidth = Math.max(0, Math.round(el.clientWidth - paddingRight));
 
       setDrawerViewport((prev) => {
-        const prevRowStride = getDrawerRowStride(prev.width || nextWidth);
-        const nextRowStride = getDrawerRowStride(nextWidth);
+        const prevRowStride = getDrawerRowStride(prev.width || measuredWidth);
+        const nextRowStride = getDrawerRowStride(measuredWidth);
         const prevStartRow = Math.max(0, Math.floor((prev.scrollTop / Math.max(prevRowStride, 1))) - DRAWER_OVERSCAN_ROWS);
         const prevEndRow = Math.min(
           Math.ceil(pages.length / DRAWER_COLUMNS),
@@ -3298,12 +3720,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         const nextStartRow = Math.max(0, Math.floor((nextTop / Math.max(nextRowStride, 1))) - DRAWER_OVERSCAN_ROWS);
         const nextEndRow = Math.min(
           Math.ceil(pages.length / DRAWER_COLUMNS),
-          Math.ceil(((nextTop + nextHeight) / Math.max(nextRowStride, 1))) + DRAWER_OVERSCAN_ROWS,
+          Math.ceil(((nextTop + measuredHeight) / Math.max(nextRowStride, 1))) + DRAWER_OVERSCAN_ROWS,
         );
         const next = {
-          height: nextHeight,
+          height: measuredHeight,
           scrollTop: nextTop,
-          width: nextWidth,
+          width: measuredWidth,
         };
         if (
           prev.height === next.height &&
@@ -3316,16 +3738,30 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         return next;
       });
     };
+    const scheduleViewportUpdate = () => {
+      if (!drawerViewportFrameRef.current) {
+        drawerViewportFrameRef.current = requestAnimationFrame(updateDrawerViewport);
+      }
+    };
+    const measureViewport = () => {
+      measuredHeight = el.clientHeight;
+      measuredWidth = Math.max(0, Math.round(el.clientWidth - (isMobile ? 14 : 12)));
+      scheduleViewportUpdate();
+    };
 
-    updateViewport();
-    el.addEventListener('scroll', updateViewport, { passive: true });
-    window.addEventListener('resize', updateViewport);
+    updateDrawerViewport();
+    el.addEventListener('scroll', scheduleViewportUpdate, { passive: true });
+    window.addEventListener('resize', measureViewport);
 
     return () => {
-      el.removeEventListener('scroll', updateViewport);
-      window.removeEventListener('resize', updateViewport);
+      el.removeEventListener('scroll', scheduleViewportUpdate);
+      window.removeEventListener('resize', measureViewport);
+      if (drawerViewportFrameRef.current) {
+        cancelAnimationFrame(drawerViewportFrameRef.current);
+        drawerViewportFrameRef.current = null;
+      }
     };
-  }, [showDrawer]);
+  }, [isMobile, pages.length, showDrawer]);
 
   useEffect(() => {
     if (!showDrawer) return;
@@ -3337,15 +3773,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     const nextTop = Math.max(0, Math.min(targetTop, maxTop));
     if (Math.abs(el.scrollTop - nextTop) > 8) {
       el.scrollTop = nextTop;
-      const paddingRight = Number.parseFloat(window.getComputedStyle(el).paddingRight) || 0;
-      const nextWidth = Math.max(0, Math.round(el.clientWidth - paddingRight));
+      const nextWidth = Math.max(0, Math.round(el.clientWidth - (isMobile ? 14 : 12)));
       setDrawerViewport((prev) => (
         prev.scrollTop === nextTop && prev.height === el.clientHeight && prev.width === nextWidth
           ? prev
           : { ...prev, scrollTop: nextTop, height: el.clientHeight, width: nextWidth }
       ));
     }
-  }, [currentIndex, drawerRowStride, showDrawer]);
+  }, [currentIndex, drawerRowStride, isMobile, showDrawer]);
 
   useEffect(() => {
     if (!canRenderPage) return undefined;
@@ -3388,6 +3823,56 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     });
   }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.optimizedImageDecodeEnabled, settings.preloadCount]);
 
+  useEffect(() => {
+    if (!srArchiveEnabled || !scheduledSrRuntimeContext || pages.length === 0) return undefined;
+    if (coldRestoreRef.current) return undefined;
+    if (pageLoadPhase.status !== 'ready' || pageLoadPhase.targetIndex !== currentIndex) return undefined;
+    const { forward, read } = getSuperResolutionPreloadPageIndices({
+      pageCount: pages.length,
+      currentIndex,
+      currentSpread,
+      preloadCount: settings.preloadCount,
+    });
+    let cancelled = false;
+    let activeTicket = null;
+    void (async () => {
+      for (const pageIndex of [...forward, ...read]) {
+        if (cancelled) return;
+        const pageSize = pageSizesRef.current[pageIndex];
+        if (!(Number(pageSize?.width) > 0 && Number(pageSize?.height) > 0)) continue;
+        if (isSuperResolutionPageTooLarge(pageSize, srManifest?.scale)) continue;
+        const pageUrl = pages[pageIndex];
+        if (!pageUrl) continue;
+        activeTicket = scheduleSuperResolutionPreload(pageUrl, scheduledSrRuntimeContext);
+        try {
+          await activeTicket.promise;
+        } catch (error) {
+          if (resolveSuperResolutionFailure(error).pageTooLarge) continue;
+          if (error?.name !== 'AbortError') handleSuperResolutionError(error);
+          return;
+        } finally {
+          activeTicket = null;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      activeTicket?.cancel();
+    };
+  }, [
+    currentIndex,
+    currentSpread,
+    handleSuperResolutionError,
+    pageLoadPhase.status,
+    pageLoadPhase.targetIndex,
+    pages,
+    pageSizes,
+    scheduledSrRuntimeContext,
+    settings.preloadCount,
+    srArchiveEnabled,
+    srManifest,
+  ]);
+
   // ===== Outside-click to close panels =====
   useEffect(() => {
     if (!showSettingsPanel && !showArchivePanel) return;
@@ -3402,6 +3887,48 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     return () => window.removeEventListener('mousedown', handler);
   }, [canShowMetadata, showArchivePanel, showSettingsPanel]);
 
+  useLayoutEffect(() => {
+    if (!showSettingsPanel) {
+      setSettingsPanelHeight(null);
+      return undefined;
+    }
+    const panel = settingsPanelRef.current;
+    const content = settingsPanelContentRef.current;
+    if (!panel || !content) return undefined;
+    const activeContent = content.querySelector('.settings-section.is-active > .settings-section-inner');
+    const tabs = content.querySelector('.settings-category-tabs');
+    if (!activeContent || !tabs) return undefined;
+    const updateHeight = () => {
+      const panelStyle = getComputedStyle(panel);
+      const panelInset = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+        .reduce((total, property) => total + (Number.parseFloat(panelStyle[property]) || 0), 0);
+      const tabsStyle = getComputedStyle(tabs);
+      const activeContentStyle = getComputedStyle(activeContent);
+      const contentGap = Number.parseFloat(activeContentStyle.rowGap) || 0;
+      const activeContentHeight = Array.from(activeContent.children)
+        .reduce((total, child) => total + child.scrollHeight, 0)
+        + contentGap * Math.max(0, activeContent.children.length - 1);
+      const contentHeight = getSettingsPaneNaturalHeight({
+        tabsHeight: tabs.scrollHeight,
+        contentHeight: activeContentHeight,
+        gap: Number.parseFloat(tabsStyle.marginBottom) || 0,
+        inset: panelInset,
+        stacked: true,
+      });
+      const top = Math.ceil(toolbarRef.current?.getBoundingClientRect().bottom || 0) + 8;
+      const viewportLimit = window.innerHeight - top - 12;
+      setSettingsPanelHeight(Math.min(Math.ceil(contentHeight), Math.floor(viewportLimit)));
+    };
+    updateHeight();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateHeight);
+    observer?.observe(activeContent);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [settingsCategory, showSettingsPanel]);
+
   const isLTR = settings.direction === 'ltr';
   const leftAction = isLTR ? handlePrev : handleNext;
   const rightAction = isLTR ? handleNext : handlePrev;
@@ -3409,6 +3936,97 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const atLastSpread = currentSpreadIndex >= readerSpreads.length - 1;
   const leftDisabled = !canNavigate || (isLTR ? atFirstSpread : atLastSpread);
   const rightDisabled = !canNavigate || (isLTR ? atLastSpread : atFirstSpread);
+
+  const handleToggleAutoTurn = useCallback(() => {
+    const next = !settings.autoTurnActive;
+    updateSettings((s) => ({ ...s, autoTurnActive: !s.autoTurnActive }));
+    showToast(next ? '已开启自动翻页' : '已停止自动翻页', 'info');
+  }, [settings.autoTurnActive, showToast, updateSettings]);
+
+  const handleToggleSrEnabled = useCallback((enabled) => {
+    if (enabled && (srSupport.checking || !srSupport.supported)) {
+      showToast(srSupport.reason || '当前环境不支持超分。', 'error');
+      return;
+    }
+    if (enabled && !srManifest) {
+      showToast('当前模型尚未配置可验证的模型文件。', 'error');
+      return;
+    }
+    srInitToastRequestedRef.current = enabled;
+    updateSettings((s) => ({ ...s, srEnabled: enabled }));
+  }, [showToast, srManifest, srSupport, updateSettings]);
+
+  const handleToggleArchiveSuperResolution = useCallback((allowOversized = false) => {
+    const next = !srArchiveEnabled;
+    if (next && !srManifest) {
+      showToast('当前模型尚未配置可验证的模型文件。', 'error');
+      return;
+    }
+    if (next && !srRuntimeContext && srRuntimeError) {
+      showToast(`超分不可用：${srRuntimeError}`, 'error');
+      return;
+    }
+    if (next && currentPageTooLargeForSuperResolution && !allowOversized) {
+      setSrOversizedConfirmOpen(true);
+      return;
+    }
+    if (!next) {
+      disableArchiveSuperResolution();
+      srErrorToastKeyRef.current = '';
+      showToast('已关闭当前档案超分', 'info');
+      return;
+    }
+    srArchiveManualRef.current = {
+      archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
+      enabled: next,
+    };
+    srErrorToastKeyRef.current = '';
+    setSrArchiveEnabled(next);
+    if (next && !srRuntimeContext) {
+      showToast('超分模型仍在初始化，初始化完成后将自动启用。', 'info');
+      return;
+    }
+    showToast(next ? '已为当前档案启用超分' : '已关闭当前档案超分', 'info');
+  }, [archive, archiveId, currentPageTooLargeForSuperResolution, disableArchiveSuperResolution, showToast, srArchiveEnabled, srManifest, srRuntimeContext, srRuntimeError]);
+
+  // 自动超分：当每页平均体积低于阈值时，自动启用当前档案的超分
+  useEffect(() => {
+    if (!settings.srEnabled) {
+      srArchiveManualRef.current = null;
+      setSrArchiveEnabled(false);
+      return;
+    }
+    const currentArchiveId = String(archive?.arcid ?? archive?.id ?? archiveId);
+    if (srArchiveManualRef.current && srArchiveManualRef.current.archiveId !== currentArchiveId) {
+      srArchiveManualRef.current = null;
+    }
+    if (!srRuntimeContext) {
+      setSrArchiveEnabled(!!srArchiveManualRef.current?.enabled);
+      return;
+    }
+    const next = resolveArchiveSuperResolutionState({
+      archive,
+      enabled: settings.srEnabled,
+      auto: settings.srAuto,
+      thresholdKb: settings.srAutoThreshold,
+      runtimeReady: !!srRuntimeContext,
+      manualOverride: srArchiveManualRef.current,
+    });
+    if (!next.manual) srArchiveManualRef.current = null;
+    setSrArchiveEnabled(next.enabled);
+  }, [archive, settings.srAuto, settings.srEnabled, settings.srAutoThreshold, srRuntimeContext]);
+
+  useEffect(() => {
+    if (!srArchiveEnabled) {
+      cancelVisibleSuperResolutionJobs();
+      if (srInteractionResumeTimerRef.current !== null) {
+        clearTimeout(srInteractionResumeTimerRef.current);
+        srInteractionResumeTimerRef.current = null;
+      }
+      if (srInteractionPausedRef.current) srRuntimeContext?.runtime.resume();
+      srInteractionPausedRef.current = false;
+    }
+  }, [srArchiveEnabled, srRuntimeContext]);
 
   const btnBase = getTopBarButtonStyle(toolbarCompact);
 
@@ -3426,6 +4044,29 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const displayedSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: displayedIndex, splitPart });
   const displayedSpread = readerSpreads[Math.max(0, displayedSpreadIndex)] || [];
   const normalSpreadRenderState = getPendingSpreadRenderState(currentSpread, displayedSpread, targetPending);
+  const decodeWindowUnits = (() => {
+    const entries = new Map();
+    const addUnit = (unit, visible, priority) => {
+      const key = `${unit.pageIndex}:${unit.splitPart}`;
+      const existing = entries.get(key);
+      if (existing) {
+        existing.visible ||= visible;
+        existing.priority = Math.max(existing.priority, priority);
+      } else {
+        entries.set(key, { unit, visible, priority });
+      }
+    };
+    normalSpreadRenderState.units.forEach((unit, slotIndex) => addUnit(
+      unit,
+      slotIndex < normalSpreadRenderState.visibleSlotCount,
+      IMAGE_LOAD_PRIORITY.CRITICAL,
+    ));
+    getReaderDecodeWindow(readerSpreads, currentSpreadIndex).forEach((spread) => {
+      if (spread === currentSpread) return;
+      spread.forEach((unit) => addUnit(unit, false, IMAGE_LOAD_PRIORITY.ADJACENT));
+    });
+    return [...entries.values()];
+  })();
   const normalPagePending = targetPending && !webtoonActive;
   const pageSwitchLabel = normalPagePending ? `正在切换到第 ${normalTargetIndex + 1} 页…` : '';
   const immersivePagePending = viewMode === 'immersive' && normalPagePending;
@@ -3484,6 +4125,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     pageIndicatorVisibilityMode === 'pinned' ||
     (pageIndicatorVisibilityMode === 'auto' && pageNumVisible)
   );
+  pageIndicatorShouldShowRef.current = pageIndicatorShouldShow;
+  const immersiveIndicatorPosition = immersiveControlsSide
+    ? (immersiveIndicatorAnchorRef.current || (pageIndicatorShouldShow ? (isMobile ? 'center' : 'right') : 'none'))
+    : (pageIndicatorShouldShow ? (isMobile ? 'center' : 'right') : 'none');
   // Keep swipe-related refs in sync (closure-free access for handlePointerMove/Up)
   currentIndexRef.current = currentIndex;
   splitPartCurrentRef.current = splitPart;
@@ -3502,9 +4147,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
         color: viewMode === 'immersive' ? 'var(--immersive-text)' : 'var(--text-main)',
       }}
     >
-      {progressSyncNotice && (
-        <div className="reader-sync-status" role="status" aria-live="polite">{progressSyncNotice}</div>
-      )}
       <div
         data-reader-normal-flow
         style={viewMode === 'normal'
@@ -3561,8 +4203,8 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 left: '50%',
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
-                fontSize: '15px',
-                fontWeight: 'bold',
+                fontSize: 'var(--font-size-lg)',
+                fontWeight: 'var(--font-weight-bold)',
                 textAlign: 'center',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -3588,7 +4230,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
           <div className="reader-toolbar-group reader-toolbar-group-right" style={{ gridColumn: '3', display: 'flex', alignItems: 'center', gap: toolbarCompact ? '6px' : '8px', justifyContent: 'flex-end', minWidth: 0 }}>
             {viewMode === 'immersive' && !webtoonActive && (
-              <button className="reader-toolbar-button" style={btnBase} onClick={() => updateSettings((s) => ({ ...s, autoTurnActive: !s.autoTurnActive }))} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
+              <button className="reader-toolbar-button" style={btnBase} onClick={handleToggleAutoTurn} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
                 <ReaderToolbarButtonContent
                   icon={settings.autoTurnActive ? 'pause' : 'play'}
                   label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}
@@ -3631,7 +4273,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 </button>
               </>
             )}
-            <button className="reader-toolbar-button" disabled={!canNavigate} style={{ ...btnBase, opacity: canNavigate ? 1 : 0.45, cursor: canNavigate ? 'pointer' : 'not-allowed' }} onClick={() => { if (canNavigate) openThumbnailDrawer('right'); }} title="缩略面板" aria-label="缩略面板">
+            <button
+              className="reader-toolbar-button"
+              disabled={!canNavigate}
+              style={{ ...btnBase, opacity: canNavigate ? 1 : 0.45, cursor: canNavigate ? 'pointer' : 'not-allowed' }}
+              onClick={() => { if (canNavigate) openThumbnailDrawer('right'); }}
+              title="缩略面板"
+              aria-label="缩略面板"
+            >
               <ReaderToolbarButtonContent icon="grid" label="缩略面板" />
             </button>
           </div>
@@ -3640,89 +4289,160 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
 
         {/* ===== Settings Panel ===== */}
         {showSettingsPanel && createPortal(
-          <div data-panel="settings"
-            className="reader-panel-surface glass-panel dropdown-animate"
+          <div ref={settingsPanelRef} data-panel="settings"
+            className="reader-panel-surface glass-panel dropdown-animate settings-panel-height-animate"
             style={{
               position: 'fixed',
               top: `${settingsPanelTop + 8}px`,
               right: 'max(20px, calc(var(--app-safe-area-right) + 12px))',
               maxHeight: `calc(100dvh - ${settingsPanelTop + 8}px - max(12px, calc(var(--app-safe-area-bottom) + 8px)))`,
+              height: settingsPanelHeight == null ? 'auto' : `${settingsPanelHeight}px`,
               zIndex: 9999,
               padding: '22px',
-              borderRadius: '14px',
-              width: 'min(380px, calc(100vw - 40px))',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+              width: 'min(440px, calc(100vw - 32px))',
               border: '1px solid var(--reader-control-border)',
               display: 'flex', flexDirection: 'column',
             }}
           >
-            <div data-reader-overlay-scroll className="no-scrollbar" style={{ overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', flex: 1 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <div>
-                <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600, marginBottom: '10px', borderBottom: '1px solid var(--reader-control-border)', paddingBottom: '6px' }}>翻页设定</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ flexShrink: 0 }}>翻页流向</span>
-                    <div style={{ width: '135px', flexShrink: 0 }}>
-                      <CustomSelect
-                        value={settings.direction}
-                        options={[{ label: '从左向右', value: 'ltr' }, { label: '从右向左', value: 'rtl' }]}
-                        onChange={(v) => updateSettings((s) => ({ ...s, direction: v }))}
-                        compact
-                      />
-                    </div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span>页码指示器</span>
-                    <div style={{ width: '135px' }}><CustomSelect value={settings.pageIndicatorVisibilityMode} options={[{ label: '自动避让', value: 'auto' }, { label: '始终显示', value: 'pinned' }, { label: '隐藏', value: 'hidden' }]} onChange={(v) => updateSettings((s) => ({ ...s, pageIndicatorVisibilityMode: v }))} compact /></div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span>阅读布局</span>
-                    <div style={{ width: '135px' }}><CustomSelect value={settings.readingLayout} options={[{ label: '单页', value: 'single' }, { label: '双页', value: 'double' }, { label: '滚动', value: 'webtoon' }, { label: '自动检测', value: 'auto' }]} onChange={(v) => updateSettings((s) => ({ ...s, readingLayout: v }))} compact /></div>
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span>缩放模式</span>
-                    <div style={{ width: '135px' }}><CustomSelect value={settings.scaleMode} options={[{ label: '适应屏幕', value: 'fit-screen' }, { label: '适应宽度', value: 'fit-width' }, { label: '适应高度', value: 'fit-height' }, { label: '原始尺寸', value: 'original' }]} onChange={(v) => updateSettings((s) => ({ ...s, scaleMode: v }))} compact /></div>
-                  </label>
-                  {[
-                    ['cropBordersEnabled', '自动裁白边'],
-                    ['splitWidePagesEnabled', '拆分宽页'], ['rotateWidePagesEnabled', '旋转宽页'],
-                    ['optimizedImageDecodeEnabled', '优化超大图片解码'],
-                  ].map(([key, label]) => (
-                    <label key={key} style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {label}<ToggleSwitch label={label} checked={settings[key]} onChange={(checked) => updateSettings((s) => ({ ...s, [key]: checked }))} />
-                    </label>
-                  ))}
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    最大同时解码
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
-                      value={decodeConcurrencyInput}
-                      onChange={(e) => { const raw = e.target.value; setDecodeConcurrencyInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 6) { updateSettings((s) => ({ ...s, maxConcurrentDecodes: n })); } }}
-                      onBlur={() => { const n = parseInt(decodeConcurrencyInput, 10); const next = Math.max(1, Math.min(6, isNaN(n) ? 3 : n)); setDecodeConcurrencyInput(String(next)); updateSettings((s) => ({ ...s, maxConcurrentDecodes: next })); }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
-                    />
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    预加载
+            <div ref={settingsPanelContentRef} data-reader-overlay-scroll className="no-scrollbar" style={{ overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', flex: 1 }}>
+            <div className="settings-category-tabs" role="tablist" aria-label="阅读设置分类">
+              {[
+                ['general', '通用'],
+                ['reading', '阅读'],
+                ['other', '其他'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  id={`reader-settings-tab-${key}`}
+                  aria-controls={`reader-settings-panel-${key}`}
+                  aria-selected={settingsCategory === key}
+                  className={`btn settings-category-tab${settingsCategory === key ? ' is-active' : ''}`}
+                  onClick={() => setSettingsCategory(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="settings-section-stack">
+            {/* 通用 */}
+            <div id="reader-settings-panel-general" role="tabpanel" aria-labelledby="reader-settings-tab-general" aria-hidden={settingsCategory !== 'general'} inert={settingsCategory === 'general' ? undefined : ''} className={`settings-section${settingsCategory === 'general' ? ' is-active' : ''}`}>
+              <div className="settings-section-inner">
+                <div className="settings-group">
+                  <div className="settings-row">
+                    <SettingHint text={'页码指示器：阅读时显示当前页/总页数。\n自动避让：图片靠近指示器时自动移动，避免遮挡。\n隐藏：不显示页码。'}>页码指示器</SettingHint>
+                    <div className="settings-control"><CustomSelect value={settings.pageIndicatorVisibilityMode} options={[{ label: '自动避让', value: 'auto' }, { label: '始终显示', value: 'pinned' }, { label: '隐藏', value: 'hidden' }]} onChange={(v) => updateSettings((s) => ({ ...s, pageIndicatorVisibilityMode: v }))} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'适应屏幕：整页缩放到完全可见。\n适应宽度：按页面宽度铺满。\n适应高度：按视口高度铺满。\n原始尺寸：显示图片原始像素。'}>缩放模式</SettingHint>
+                    <div className="settings-control"><CustomSelect value={settings.scaleMode} options={[{ label: '适应屏幕', value: 'fit-screen' }, { label: '适应宽度', value: 'fit-width' }, { label: '适应高度', value: 'fit-height' }, { label: '原始尺寸', value: 'original' }]} onChange={(v) => updateSettings((s) => ({ ...s, scaleMode: v }))} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'提前加载后续页面的图片，翻页时更流畅。\n范围：1–10 页。'}>预加载</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={preloadInput}
-                      onChange={(e) => { const raw = e.target.value; setPreloadInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 10) { updateSettings((s) => ({ ...s, preloadCount: n })); } }}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setPreloadInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 10) { updateSettings((s) => ({ ...s, preloadCount: n })); } }}
                       onBlur={() => { const n = parseInt(preloadInput, 10); if (isNaN(n) || n < 1) { setPreloadInput('1'); updateSettings((s) => ({ ...s, preloadCount: 1 })); } else if (n > 10) { setPreloadInput('10'); updateSettings((s) => ({ ...s, preloadCount: 10 })); } }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
-                  </label>
-                  <label style={{ fontSize: '12px', color: 'var(--text-sub)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    翻页间隔(秒)
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'同时解码的最大图片数量。\n数值越高翻页越流畅，但更耗内存。\n范围：1–6。'}>最大同时解码</SettingHint>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={decodeConcurrencyInput}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setDecodeConcurrencyInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 6) { updateSettings((s) => ({ ...s, maxConcurrentDecodes: n })); } }}
+                      onBlur={() => { const n = parseInt(decodeConcurrencyInput, 10); const next = Math.max(1, Math.min(6, isNaN(n) ? 3 : n)); setDecodeConcurrencyInput(String(next)); updateSettings((s) => ({ ...s, maxConcurrentDecodes: next })); }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'自动翻页模式下每页停留的秒数。\n范围：1–60 秒。'}>翻页间隔(秒)</SettingHint>
                     <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
                       value={autoTurnInput}
-                      onChange={(e) => { const raw = e.target.value; setAutoTurnInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 60) { updateSettings((s) => ({ ...s, autoTurnInterval: n })); } }}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setAutoTurnInput(raw); const n = parseInt(raw, 10); if (!isNaN(n) && n >= 1 && n <= 60) { updateSettings((s) => ({ ...s, autoTurnInterval: n })); } }}
                       onBlur={() => { const n = parseInt(autoTurnInput, 10); if (isNaN(n) || n < 1) { setAutoTurnInput('1'); updateSettings((s) => ({ ...s, autoTurnInterval: 1 })); } else if (n > 60) { setAutoTurnInput('60'); updateSettings((s) => ({ ...s, autoTurnInterval: 60 })); } }}
-                      style={{ width: '56px', padding: '5px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
                     />
-                  </label>
+                  </div>
                 </div>
               </div>
+            </div>
 
+            {/* 阅读 */}
+            <div id="reader-settings-panel-reading" role="tabpanel" aria-labelledby="reader-settings-tab-reading" aria-hidden={settingsCategory !== 'reading'} inert={settingsCategory === 'reading' ? undefined : ''} className={`settings-section${settingsCategory === 'reading' ? ' is-active' : ''}`}>
+              <div className="settings-section-inner">
+                <div className="settings-group">
+                  <div className="settings-row">
+                    <SettingHint text={'从左向右：第一页在左，向右翻页。\n从右向左：第一页在右，向左翻页（适合日漫）。'}>翻页流向</SettingHint>
+                    <div className="settings-control"><CustomSelect
+                      value={settings.direction}
+                      options={[{ label: '从左向右', value: 'ltr' }, { label: '从右向左', value: 'rtl' }]}
+                      onChange={(v) => updateSettings((s) => ({ ...s, direction: v }))}
+                      compact
+                    /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'单页：每次显示一页。\n双页：跨页显示两页。\n滚动：纵向连续滚动。\n自动检测：根据画面自动选择。'}>阅读布局</SettingHint>
+                    <div className="settings-control"><CustomSelect value={settings.readingLayout} options={[{ label: '单页', value: 'single' }, { label: '双页', value: 'double' }, { label: '滚动', value: 'webtoon' }, { label: '自动检测', value: 'auto' }]} onChange={(v) => updateSettings((s) => ({ ...s, readingLayout: v }))} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'自动识别并裁掉图片四周的白色或空边，让画面更紧凑。'}>自动裁白边</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动裁白边" checked={settings.cropBordersEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, cropBordersEnabled: checked }))} /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'控制普通模式底部的自动翻页和超分按钮是否显示；上一页/下一页始终保留。'}>显示普通模式辅助按钮</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="显示普通模式辅助按钮" checked={settings.showNormalNavigationControls} onChange={(checked) => updateSettings((s) => ({ ...s, showNormalNavigationControls: checked }))} /></div>
+                  </div>
+                  {[
+                    ['splitWidePagesEnabled', '拆分宽页', '将过宽的横向跨页拆成两页依次显示。'],
+                    ['rotateWidePagesEnabled', '旋转宽页', '将过宽的跨页旋转 90° 填满屏幕。'],
+                    ['optimizedImageDecodeEnabled', '优化超大图片解码', '对超大图片使用分块解码，降低内存占用。'],
+                  ].map(([key, label, hint]) => (
+                    <div className="settings-row" key={key}>
+                      <SettingHint text={hint}>{label}</SettingHint>
+                      <div className="settings-control settings-toggle-control"><ToggleSwitch label={label} checked={settings[key]} onChange={(checked) => updateSettings((s) => ({ ...s, [key]: checked }))} /></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 其他（含超分） */}
+            <div id="reader-settings-panel-other" role="tabpanel" aria-labelledby="reader-settings-tab-other" aria-hidden={settingsCategory !== 'other'} inert={settingsCategory === 'other' ? undefined : ''} className={`settings-section${settingsCategory === 'other' ? ' is-active' : ''}`}>
+              <div className="settings-section-inner">
+                <div className="settings-group">
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--accent)', fontWeight: 'var(--font-weight-semibold)', marginBottom: '4px' }}>超分</div>
+                  <div className="settings-row">
+                    <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。\n预超分页数与“预加载”数量一致；实际同时处理数量受“最大同时解码”限制。\n图片过大、不适合超分时，沉浸模式中的超分按钮会自动隐藏。'}>启用超分</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={(srSupport.checking || !srSupport.supported || !srManifest) && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
+                  </div>
+                  {srSupport.checking && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>正在检测超分运行环境…</div>}
+                  {!srSupport.supported && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
+                  {srSupport.supported && !srManifest && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>当前模型尚未配置可验证的模型文件。</div>}
+                  {srRuntimeError && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>{srRuntimeError}</div>}
+                  <div className="settings-row">
+                    <span className="settings-row-title">超分模型</span>
+                    <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} disabled={!settings.srEnabled} compact /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'自动超分逻辑：按归档体积 / 页数算出每页平均体积，低于下方阈值时自动启用当前档案超分。'}>自动启用超分</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动启用超分" checked={settings.srAuto} disabled={!settings.srEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, srAuto: checked }))} /></div>
+                  </div>
+                  <div className="settings-row">
+                    <SettingHint text={'每页平均体积阈值（KB）。\n归档体积 ÷ 页数 < 该值时自动启用超分。\n填 0：所有尺寸允许的图片都自动超分。'}>自动超分阈值(KB)</SettingHint>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" className="input-glass no-spinner"
+                      value={srThresholdInput}
+                      disabled={!settings.srEnabled}
+                      onChange={(e) => { const raw = sanitizeUnsignedIntegerInput(e.target.value); setSrThresholdInput(raw); const n = parseInt(raw, 10); if (!isNaN(n)) updateSettings((s) => ({ ...s, srAutoThreshold: n })); }}
+                      onBlur={() => { const n = parseInt(srThresholdInput, 10); const next = isNaN(n) ? DEFAULT_READER_SETTINGS.srAutoThreshold : n; setSrThresholdInput(String(next)); updateSettings((s) => ({ ...s, srAutoThreshold: next })); }}
+                      style={{ width: '56px', padding: '5px 8px', fontSize: 'var(--font-size-sm)', borderRadius: '6px', border: '1px solid var(--reader-control-border)', background: 'var(--comment-input-bg)', color: 'var(--text-main)', textAlign: 'center' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
             </div>
             </div>
           </div>
@@ -3788,6 +4508,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                           serializedDecode
                           previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                           sourceSize={pageSizes[index]}
+                          superResolution={getSuperResolutionForPage(
+                            index,
+                            foregroundSuperResolutionPageIndices.has(index),
+                          )}
+                          onSuperResolutionError={handleSuperResolutionError}
                           onNaturalSize={handlePageNaturalSize}
                           onLoadStart={distance === 0 ? handlePageVisualLoadStart : undefined}
                           onReady={distance === 0 ? handlePageVisualReady : undefined}
@@ -3799,17 +4524,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   })}
                 </div>
               ) : (
-                <div style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: settings.scaleMode === 'original' ? 'flex-start' : 'center', gap: settings.doublePageGap, overflow: settings.scaleMode === 'original' ? 'auto' : 'hidden' }}>
-                  {normalSpreadRenderState.units.map((unit, slotIndex) => {
-                    const slotVisible = slotIndex < normalSpreadRenderState.visibleSlotCount;
-                    return (
-                    <div key={`spread-slot:${slotIndex}`} style={{ flex: slotVisible ? '1 1 0' : '0 0 0', width: slotVisible ? 'auto' : 0, minWidth: 0, height: '100%', display: 'flex', visibility: slotVisible ? 'visible' : 'hidden', pointerEvents: slotVisible ? 'auto' : 'none', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: settings.scaleMode === 'original' ? 'flex-start' : 'center', gap: settings.doublePageGap, overflow: settings.scaleMode === 'original' ? 'auto' : 'hidden' }}>
+                  {decodeWindowUnits.map(({ unit, visible, priority }) => (
+                    <div key={`reader-page:${unit.pageIndex}:${unit.splitPart}`} aria-hidden={visible ? undefined : 'true'} style={visible ? { flex: '1 1 0', width: 'auto', minWidth: 0, height: '100%', display: 'flex', visibility: 'visible', pointerEvents: 'auto', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' } : { position: 'absolute', left: 0, top: 0, width: '1px', height: '1px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
                       <PageImage
                         pageUrl={pages[unit.pageIndex]}
                         pageIndex={unit.pageIndex}
                         isImmersive={false}
                         cacheOnly={assetCacheOnly}
-                        priority={IMAGE_LOAD_PRIORITY.CRITICAL}
+                        priority={priority}
                         style={{ ...scaleStyle, width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%', borderRadius: '8px' }}
                         cropSide={unit.cropSide}
                         rotateWide={settings.rotateWidePagesEnabled}
@@ -3818,17 +4541,21 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                         previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                         fullPrecision={fullPrecisionDecode}
                         sourceSize={pageSizes[unit.pageIndex]}
+                        superResolution={getSuperResolutionForPage(
+                          unit.pageIndex,
+                          foregroundSuperResolutionPageIndices.has(unit.pageIndex),
+                        )}
+                        onSuperResolutionError={handleSuperResolutionError}
                         onNaturalSize={handlePageNaturalSize}
-                        loadingLabel={`正在加载第 ${unit.pageIndex + 1} 页`}
-                        loadingHint="正在请求图像"
-                        errorLabel={`第 ${unit.pageIndex + 1} 页加载失败`}
-                        onLoadStart={unit.pageIndex === currentIndex ? handlePageVisualLoadStart : undefined}
-                        onReady={handleNormalSpreadUnitReady}
-                        onError={unit.pageIndex === currentIndex ? handlePageVisualError : undefined}
+                        loadingLabel={visible ? `正在加载第 ${unit.pageIndex + 1} 页` : undefined}
+                        loadingHint={visible ? '正在请求图像' : undefined}
+                        errorLabel={visible ? `第 ${unit.pageIndex + 1} 页加载失败` : undefined}
+                        onLoadStart={visible && unit.pageIndex === currentIndex ? handlePageVisualLoadStart : undefined}
+                        onReady={handleNormalPageDecoded}
+                        onError={visible && unit.pageIndex === currentIndex ? handlePageVisualError : undefined}
                       />
                     </div>
-                    );
-                  })}
+                  ))}
                 </div>
               )) : (
                 <ReaderStageSlot
@@ -3852,58 +4579,78 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     background: 'var(--immersive-bg)',
                     color: 'var(--immersive-text)',
                     fontSize: 'clamp(18px, 3vw, 30px)',
-                    fontWeight: 750,
+                    fontWeight: 'var(--font-weight-bold)',
                     pointerEvents: 'none',
                   }}
                 >
                   {pageSwitchLabel}
                 </div>
               )}
-              {!webtoonActive && adjacentDecodePageIndices.length > 0 && (
-                <div
-                  aria-hidden="true"
-                  style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
-                >
-                  {adjacentDecodePageIndices.map((pageIndex) => (
-                    <PageImage
-                      key={`decode-window:${pageIndex}`}
-                      pageUrl={pages[pageIndex]}
-                      pageIndex={pageIndex}
-                      isImmersive={false}
-                      cacheOnly={assetCacheOnly}
-                      priority={IMAGE_LOAD_PRIORITY.ADJACENT}
-                      serializedDecode
-                      previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
-                      fullPrecision={fullPrecisionDecode}
-                      sourceSize={pageSizes[pageIndex]}
-                      onNaturalSize={handlePageNaturalSize}
-                      style={{ width: '1px', height: '1px' }}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
 
-            {!webtoonActive && <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '24px', padding: '20px 8px', flexShrink: 0 }}>
-              <button
+            {!webtoonActive && <div
+              data-reader-normal-navigation
+              data-reader-nav-skeleton={!canNavigate ? 'true' : 'false'}
+              className={!canNavigate ? 'reader-shell-pulse' : undefined}
+              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: isMobile ? '6px' : '24px', padding: '20px 8px', flexShrink: 0 }}
+            >
+              {settings.showNormalNavigationControls && <button
+                type="button"
                 className="reader-page-nav-button"
+                data-reader-nav-action="auto-turn"
+                aria-pressed={settings.autoTurnActive}
+                onClick={handleToggleAutoTurn}
+                disabled={!canNavigate}
+                style={{ ...navBtnBase, opacity: canNavigate ? 1 : 0.3 }}
+                title={settings.autoTurnActive ? '停止自动翻页' : '开启自动翻页'}
+                aria-label={settings.autoTurnActive ? '停止自动翻页' : '开启自动翻页'}
+              >
+                <ToolbarGlyph name={settings.autoTurnActive ? 'pause' : 'play'} size={20} />
+              </button>}
+              <button
+                type="button"
+                className="reader-page-nav-button"
+                data-reader-nav-action="left"
                 onClick={leftAction}
                 disabled={leftDisabled}
-                style={{ ...navBtnBase, opacity: leftDisabled ? 0.3 : 1 }}
+                style={{ ...navBtnBase, opacity: leftDisabled ? 0.3 : 1, marginLeft: settings.showNormalNavigationControls ? 12 : 0 }}
+                title={isLTR ? '上一页' : '下一页'}
+                aria-label={isLTR ? '上一页' : '下一页'}
               >
-                ‹
+                <ToolbarGlyph name="chevronLeft" size={24} />
               </button>
-              <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-sub)', userSelect: 'none', minWidth: '60px', textAlign: 'center' }}>
+              <span data-reader-nav-page-label style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-sub)', userSelect: 'none', minWidth: isMobile ? '48px' : '60px', textAlign: 'center' }}>
                   {canShowPageCount ? normalPageLabel : '— / —'}
               </span>
               <button
+                type="button"
                 className="reader-page-nav-button"
+                data-reader-nav-action="right"
                 onClick={rightAction}
                 disabled={rightDisabled}
                 style={{ ...navBtnBase, opacity: rightDisabled ? 0.3 : 1 }}
+                title={isLTR ? '下一页' : '上一页'}
+                aria-label={isLTR ? '下一页' : '上一页'}
               >
-                ›
+                <ToolbarGlyph name="chevronRight" size={24} />
               </button>
+              {settings.showNormalNavigationControls && <button
+                type="button"
+                className="reader-page-nav-button"
+                data-reader-nav-action="super-resolution"
+                aria-pressed={srArchiveEnabled}
+                onClick={handleToggleArchiveSuperResolution}
+                disabled={!canNavigate || !settings.srEnabled}
+                style={{ ...navBtnBase, opacity: canNavigate && settings.srEnabled ? 1 : 0.3, marginLeft: 12 }}
+                title={!settings.srEnabled
+                  ? '请先在阅读设置中启用超分'
+                  : (srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分')}
+                aria-label={!settings.srEnabled
+                  ? '超分不可用'
+                  : (srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分')}
+              >
+                <ToolbarGlyph name={srArchiveEnabled ? 'superResolution' : 'superResolutionOff'} size={20} />
+              </button>}
             </div>}
           </div>
         ) : (
@@ -3957,6 +4704,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 className="reader-immersive-controls"
                 data-side={side}
                 data-visible={immersiveControlsSide === side ? 'true' : 'false'}
+                data-indicator-position={immersiveIndicatorPosition}
                 inert={immersiveControlsSide === side ? undefined : ''}
                 onPointerEnter={() => holdImmersiveControls(side)}
                 onPointerLeave={() => revealImmersiveControls(side)}
@@ -3967,17 +4715,22 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 onClickCapture={consumeImmersiveTouchClick}
                 onClick={(event) => event.stopPropagation()}
               >
-                <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { setViewMode('normal'); hideImmersiveControls(); }} title="退出沉浸模式" aria-label="退出沉浸模式">
+                <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={exitImmersiveMode} title="退出沉浸模式" aria-label="退出沉浸模式">
                   <ToolbarGlyph name="close" size={20} />
                 </button>
                 {!webtoonActive && (
-                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { updateSettings((state) => ({ ...state, autoTurnActive: !state.autoTurnActive })); revealImmersiveControls(side); }} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
+                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { handleToggleAutoTurn(); revealImmersiveControls(side); }} title={settings.autoTurnActive ? '停止翻页' : '自动翻页'} aria-label={settings.autoTurnActive ? '停止翻页' : '自动翻页'}>
                     <ToolbarGlyph name={settings.autoTurnActive ? 'pause' : 'play'} size={20} />
                   </button>
                 )}
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate || coverSetting} onClick={() => { if (canNavigate && !coverSetting) handleSetCover(); revealImmersiveControls(side); }} title="设为封面" aria-label="设为封面">
                   <ToolbarGlyph name="cover" size={20} />
                 </button>
+                {settings.srEnabled && (
+                  <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} onClick={() => { handleToggleArchiveSuperResolution(); revealImmersiveControls(side); }} title={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'} aria-label={srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分'}>
+                    <ToolbarGlyph name={srArchiveEnabled ? 'superResolution' : 'superResolutionOff'} size={20} />
+                  </button>
+                )}
                 <button type="button" className="reader-immersive-control-button" tabIndex={immersiveControlsSide === side ? 0 : -1} disabled={!canNavigate} onClick={() => { if (canNavigate) openThumbnailDrawer(side); hideImmersiveControls(); }} title="缩略面板" aria-label="缩略面板">
                   <ToolbarGlyph name="grid" size={20} />
                 </button>
@@ -4008,10 +4761,15 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       pageIndex={index}
                       isImmersive
                       cacheOnly={assetCacheOnly}
-                      priority={Math.abs(index - currentIndex) <= 1 ? IMAGE_LOAD_PRIORITY.ADJACENT : IMAGE_LOAD_PRIORITY.PRELOAD}
+                      priority={index === currentIndex ? IMAGE_LOAD_PRIORITY.CRITICAL : (Math.abs(index - currentIndex) === 1 ? IMAGE_LOAD_PRIORITY.ADJACENT : IMAGE_LOAD_PRIORITY.PRELOAD)}
                       serializedDecode
                       previewDecodeEnabled={settings.optimizedImageDecodeEnabled}
                       sourceSize={pageSizes[index]}
+                      superResolution={getSuperResolutionForPage(
+                        index,
+                        foregroundSuperResolutionPageIndices.has(index),
+                      )}
+                      onSuperResolutionError={handleSuperResolutionError}
                       onNaturalSize={handlePageNaturalSize}
                       style={{ width: '100%', height: 'auto', maxWidth: '100%', objectFit: 'contain', borderRadius: 0 }}
                     />
@@ -4061,7 +4819,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   color: 'color-mix(in srgb, var(--immersive-text) 60%, transparent)', userSelect: 'none', pointerEvents: 'none',
                 }}>
                   <HomeSectionGlyph name="continue" size={48} color="color-mix(in srgb, var(--immersive-text) 60%, transparent)" style={{ opacity: 0.7 }} />
-                  <span style={{ fontSize: '16px', letterSpacing: '2px' }}>继续滑动退出沉浸模式</span>
+                  <span style={{ fontSize: 'var(--font-size-lg)', letterSpacing: '2px' }}>继续滑动退出沉浸模式</span>
                 </div>
               ) : (
                 <div style={getImmersiveSpreadGroupStyle(immersiveRightSpread)}>
@@ -4104,7 +4862,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     background: 'var(--immersive-bg)',
                   }}
                 >
-                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 800, color: 'var(--immersive-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
+                  <div style={{ fontSize: 'clamp(24px, 4vw, 40px)', lineHeight: 1.35, fontWeight: 'var(--font-weight-bold)', color: 'var(--immersive-text)', letterSpacing: '0.5px', textWrap: 'balance' }}>
                     {pageSwitchLabel}
                   </div>
                 </div>
@@ -4114,10 +4872,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 style={{
                   ...getImmersiveSpreadGroupStyle(currentSpread),
                   display: 'flex', justifyContent: 'center', alignItems: 'center',
-                  transform: `translate3d(${panX}px, ${panY}px, 0) scale(${zoomScale})`,
+                  transform: `translate3d(${panRef.current.x}px, ${panRef.current.y}px, 0) scale(${zoomScaleRef.current})`,
                   transformOrigin: 'center center',
-                  transition: (isZoomingRef.current || isPanningRef.current) ? 'none' : 'transform 0.15s ease-out',
-                  willChange: zoomScale > 1 ? 'transform' : 'auto',
+                  transition: (isZoomingRef.current || isPanningRef.current) ? 'none' : 'transform 0.18s ease-out',
+                  willChange: zoomScaleRef.current > 1 ? 'transform' : 'auto',
                 }}
               >
                 <div style={getImmersiveSpreadSlotStyle(currentSpread, 0)}>
@@ -4153,7 +4911,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   borderRadius: '16px',
                   background: 'color-mix(in srgb, var(--immersive-bg) 65%, transparent)',
                   border: '1px solid color-mix(in srgb, var(--immersive-text) 12%, transparent)',
-                  fontSize: '11px',
+                  fontSize: 'var(--font-size-xs)',
                   letterSpacing: '1px',
                   pointerEvents: 'none',
                   zIndex: 90,
@@ -4228,16 +4986,18 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           style={{
             width: '100%', maxWidth: '420px', height: '100%', background: 'var(--reader-panel-bg)',
             display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1,
-            boxShadow: drawerSide === 'left' ? '8px 0 32px rgba(0,0,0,0.5)' : '-8px 0 32px rgba(0,0,0,0.5)',
-            transform: showDrawer ? 'translateX(0)' : `translateX(${drawerSide === 'left' ? '-100%' : '100%'})`,
+            boxShadow: 'var(--shadow-lg)',
+            transform: showDrawer ? 'translate3d(0,0,0)' : `translate3d(${drawerSide === 'left' ? '-100%' : '100%'},0,0)`,
             transition: 'transform 0.3s cubic-bezier(0.4,0,0.2,1)',
+            contain: 'layout paint style',
+            willChange: 'transform',
           }}
           onClick={(e) => e.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--reader-control-border)', paddingBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-              <h3 id="reader-thumbnail-drawer-title" style={{ margin: 0, fontSize: '18px' }}>档案信息</h3>
+              <h3 id="reader-thumbnail-drawer-title" style={{ margin: 0, fontSize: 'var(--font-size-xl)' }}>档案信息</h3>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               {hasArchiveReadingProgress(archive, historyEntries.find((item) => item.id === archiveId)?.page) && (
@@ -4248,28 +5008,26 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               <button className="reader-drawer-icon-button" onClick={() => navigateToMetadata(archiveId)} title="编辑元数据" aria-label="编辑元数据">
                 <ToolbarGlyph name="metadata" size={18} />
               </button>
-              <button className="reader-drawer-icon-button" onClick={closeThumbnailDrawer} aria-label="关闭缩略面板" title="关闭缩略面板" style={{ fontSize: '20px' }}>
+              <button className="reader-drawer-icon-button" onClick={closeThumbnailDrawer} aria-label="关闭缩略面板" title="关闭缩略面板" style={{ fontSize: 'var(--font-size-xl)' }}>
                 <ToolbarGlyph name="close" size={17} />
               </button>
             </div>
           </div>
 
-          {progressNotice && <div role="status" aria-live="polite" style={{ margin: '-10px 0 12px', color: progressNotice.startsWith('清除阅读进度失败') ? 'var(--danger)' : 'var(--text-sub)', fontSize: '12px', textAlign: 'center' }}>{progressNotice}</div>}
-
           <div style={{ marginBottom: '20px', background: 'var(--surface-2)', borderRadius: '8px', display: 'flex', flexDirection: 'column', maxHeight: '35%', flexShrink: 0 }}>
             <div style={{ padding: '14px 14px 0 14px' }}>
-              <div lang={getContentLanguage(archive?.title)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '14px', lineHeight: 1.4, wordBreak: 'break-word' }}>
+              <div lang={getContentLanguage(archive?.title)} style={{ fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-main)', marginBottom: '14px', lineHeight: 1.4, wordBreak: 'break-word' }}>
                 {archive?.title}
               </div>
             </div>
             <div data-reader-overlay-scroll className="no-scrollbar" style={{ overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', padding: '0 14px 14px 14px', flex: 1 }}>
             {(() => {
               const grouped = groupedTags;
-              if (grouped.length === 0) return <div style={{ color: 'var(--text-sub)', fontSize: '12px' }}>无标签</div>;
+              if (grouped.length === 0) return <div style={{ color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)' }}>无标签</div>;
               return grouped.map((group) => (
                 <div key={group.ns} style={{ marginBottom: '8px' }}>
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: `color-mix(in srgb, ${group.color} 76%, var(--text-main))`, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap', background: `color-mix(in srgb, ${group.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${group.color} 36%, transparent)`, borderRadius: '5px', padding: '2px 6px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: `color-mix(in srgb, ${group.color} 76%, var(--text-main))`, textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '5px', lineHeight: '20px', whiteSpace: 'nowrap', background: `color-mix(in srgb, ${group.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${group.color} 36%, transparent)`, borderRadius: '5px', padding: '2px 6px' }}>
                       <NamespaceGlyph ns={group.ns} size={14} color={group.color} />
                       {stripDecoratedLabel(group.label)}
                     </span>
@@ -4301,7 +5059,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                           background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
                           border: `1px solid color-mix(in srgb, ${group.color} 32%, transparent)`,
                           color: 'var(--text-main)',
-                          fontSize: '10px',
+                          fontSize: 'var(--font-size-2xs)',
                           whiteSpace: 'nowrap',
                           lineHeight: '1.5',
                           cursor: 'pointer',
@@ -4326,14 +5084,14 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             </div>
           </div>
 
-          <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: 'var(--text-sub)' }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: 'var(--font-size-md)', color: 'var(--text-sub)' }}>
             页面总览 · 共{pages.length}页{archiveSizeLabel ? ` · ${archiveSizeLabel}` : ''}
           </h4>
-          {thumbnailQueueState === 'loading' && <div role="status" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--text-sub)', fontSize: '12px' }}>正在准备页面缩略图…</div>}
+          {thumbnailQueueState === 'loading' && <div role="status" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--text-sub)', fontSize: 'var(--font-size-sm)' }}>正在准备页面缩略图…</div>}
           {thumbnailQueueState !== 'idle' && thumbnailQueueState !== 'loading' && thumbnailQueueState !== 'ready' && (
-            <div role="alert" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--danger-text)', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div role="alert" aria-live="polite" style={{ margin: '-4px 0 12px', color: 'var(--danger-text)', fontSize: 'var(--font-size-sm)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
               <span>页面缩略图准备失败：{thumbnailQueueState}</span>
-              <button type="button" className="btn" onClick={() => setThumbnailQueueRetryToken((token) => token + 1)} style={{ padding: '4px 8px', fontSize: '11px' }}>重试</button>
+              <button type="button" className="btn" onClick={() => setThumbnailQueueRetryToken((token) => token + 1)} style={{ padding: '4px 8px', fontSize: 'var(--font-size-xs)' }}>重试</button>
             </div>
           )}
           <div style={{ flex: 1, minHeight: 0 }}>
@@ -4389,7 +5147,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <ArchivePageThumbnail archiveId={archiveId} pageIndex={idx} active={showDrawer} cacheOnly={assetCacheOnly} eager={drawerPrefetchSet.has(idx)} />
                       </div>
-                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--overlay-bg)', color: 'var(--reader-overlay-text)', fontSize: '11px', textAlign: 'center', padding: '2px 0' }}>
+                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--overlay-bg)', color: 'var(--reader-overlay-text)', fontSize: 'var(--font-size-xs)', textAlign: 'center', padding: '2px 0' }}>
                         P. {idx + 1}
                       </div>
                     </button>
@@ -4401,6 +5159,18 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           </div>
           </div>
         </div>, document.body)}
+      <ConfirmDialog
+        open={srOversizedConfirmOpen}
+        title="当前页面尺寸过大"
+        message="当前页超分后将超过安全处理上限，因此会继续显示原图；档案内尺寸合适的页面仍可使用超分。仍要为当前档案启用超分吗？"
+        confirmLabel="仍然启用"
+        cancelLabel="取消"
+        onConfirm={() => {
+          setSrOversizedConfirmOpen(false);
+          handleToggleArchiveSuperResolution(true);
+        }}
+        onCancel={() => setSrOversizedConfirmOpen(false)}
+      />
       <ConfirmDialog
         open={!!historyDeleteTarget}
         title="确认删除阅读历史"
@@ -4425,6 +5195,3 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     </div>
   );
 }
-
-
-

@@ -33,11 +33,11 @@ export default function SecretInput({
         spellCheck={spellCheck}
         required={required}
         aria-label={ariaLabel}
-        className="input-glass secret-input"
+        className="field secret-input"
         value={shown}
         onChange={onChange}
         placeholder={placeholder}
-        style={{ padding: '8px 12px', fontSize: '13px', ...style }}
+        style={style}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
       />

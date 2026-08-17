@@ -290,7 +290,7 @@ export const lrrApi = {
     return uploadFormData('/archives/upload', body, options);
   },
   getArchiveFiles: (id, options = {}) => request(`/archives/${id}/files`, 'GET', null, options),
-  deleteArchive: (id) => request(`/archives/${encodeURIComponent(id)}`, 'DELETE'),
+  deleteArchive: (id) => request(`/archives/${encodeURIComponent(id)}`, 'DELETE', null, { keepalive: true }),
   setArchiveThumbnail: (id, page) =>
     request(`/archives/${encodeURIComponent(id)}/thumbnail?page=${encodeURIComponent(page)}`, 'PUT'),
   downloadArchive: async (id) => {

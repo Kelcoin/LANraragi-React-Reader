@@ -139,7 +139,7 @@ export default function ArchiveThumbnailDialog({ archive, onClose }) {
         aria-modal="true"
         aria-label={`${title} 缩略图`}
         tabIndex={-1}
-        className="glass-panel archive-thumbnail-dialog"
+        className="dialog archive-thumbnail-dialog"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="archive-thumbnail-dialog-header">
@@ -149,9 +149,9 @@ export default function ArchiveThumbnailDialog({ archive, onClose }) {
           </div>
           <div className="archive-thumbnail-dialog-header-actions">
             {viewMode === 'preview' && (
-              <button type="button" className="btn" onClick={() => setViewMode('grid')}>返回缩略图</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setViewMode('grid')}>返回缩略图</button>
             )}
-            <button type="button" className="btn archive-thumbnail-dialog-close" onClick={onClose} aria-label="关闭" title="关闭"><ToolbarGlyph name="close" size={17} /></button>
+            <button type="button" className="btn btn-icon btn-quiet archive-thumbnail-dialog-close" onClick={onClose} aria-label="关闭" title="关闭"><ToolbarGlyph name="close" size={17} /></button>
           </div>
         </header>
 
@@ -161,7 +161,7 @@ export default function ArchiveThumbnailDialog({ archive, onClose }) {
           {viewMode === 'grid' && loadState === 'error' && (
             <div className="archive-thumbnail-dialog-status">
               <span>页面列表加载失败：{loadError}</span>
-              <button type="button" className="btn" onClick={() => setReloadToken((token) => token + 1)}>重试</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setReloadToken((token) => token + 1)}>重试</button>
             </div>
           )}
           {viewMode === 'grid' && loadState === 'ready' && (
@@ -185,18 +185,18 @@ export default function ArchiveThumbnailDialog({ archive, onClose }) {
 
           {viewMode === 'preview' && (
             <div className="archive-thumbnail-dialog-preview">
-              <button type="button" className="btn archive-thumbnail-dialog-page-button" onClick={previousPage} disabled={previewIndex <= 0} aria-label="上一页">‹</button>
+              <button type="button" className="btn btn-icon btn-quiet archive-thumbnail-dialog-page-button" onClick={previousPage} disabled={previewIndex <= 0} aria-label="上一页">‹</button>
               <div className="archive-thumbnail-dialog-preview-stage">
                 {previewState === 'loading' && <div className="archive-thumbnail-dialog-status">正在加载大图…</div>}
                 {previewState === 'error' && (
                   <div className="archive-thumbnail-dialog-status">
                     <span>大图加载失败</span>
-                    <button type="button" className="btn" onClick={() => setPreviewRetryToken((token) => token + 1)}>重试</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => setPreviewRetryToken((token) => token + 1)}>重试</button>
                   </div>
                 )}
                 {previewSrc && <img className="archive-thumbnail-dialog-preview-image" src={previewSrc} alt={`第 ${previewIndex + 1} 页`} loading="eager" />}
               </div>
-              <button type="button" className="btn archive-thumbnail-dialog-page-button" onClick={nextPage} disabled={previewIndex >= pages.length - 1} aria-label="下一页">›</button>
+              <button type="button" className="btn btn-icon btn-quiet archive-thumbnail-dialog-page-button" onClick={nextPage} disabled={previewIndex >= pages.length - 1} aria-label="下一页">›</button>
             </div>
           )}
         </div>

@@ -31,7 +31,7 @@ export default function TextInputDialog({ open, title, initialValue = '', confir
         <input
           id={inputId}
           data-dialog-text-input
-          className="input-glass"
+          className="field"
           name="filter-preset-name"
           autoComplete="off"
           value={value}

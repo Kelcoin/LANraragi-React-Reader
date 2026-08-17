@@ -6,6 +6,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveAppVersion } from './scripts/app-version.mjs';
 
+const isolationHeaders = Object.freeze({
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+});
+
 function readEnvLocal(cwd) {
   const filePath = path.resolve(cwd, '.env.local');
   if (!fs.existsSync(filePath)) return {};
@@ -119,6 +124,7 @@ export default defineConfig(({ mode }) => {
   const serverConfig = {
     proxy,
     cors: true,
+    headers: isolationHeaders,
     hmr: false,
     watch: {
       usePolling: true,
@@ -130,6 +136,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    worker: { format: 'es' },
     define: {
       __APP_BUILD_ID__: JSON.stringify(appVersion.buildId),
       __APP_VERSION__: JSON.stringify(appVersion.version),
@@ -157,6 +164,7 @@ export default defineConfig(({ mode }) => {
         }
       },
     ],
-    server: serverConfig
+    server: serverConfig,
+    preview: { headers: isolationHeaders },
   };
 });

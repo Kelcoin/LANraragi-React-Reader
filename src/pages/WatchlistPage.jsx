@@ -10,9 +10,10 @@ import { getArchiveDisplayMode, getCropCover, getHistory, loadHistoryState } fro
 import { lrrApi } from '../lib/api';
 import { archiveMatchesSearch } from '../lib/archiveSearch';
 import { hasValidWorkerConfig } from '../lib/worker-config';
-import { getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, removeWatchlistItems } from '../lib/watchlist';
+import { getWatchlist, getWatchlistAutoRemoveIds, loadWatchlistState, mergeWatchlistProgress, pruneWatchlistItems, removeWatchlistItems } from '../lib/watchlist';
 import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
+import { useToast } from '../components/Toast';
 
 function HeaderGlyph() {
   return <HomeSectionGlyph name="watchlist" size={24} color={getSectionGlyphColor('watchlist')} />;
@@ -23,9 +24,21 @@ function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
     <ArchiveGrid className="archive-list-loading-grid" displayMode={displayMode} aria-busy="true">
       {Array.from({ length: count }, (_, index) => (
         <div className={`archive-list-loading-card${displayMode === 'compact' ? ' is-compact' : ''}`} key={`watchlist-loading-${index}`}>
-          <div className="archive-list-loading-cover shimmer-strip" />
-          <div className="archive-list-loading-line shimmer-strip" />
-          <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+          {displayMode === 'compact' ? (
+            <>
+              <div className="archive-list-loading-title shimmer-strip" />
+              <div className="archive-list-loading-progress shimmer-strip" />
+              <div className="archive-list-loading-date shimmer-strip" />
+              <div className="archive-list-loading-author shimmer-strip" />
+              <div className="archive-list-loading-tags shimmer-strip" />
+            </>
+          ) : (
+            <>
+              <div className="archive-list-loading-cover shimmer-strip" />
+              <div className="archive-list-loading-line shimmer-strip" />
+              <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+            </>
+          )}
         </div>
       ))}
     </ArchiveGrid>
@@ -33,6 +46,7 @@ function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
 }
 
 export default function WatchlistPage({ onSelectArchive, onBack }) {
+  const { showToast } = useToast();
   const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [items, setItems] = useState(() => getWatchlist());
@@ -40,7 +54,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
   const [initialLoading, setInitialLoading] = useState(true);
   const [cropCover] = useState(getCropCover);
   const [progressBarVisibility] = useState(readArchiveProgressVisibility);
-  const showHistoricalArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, true);
+  const showWatchlistArchiveProgress = shouldShowArchiveProgress(progressBarVisibility, false);
   const reserveGlobalProgressSpace = progressBarVisibility === ARCHIVE_PROGRESS_VISIBILITY.GLOBAL;
   const [query, setQuery] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -114,7 +128,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
   const selectedCount = selectedIds.size;
 
   useEffect(() => {
-    if (autoRemoveIds.length > 0) removeWatchlistItems(autoRemoveIds).catch(() => {});
+    if (autoRemoveIds.length > 0) pruneWatchlistItems(autoRemoveIds).catch(() => {});
   }, [autoRemoveIds]);
 
   const handleSync = useCallback(async () => {
@@ -185,14 +199,18 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
 
   const handleRemove = useCallback(async () => {
     if (!Array.isArray(deleteTarget?.ids) || deleteTarget.ids.length === 0) return;
-    await removeWatchlistItems(deleteTarget.ids);
-    setItems(getWatchlist());
-    setSelectedIds((prev) => {
-      const removeSet = new Set(deleteTarget.ids);
-      return new Set(Array.from(prev).filter((id) => !removeSet.has(id)));
-    });
-    setDeleteTarget(null);
-  }, [deleteTarget]);
+    try {
+      await removeWatchlistItems(deleteTarget.ids);
+      setItems(getWatchlist());
+      setSelectedIds((prev) => {
+        const removeSet = new Set(deleteTarget.ids);
+        return new Set(Array.from(prev).filter((id) => !removeSet.has(id)));
+      });
+      setDeleteTarget(null);
+    } catch (error) {
+      showToast(`移除待看档案失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [deleteTarget, showToast]);
 
   const handleDownload = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -208,9 +226,9 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      alert(err.message || '下载失败');
+      showToast(err.message || '下载失败', 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const handleCopyLink = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -235,25 +253,25 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
 
   return (
     <>
-      <div className="history-page watchlist-page" style={{ padding: isNarrow ? '16px 10px' : '24px 20px' }}>
-        <div className="history-page-header">
+      <div className="history-page watchlist-page page-workspace">
+        <div className="history-page-header page-header">
           <div className="history-page-title-block">
             <div className="history-page-title-row">
               <h1 className="history-page-title">
                 <HeaderGlyph />
                 待看档案
               </h1>
-              <div className="history-page-summary">
+              <div className="history-page-summary page-summary">
                 <span className="history-summary-part">共 {items.length} 个档案</span>
                 {query.trim() && <span className="history-summary-part">当前显示 {filteredItems.length} 个</span>}
               </div>
             </div>
           </div>
           <div className="history-page-actions">
-            <button className="btn" onClick={onBack}>返回</button>
+            <button className="btn btn-secondary" onClick={onBack}>返回</button>
             {workerReady && (
             <button
-              className="btn"
+              className="btn btn-secondary"
               onClick={handleSync}
               disabled={syncing}
               title="从 Worker 刷新待看档案"
@@ -264,8 +282,8 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
           </div>
         </div>
 
-        <section className="glass-panel section-reveal section-reveal-delay-1" style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}>
-          <div className="history-section-header">
+        <section className="surface archive-workspace history-page-surface section-reveal section-reveal-delay-1">
+          <div className="history-section-header archive-toolbar">
             <div className="history-section-title">
               <HeaderGlyph />
               <span>全部待看</span>
@@ -274,22 +292,17 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
               {selectedCount > 0 && (
                 <>
                   <span>{selectedCount} 项已选</span>
-                  <button className="btn" onClick={requestBatchDelete}>移除选中</button>
-                  <button className="btn" onClick={clearSelection}>取消选择</button>
+                  <button className="btn btn-secondary" onClick={requestBatchDelete}>移除选中</button>
+                  <button className="btn btn-secondary" onClick={clearSelection}>取消选择</button>
                 </>
               )}
               {selectionMode && selectedCount === 0 && filteredItems.length > 0 && (
-                <button className="btn" onClick={selectAllVisible}>全选当前</button>
+                <button className="btn btn-secondary" onClick={selectAllVisible}>全选当前</button>
               )}
               {filteredItems.length > 0 && (
                 <button
-                  className="btn"
+                  className={`btn btn-secondary${selectionMode ? ' is-selected' : ''}`}
                   onClick={toggleSelectionMode}
-                  style={{
-                    background: selectionMode ? 'var(--accent)' : undefined,
-                    borderColor: selectionMode ? 'var(--accent)' : undefined,
-                    color: selectionMode ? 'var(--accent-contrast)' : undefined,
-                  }}
                 >
                   {selectionMode ? '退出多选' : '多选'}
                 </button>
@@ -316,28 +329,12 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
                     overlay={selectionMode ? (
                       <button
                         type="button"
+                        className={`btn btn-quiet btn-icon archive-selection-overlay${selected ? ' is-selected' : ''}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           toggleSelection(item.id, event);
                         }}
                         title="选择待看档案"
-                        style={{
-                          position: 'absolute',
-                          zIndex: 5,
-                          top: '8px',
-                          left: '8px',
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '8px',
-                          border: selected ? '1px solid var(--accent)' : '1px solid color-mix(in srgb, var(--accent-contrast) 26%, transparent)',
-                          background: selected ? 'var(--accent)' : 'var(--overlay-bg)',
-                          color: 'var(--accent-contrast)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxShadow: 'var(--shadow-soft)',
-                        }}
                       >
                         {selected && <ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" />}
                       </button>
@@ -350,7 +347,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
                     onLongPress={() => requestSingleDelete(item)}
                     longPressTitle="移除待看"
                     currentPage={item.page}
-                    showProgressBar={showHistoricalArchiveProgress}
+                    showProgressBar={showWatchlistArchiveProgress}
                     reserveProgressSpace={reserveGlobalProgressSpace}
                     noCrop={!cropCover}
                     selectionMode={selectionMode}
@@ -361,7 +358,7 @@ export default function WatchlistPage({ onSelectArchive, onBack }) {
               })}
             </ArchiveGrid>
           ) : (
-            <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-sub)', fontSize: '14px' }}>
+            <div className="history-empty-state">
               {items.length > 0 ? '没有匹配的待看档案' : '暂无待看档案'}
             </div>
           )}

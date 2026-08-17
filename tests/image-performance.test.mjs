@@ -4,10 +4,56 @@ import test from 'node:test';
 import * as cachePolicy from '../src/lib/cachePolicy.js';
 import * as imageLoadQueue from '../src/lib/imageLoadQueue.js';
 import * as readerLayout from '../src/lib/readerLayout.js';
+import * as readerImageTransform from '../src/lib/readerImageTransform.js';
 import * as readerPreviewDecode from '../src/lib/readerPreviewDecode.js';
 import * as readerSettings from '../src/lib/readerSettings.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+
+test('border crop translation recenters asymmetric content within each page slot', () => {
+  const asymmetric = readerImageTransform.getBorderCropCenterTranslation({
+    top: 0.03,
+    right: 0.02,
+    bottom: 0.11,
+    left: 0.1,
+  });
+  assert.ok(Math.abs(asymmetric.xPercent + 4) < 1e-9);
+  assert.ok(Math.abs(asymmetric.yPercent - 4) < 1e-9);
+  assert.deepEqual(readerImageTransform.getBorderCropCenterTranslation({
+    top: 0.05,
+    right: 0.05,
+    bottom: 0.05,
+    left: 0.05,
+  }), { xPercent: 0, yPercent: 0 });
+});
+
+test('border crop clip paths preserve asymmetric content and split boundaries', () => {
+  assert.equal(readerImageTransform.getBorderCropClipPath({
+    top: 0.1,
+    right: 0.475,
+    bottom: 0.05,
+    left: 0.1,
+  }), 'inset(10% 47.5% 5% 10%)');
+});
+
+test('super-resolution display budget preserves aspect ratio', () => {
+  const size = cachePolicy.resolveBoundedImageSize(5000, 4000);
+  assert.ok(size.width * size.height <= cachePolicy.READER_OPTIMIZED_DECODE_PIXELS);
+  assert.ok(Math.abs(size.width / size.height - 1.25) < 0.001);
+  assert.equal(cachePolicy.READER_OPTIMIZED_DECODE_PIXELS, 16_000_000);
+  assert.equal(cachePolicy.READER_SUPER_RESOLUTION_DISPLAY_PIXELS, 32_000_000);
+  assert.equal(cachePolicy.SUPER_RESOLUTION_MAX_INFERENCE_PIXELS, 64_000_000);
+});
+
+test('Waifu2x RGB tile stitching uses a dedicated allocation-free copy path', () => {
+  const worker = read('src/lib/superResolution.worker.js');
+  assert.match(worker, /function copyRgbTensorTileToOutput\s*\(/);
+  assert.match(worker, /copyRgbTensorTileToOutput\(\s*outputTensor,/);
+  const copyHelper = worker.match(/function copyRgbTensorTileToOutput\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(copyHelper, 'missing Waifu2x RGB copy helper');
+  assert.doesNotMatch(copyHelper[1], /readTensorRgb\(/);
+  assert.doesNotMatch(copyHelper[1], /\[[^\]]*red[^\]]*green[^\]]*blue[^\]]*\]/i);
+});
 
 test('reader preloads remote pages as blobs without decoding throwaway images', () => {
   const source = read('src/pages/Reader.jsx');
@@ -28,7 +74,12 @@ test('decode window includes current spread and one spread on each side', () => 
 test('normal paged reader keeps adjacent decode-window images mounted offscreen', () => {
   const source = read('src/pages/Reader.jsx');
   assert.match(source, /const adjacentDecodePageIndices =/);
-  assert.match(source, /adjacentDecodePageIndices\.map\([\s\S]*?<PageImage[\s\S]*?serializedDecode/);
+  assert.match(source, /const decodeWindowUnits =/);
+  assert.match(source, /reader-page:\$\{unit\.pageIndex\}:\$\{unit\.splitPart\}/);
+  assert.match(source, /aria-hidden=\{visible \? undefined : 'true'\}/);
+  assert.match(source, /onReady=\{handleNormalPageDecoded\}/);
+  assert.match(source, /normalTargetReady[\s\S]*normalReadyPageIndicesRef\.current\.has/);
+  assert.match(source, /if \(preserveReadySource\) \{\s*setShowLoadingStatus\(false\);[\s\S]*onReady\?\.\(pageIndex\)/);
 });
 
 test('image decode queue reserves one of two slots for critical work', async () => {
@@ -98,6 +149,24 @@ test('image decode queue cancels stale queued and active work', async () => {
   await Promise.allSettled([active.promise, stale.promise]);
   assert.equal(activeSignal.aborted, true);
   assert.equal(staleStarted, false);
+});
+
+test('image decode queue can cancel only background super-resolution work', async () => {
+  const queue = imageLoadQueue.createImageDecodeQueue({ maxConcurrent: 2 });
+  let backgroundSignal;
+  let foregroundStarted = false;
+  const background = queue.schedule('super-resolution:adjacent', async (signal) => {
+    backgroundSignal = signal;
+    await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+  }, imageLoadQueue.IMAGE_LOAD_PRIORITY.PRELOAD);
+  const foreground = queue.schedule('immersive-super-resolution:current', async () => {
+    foregroundStarted = true;
+  }, imageLoadQueue.IMAGE_LOAD_PRIORITY.CRITICAL);
+  await new Promise((resolve) => setImmediate(resolve));
+  queue.cancelWhere((key) => String(key).startsWith('super-resolution:'));
+  await Promise.allSettled([background.promise, foreground.promise]);
+  assert.equal(backgroundSignal?.aborted, true);
+  assert.equal(foregroundStarted, true);
 });
 
 test('image decode queue supports one slot and applies runtime limit changes', async () => {
@@ -252,6 +321,7 @@ test('decoded previews become visible atomically and immersive promotion keeps d
   assert.match(reader, /target\.dataset\.decodePrecision = source\.dataset\.decodePrecision/);
   assert.match(reader, /target\.dataset\.sourceWidth = source\.dataset\.sourceWidth/);
   assert.match(reader, /target\.dataset\.sourceHeight = source\.dataset\.sourceHeight/);
+  assert.match(reader, /target\.style\.cssText = source\.style\.cssText/);
 });
 
 test('immersive click and automatic page turns promote an already decoded adjacent spread', () => {
@@ -288,11 +358,11 @@ test('image sources decode offscreen before replacing a visible bitmap', async (
 
 test('paged readers retain the visible frame until the replacement spread is decoded', () => {
   const reader = read('src/pages/Reader.jsx');
-  assert.match(reader, /normalSpreadRenderState\.units\.map\(\(unit, slotIndex\) =>/);
   assert.match(reader, /getPendingSpreadRenderState\(currentSpread, displayedSpread, targetPending\)/);
-  assert.match(reader, /key=\{`spread-slot:\$\{slotIndex\}`\}/);
+  assert.match(reader, /normalSpreadRenderState\.units\.forEach\(\(unit, slotIndex\) =>/);
+  assert.match(reader, /key=\{`reader-page:\$\{unit\.pageIndex\}:\$\{unit\.splitPart\}`\}/);
   assert.match(reader, /const decoded = await decodeImageSource\(resolved\.src/);
-  assert.match(reader, /loadSpread\(\[imgCurrRef, imgCurrSecondRef\], activeSpread, IMAGE_LOAD_PRIORITY\.CRITICAL, true\)/);
+  assert.match(reader, /loadSpread\([\s\S]{0,120}activeSpread,[\s\S]{0,120}IMAGE_LOAD_PRIORITY\.CRITICAL,[\s\S]{0,40}true,[\s\S]{0,140}foregroundSuperResolutionPageIndices\.has\(pageIndex\)/);
   assert.match(reader, /const commits = await Promise\.all/);
   assert.match(reader, /commits\.forEach\(\(commit\) =>[\s\S]{0,80}commit\(\)/);
 });
@@ -315,6 +385,7 @@ test('webtoon pages always use offscreen decode even when preview downsampling i
 test('border crop is measured from the decoded replacement before it is displayed', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /detectImageBorderInsets\(decoded\.image\)/);
+  assert.match(reader, /if \(decodedImage === image && image\.dataset\.cropInsets\) return;/);
 });
 
 test('archive covers wait for one shared near-viewport observer', () => {
@@ -409,9 +480,10 @@ test('scroll mode ignores resize-driven page size changes so the list is never r
 
 test('EH comments keep valid cached comments when a background refresh returns nothing', () => {
   const comments = read('src/components/EhComments.jsx');
-  assert.match(comments, /if \(cachedComments\) \{\s*\/\/ Background SWR refresh hit a terminal page/);
+  assert.match(comments, /shouldKeepEhCommentsOnRefreshFailure\(\s*cachedComments,\s*commentsRef\.current,\s*\)/);
+  assert.match(comments, /if \(keepVisibleComments\) \{\s*setLoaded\(true\);\s*setError\(null\);/);
   assert.match(comments, /finalComments\.length > 0 \|\| !cachedComments/);
-  assert.match(comments, /if \(isTerminalGalleryError\(e\?\.ehCode\)\) \{\s*if \(!cachedComments\)/);
+  assert.match(comments, /if \(isTerminalGalleryError\(e\?\.ehCode\)\) \{\s*if \(!keepVisibleComments\)/);
 });
 
 test('history page merges writes made during hydration instead of overwriting them', () => {

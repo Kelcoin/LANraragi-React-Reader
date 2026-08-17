@@ -10,13 +10,10 @@ import { encodeApiKey } from '../lib/api';
 import { scopedCacheKey } from '../lib/configScope';
 import { isOutsideHorizontalViewport } from '../lib/horizontalScroller';
 import { getContentLanguage } from '../lib/readerUiState';
-import { ARCHIVE_CARD_COVER_HEIGHT, ARCHIVE_CARD_META_GAP, ARCHIVE_CARD_META_ROW_HEIGHT, ARCHIVE_CARD_TITLE_GAP, ARCHIVE_CARD_TITLE_SLOT_HEIGHT, ARCHIVE_CARD_WIDTH, getWideArchiveCardWidth } from '../lib/archiveGridLayout';
+import { ARCHIVE_CARD_COVER_HEIGHT, ARCHIVE_CARD_META_GAP, ARCHIVE_CARD_TITLE_GAP, ARCHIVE_CARD_WIDTH, getWideArchiveCardWidth } from '../lib/archiveGridLayout';
 
 const NAMESPACE_COLORS = NAMESPACE_COLORS_MAP;
 const archiveAspectRatioCache = new Map();
-const ARCHIVE_TITLE_FONT_SIZE = 13;
-const ARCHIVE_TITLE_LINE_HEIGHT = 1.5;
-const ARCHIVE_TITLE_GLYPH_SAFETY_PX = 3;
 const nearViewportCallbacks = new Map();
 let nearViewportObserver = null;
 
@@ -734,11 +731,13 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
         ref={cardRef}
         data-archive-grid-key={archiveGridItemKey || undefined}
         className={['archive-card-wrap', 'is-compact', className].filter(Boolean).join(' ')}
-        style={{ position: 'relative', display: 'block', ...wrapStyle }}
+        style={wrapStyle}
       >
         {overlay}
         <div
-          className={`glass-panel archive-card-shell archive-card-compact${selected ? ' is-selected' : ''}`}
+          className={`surface archive-card-shell archive-card-compact${selected ? ' is-selected' : ''}`}
+          data-disabled={disabled ? 'true' : undefined}
+          data-touch-callout={(selectionMode || onLongPress || onArchiveContextMenu) ? 'none' : undefined}
           role={selectionMode ? 'checkbox' : 'button'}
           aria-checked={selectionMode ? selected : undefined}
           aria-disabled={disabled || undefined}
@@ -812,51 +811,18 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
           ) : (
             <div
               ref={panelRef}
-              className="no-scrollbar archive-tag-panel archive-compact-tag-panel"
-              style={{
-                position: 'fixed',
-                top: `${panelPos.top}px`,
-                left: `${panelPos.left}px`,
-                zIndex: 9999,
-                background: 'var(--tag-panel-bg)',
-                border: '1px solid var(--glass-border-hover)',
-                borderRadius: '14px',
-                padding: '16px 18px',
-                minWidth: '260px',
-                maxWidth: '320px',
-                maxHeight: '440px',
-                overflowY: 'auto',
-                overflowX: 'clip',
-                scrollbarGutter: 'auto',
-                boxSizing: 'border-box',
-                contain: 'layout paint',
-                boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
-                pointerEvents: 'auto',
-                animation: closing ? 'fadeOut 0.1s ease-out forwards' : 'slideDown 0.15s ease-out forwards',
-              }}
+              className={`no-scrollbar archive-tag-panel archive-compact-tag-panel${closing ? ' is-closing' : ''}`}
+              style={{ top: `${panelPos.top}px`, left: `${panelPos.left}px` }}
               onMouseEnter={keepPanel}
               onMouseLeave={hidePanelImmediately}
             >
               <div className="archive-compact-panel-title" lang={archiveLanguage}>{archive.title}</div>
               {categorizedTags.map((group) => (
-                <div key={group.ns} style={{ marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
+                <div key={group.ns} className="archive-tag-group">
+                  <div className="archive-tag-group-row">
                     <span
                       className="archive-tag-namespace"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        '--tag-ns-color': group.color,
-                        color: 'color-mix(in srgb, var(--tag-ns-color) 40%, var(--text-main))',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        marginRight: '5px',
-                        lineHeight: '20px',
-                        whiteSpace: 'nowrap',
-                      }}
+                      style={{ '--tag-ns-color': group.color }}
                     >
                       <NamespaceGlyph ns={group.ns} size={14} color="currentColor" />
                       {stripDecoratedLabel(group.label)}
@@ -867,20 +833,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
                         type="button"
                         className="archive-tag-button"
                         onClick={(e) => handleTagClick(e, raw)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          border: `1px solid color-mix(in srgb, ${group.color} 28%, transparent)`,
-                          borderRadius: '5px',
-                          padding: '2px 6px',
-                          background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
-                          color: 'var(--text-main)',
-                          fontSize: '11px',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          transition: 'background-color 0.15s ease, border-color 0.15s ease',
-                          lineHeight: '1.4',
-                        }}
+                        style={{ '--tag-color': group.color }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 22%, transparent)`;
                           e.currentTarget.style.borderColor = group.color;
@@ -910,11 +863,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
       data-archive-grid-key={archiveGridItemKey || undefined}
       className={['archive-card-wrap', isWide ? 'is-wide' : '', className].filter(Boolean).join(' ')}
       style={{
-        position: 'relative',
-        display: 'inline-block',
         transform: isPanelVisible ? 'translateY(-6px)' : undefined,
-        transformOrigin: 'center top',
-        transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
         '--archive-wide-card-width': `${wideCardWidth}px`,
         ...wrapStyle,
       }}
@@ -922,20 +871,13 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
       {overlay}
       {/* ===== 卡片本体 ===== */}
       <div
-        className={`glass-panel archive-card-shell${selected ? ' is-selected' : ''}`}
+        className={`surface archive-card-shell${selected ? ' is-selected' : ''}`}
+        data-disabled={disabled ? 'true' : undefined}
+        data-touch-callout={(selectionMode || onLongPress || onArchiveContextMenu) ? 'none' : undefined}
         title={undefined}
         style={{
           minWidth: isWide ? `${wideCardWidth}px` : `${ARCHIVE_CARD_WIDTH}px`,
           width: isWide ? `${wideCardWidth}px` : `${ARCHIVE_CARD_WIDTH}px`,
-          padding: '12px',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          transition: 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease, box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1)',
-          display: 'flex',
-          flexDirection: 'column',
-          touchAction: 'pan-x pan-y pinch-zoom',
-          WebkitTouchCallout: (selectionMode || onLongPress || onArchiveContextMenu) ? 'none' : undefined,
-          WebkitUserSelect: 'none',
-          userSelect: 'none',
         }}
         aria-disabled={disabled || undefined}
         role={selectionMode ? 'checkbox' : 'button'}
@@ -992,14 +934,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
             if (suppressClickAfterLongPress(e)) return;
             handleCoverClick(e);
           }}
-          style={{
-            width: '100%',
-            height: `${ARCHIVE_CARD_COVER_HEIGHT}px`,
-            borderRadius: '8px',
-            overflow: 'hidden',
-            backgroundColor: 'var(--cover-bg)',
-            position: 'relative',
-          }}
+          style={{ height: `${ARCHIVE_CARD_COVER_HEIGHT}px` }}
           className="archive-cover-frame"
         >
           {selectionMode && (
@@ -1008,38 +943,21 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
           {thumbState === 'idle' && !thumbSrc && (
             <div
               aria-hidden="true"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'var(--cover-bg)',
-              }}
+              className="archive-cover-idle"
             />
           )}
 
           {thumbState === 'loading' && !thumbSrc && (
             <div
-              className="reader-skeleton-fade"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'var(--reader-skeleton-base)',
-                overflow: 'hidden',
-                zIndex: 1,
-              }}
+              className="reader-skeleton-fade archive-cover-loading"
             >
-              <div className="shimmer-strip" style={{ position: 'absolute', inset: 0 }} />
+              <div className="shimmer-strip" />
             </div>
           )}
 
           {thumbState === 'loading' && !thumbSrc && (
             <div
-              style={{
-                position: 'absolute',
-                top: '50%', left: '50%',
-                transform: 'translate(-50%, -50%)',
-                color: 'var(--text-sub)',
-                fontSize: '12px',
-              }}
+              className="archive-cover-status"
             >
               加载封面…
             </div>
@@ -1058,15 +976,6 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
               draggable={false}
               onLoad={handleImageLoad}
               onContextMenu={(e) => e.preventDefault()}
-              style={{
-                width: '100%', height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-                opacity: 1,
-                WebkitTouchCallout: 'none',
-                userSelect: 'none',
-                pointerEvents: 'none',
-              }}
               onError={() => {
                 // Blob URL may have been revoked by pagehide cleanup — re-fetch
                 if (thumbObjectUrlRef.current) {
@@ -1082,14 +991,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
 
           {thumbState === 'error' && !thumbSrc && (
             <div
-              style={{
-                position: 'absolute',
-                top: '50%', left: '50%',
-                transform: 'translate(-50%, -50%)',
-                color: 'var(--text-sub)',
-                fontSize: '12px',
-                textAlign: 'center',
-              }}
+              className="archive-cover-status archive-cover-error"
             >
               封面不可用
             </div>
@@ -1108,26 +1010,13 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
           }}
           style={{
             marginTop: `${ARCHIVE_CARD_TITLE_GAP + (reserveEmptyProgressSpace && !(pageInfo || dateAddedStr) ? 5 : 0)}px`,
-            overflow: 'hidden',
-            height: `${ARCHIVE_CARD_TITLE_SLOT_HEIGHT}px`,
-            ...(isMobile ? { cursor: 'pointer' } : {}),
           }}
           className="archive-title-slot"
+          data-mobile={isMobile ? 'true' : undefined}
         >
           <div
             lang={archiveLanguage}
             className="archive-title"
-            style={{
-              fontSize: `${ARCHIVE_TITLE_FONT_SIZE}px`,
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              lineHeight: ARCHIVE_TITLE_LINE_HEIGHT,
-              height: '3em',
-              paddingBottom: `${ARCHIVE_TITLE_GLYPH_SAFETY_PX}px`,
-              boxSizing: 'content-box',
-            }}
           >
             {archive.title}
           </div>
@@ -1135,27 +1024,15 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
 
         {(pageInfo || dateAddedStr) && (
           <div
+            className="archive-card-meta"
             style={{
-              fontSize: `${baseMetaFontSize}px`,
-              color: 'var(--text-sub)',
-              marginTop: `${(isMobile ? 4 : ARCHIVE_CARD_META_GAP) + (reserveEmptyProgressSpace ? 5 : 0)}px`,
-              height: `${ARCHIVE_CARD_META_ROW_HEIGHT}px`,
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: '6px',
-              alignItems: 'center',
-              lineHeight: 1.35,
-              maxWidth: '100%',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
+              '--archive-meta-font-size': `${baseMetaFontSize}px`,
+              '--archive-meta-margin-top': `${(isMobile ? 4 : ARCHIVE_CARD_META_GAP) + (reserveEmptyProgressSpace ? 5 : 0)}px`,
             }}
           >
             {pageInfo && (
               <span
-                style={{
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                }}
+                className="archive-card-meta-page"
                 title={pageInfo}
               >
                 {pageInfo}
@@ -1163,12 +1040,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
             )}
             {dateAddedStr && (
               <span
-                style={{
-                  flexShrink: 0,
-                  marginLeft: pageInfo ? 'auto' : 0,
-                  textAlign: 'right',
-                  whiteSpace: 'nowrap',
-                }}
+                className={`archive-card-meta-date${pageInfo ? ' has-page' : ''}`}
                 title={dateAddedStr}
               >
                 {dateAddedStr}
@@ -1182,62 +1054,25 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
       {isPanelVisible && categorizedTags.length > 0 && ReactDOM.createPortal(
         <div
           ref={panelRef}
-          className="no-scrollbar archive-tag-panel"
+          className={`no-scrollbar archive-tag-panel${closing ? ' is-closing' : ''}`}
           onMouseEnter={keepPanel}
           onMouseLeave={hidePanelImmediately}
-          style={{
-            position: 'fixed',
-            top: `${panelPos.top}px`,
-            left: `${panelPos.left}px`,
-            zIndex: 9999,
-            background: 'var(--tag-panel-bg)',
-            border: '1px solid var(--glass-border-hover)',
-            borderRadius: '14px',
-            padding: '16px 18px',
-            minWidth: '260px',
-            maxWidth: '320px',
-            maxHeight: '440px',
-            overflowY: 'auto',
-            overflowX: 'clip',
-            scrollbarGutter: 'auto',
-            boxSizing: 'border-box',
-            contain: 'layout paint',
-            boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
-            pointerEvents: 'auto',
-            animation: closing ? 'fadeOut 0.1s ease-out forwards' : 'slideDown 0.15s ease-out forwards',
-          }}
+          style={{ top: `${panelPos.top}px`, left: `${panelPos.left}px` }}
         >
           <div className="no-scrollbar">
             <div
               lang={archiveLanguage}
-              style={{
-                fontSize: '14px', fontWeight: 700, lineHeight: 1.3,
-                marginBottom: '14px', color: 'var(--text-main)',
-                wordBreak: 'break-word',
-              }}
+              className="archive-tag-panel-title"
             >
               {archive.title}
             </div>
 
             {categorizedTags.map((group) => (
-              <div key={group.ns} style={{ marginBottom: '8px' }}>
-                <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '3px', alignItems: 'center' }}>
+              <div key={group.ns} className="archive-tag-group">
+                <div className="archive-tag-group-row">
                   <span
                     className="archive-tag-namespace"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      '--tag-ns-color': group.color,
-                      color: 'color-mix(in srgb, var(--tag-ns-color) 40%, var(--text-main))',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      marginRight: '5px',
-                      lineHeight: '20px',
-                      whiteSpace: 'nowrap',
-                    }}
+                    style={{ '--tag-ns-color': group.color }}
                   >
                     <NamespaceGlyph ns={group.ns} size={14} color="currentColor" />
                     {stripDecoratedLabel(group.label)}
@@ -1248,20 +1083,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
                       type="button"
                       className="archive-tag-button"
                       onClick={(e) => handleTagClick(e, raw)}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        border: `1px solid color-mix(in srgb, ${group.color} 28%, transparent)`,
-                        borderRadius: '5px',
-                        padding: '2px 6px',
-                        background: `color-mix(in srgb, ${group.color} 10%, transparent)`,
-                        color: 'var(--text-main)',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        transition: 'background-color 0.15s ease, border-color 0.15s ease',
-                        lineHeight: '1.4',
-                      }}
+                      style={{ '--tag-color': group.color }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.background = `color-mix(in srgb, ${group.color} 22%, transparent)`;
                         e.currentTarget.style.borderColor = group.color;

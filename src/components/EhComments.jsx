@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ToolbarGlyph } from './AppGlyphs';
-import { isTerminalGalleryError, presentEhError } from '../lib/ehCommentsState';
+import {
+  isTerminalGalleryError,
+  presentEhError,
+  shouldKeepEhCommentsOnRefreshFailure,
+} from '../lib/ehCommentsState';
 import {
   createEhCommentsCacheKey,
   deleteEhCommentsCache,
@@ -213,6 +217,8 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
   const hasAutoLoadedRef = useRef(false);
   const requestSeqRef = useRef(0);
   const requestAbortRef = useRef(null);
+  const commentsRef = useRef(comments);
+  commentsRef.current = comments;
 
   const [apiData, setApiData] = useState(EMPTY_API_DATA);
   const [postText, setPostText] = useState('');
@@ -230,6 +236,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
     requestSeqRef.current += 1;
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
+    commentsRef.current = [];
     setComments([]);
     setLoading(false);
     setLoaded(false);
@@ -298,6 +305,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
             return;
           }
           cachedComments = cachedState.comments;
+          commentsRef.current = cachedComments;
           setComments(cachedComments);
           setLoading(false);
           setLoaded(true);
@@ -379,6 +387,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
 
       if (!isCurrent()) return;
       if (finalComments.length > 0 || !cachedComments) {
+        commentsRef.current = finalComments;
         setComments(finalComments);
         setLoaded(true);
         writeEhCommentsCache(cacheKey, finalComments).catch(() => {});
@@ -390,6 +399,21 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
     } catch (e) {
       if (requestSeqRef.current !== requestSeq) return;
       if (controller.signal.aborted && !timedOut) return;
+      const keepVisibleComments = shouldKeepEhCommentsOnRefreshFailure(
+        cachedComments,
+        commentsRef.current,
+      );
+      if (isTerminalGalleryError(e?.ehCode)) {
+        if (!keepVisibleComments) {
+          await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
+        }
+      }
+      if (keepVisibleComments) {
+        setLoaded(true);
+        setError(null);
+        setNeedsCookie(false);
+        return;
+      }
       if (e instanceof TypeError && e.message === 'Failed to fetch') {
         showError('NETWORK_ERROR');
       } else if (timedOut) {
@@ -397,18 +421,6 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       } else {
         showError(e.ehCode || 'UNKNOWN_WORKER_ERROR', e.ehDetail || e.message);
       }
-      if (isTerminalGalleryError(e?.ehCode)) {
-        if (!cachedComments) {
-          await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
-        }
-        if (cachedComments) {
-          // Background SWR refresh hit a terminal page (Worker error): keep the valid
-          // cached comments instead of replacing them with an error state.
-          setLoaded(true);
-          return;
-        }
-      }
-      if (cachedComments) setLoaded(true);
     } finally {
       clearTimeout(timeout);
       if (requestSeqRef.current === requestSeq) {
@@ -517,7 +529,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
   return (
     <div ref={sectionRef} data-lrr-eh-comments className="eh-comments glass-panel section-reveal section-reveal-delay-3" style={{ padding: '20px', marginTop: '20px' }}>
       <div className="eh-comments-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px' }}>
-        <h3 className="eh-comments-title" style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <h3 className="eh-comments-title" style={{ margin: 0, fontSize: 'var(--font-size-xl)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ToolbarGlyph name="comment" size={18} color="var(--accent)" /> E-Hentai 评论区
         </h3>
         {!isTerminalGalleryError(error?.code) && (
@@ -527,12 +539,12 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
             className="btn eh-comment-action"
             aria-label="跳转到 E-Hentai 画廊"
             title="跳转画廊"
-            style={{ fontSize: '12px', textDecoration: 'none' }}
+            style={{ fontSize: 'var(--font-size-sm)', textDecoration: 'none' }}
           >
             <span className="eh-comment-action-icon"><ToolbarGlyph name="external" size={16} /></span>
             <span className="eh-comment-action-label">跳转画廊</span>
           </a>
-          <button className={`btn eh-comment-action${loading ? ' is-loading' : ''}`} onClick={handleReload} disabled={loading} aria-label={loading ? '正在重新加载评论' : '重新加载评论'} title="重新加载" style={{ fontSize: '12px' }}>
+          <button className={`btn eh-comment-action${loading ? ' is-loading' : ''}`} onClick={handleReload} disabled={loading} aria-label={loading ? '正在重新加载评论' : '重新加载评论'} title="重新加载" style={{ fontSize: 'var(--font-size-sm)' }}>
             <span className="eh-comment-action-icon"><ToolbarGlyph name="reload" size={16} /></span>
             <span className="eh-comment-action-label">{loading ? '加载中…' : '重新加载'}</span>
           </button>
@@ -541,13 +553,13 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       </div>
 
       {!loaded && !loading && !error && (
-        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: '13px' }}>
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)' }}>
           点击「重新加载」获取 E-Hentai 评论
         </div>
       )}
 
       {loading && !loaded && (
-        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: '13px' }}>
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)' }}>
           正在获取评论…
         </div>
       )}
@@ -560,10 +572,10 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       )}
 
       {loaded && comments.length === 0 && !error && (
-        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: '13px' }}>
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)' }}>
           该画廊暂无评论，或需要登录 E-Hentai 后可见。
           {!cookie && (
-            <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--text-sub)' }}>
+            <div style={{ marginTop: '6px', fontSize: 'var(--font-size-xs)', color: 'var(--text-sub)' }}>
               在设定面板填入 E-Hentai Cookie 后刷新即可加载需要登录才能看到的评论。
             </div>
           )}
@@ -572,7 +584,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
 
       {loaded && comments.length > 0 && (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', fontSize: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', fontSize: 'var(--font-size-sm)' }}>
             <span style={{ color: 'var(--text-sub)' }}>
               排序: {ehSortMethod === 'time' ? '时间' : '分数'} / {ehSortOrder === 'asc' ? '正序' : '倒序'}
               {(ehMinScore || 0) > 0 && <span style={{ marginLeft: '8px' }}>最低: {ehMinScore}分</span>}
@@ -593,16 +605,16 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                   padding: '14px 16px', borderRadius: '10px', marginBottom: '10px',
                   borderLeftColor: c.isUploader ? 'var(--comment-uploader-border)' : 'var(--comment-card-border)'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid var(--comment-card-border)', fontSize: '12px', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid var(--comment-card-border)', fontSize: 'var(--font-size-sm)', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
-                      <span style={{ color: c.isEditable ? 'var(--comment-user-self)' : 'var(--comment-user)', fontWeight: 'bold', fontSize: '13px' }}>
+                      <span style={{ color: c.isEditable ? 'var(--comment-user-self)' : 'var(--comment-user)', fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-body)' }}>
                         {c.user}{c.isEditable ? ' (你)' : ''}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                      {c.isUploader && <span className="eh-comment-uploader-badge" style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>UP</span>}
+                      {c.isUploader && <span className="eh-comment-uploader-badge" style={{ fontSize: 'var(--font-size-2xs)', padding: '1px 5px', borderRadius: '3px', fontWeight: 'var(--font-weight-bold)' }}>UP</span>}
                       {!c.isUploader && (
-                        <span style={{ color: scoreClass, fontWeight: 'bold', fontSize: '12px' }}>
+                        <span style={{ color: scoreClass, fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-sm)' }}>
                           评分 {scoreSign}{c.score}
                         </span>
                       )}
@@ -650,7 +662,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                       {c.isEditable && ehWorker && cookie && (
                         <button onClick={() => { setEditingId(c.id); setEditText(''); }} style={{
                           background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                          fontSize: '11px', textDecoration: 'underline',
+                          fontSize: 'var(--font-size-xs)', textDecoration: 'underline',
                         }}>编辑</button>
                       )}
                     </div>
@@ -661,22 +673,22 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                         placeholder={c.content.replace(/<[^>]*>/g, '').substring(0, 100)}
                         style={{
                           width: '100%', minHeight: '70px', borderRadius: '8px',
-                          padding: '10px', fontSize: '13px', resize: 'vertical', boxSizing: 'border-box',
+                          padding: '10px', fontSize: 'var(--font-size-body)', resize: 'vertical', boxSizing: 'border-box',
                           fontFamily: 'inherit',
                         }}
                       />
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn" onClick={() => setEditingId(null)} style={{ fontSize: '11px', padding: '4px 10px' }}>取消</button>
-                        <button className="btn" onClick={() => doEditComment(c.id)} style={{ fontSize: '11px', padding: '4px 10px' }}>保存</button>
+                        <button className="btn" onClick={() => setEditingId(null)} style={{ fontSize: 'var(--font-size-xs)', padding: '4px 10px' }}>取消</button>
+                        <button className="btn" onClick={() => doEditComment(c.id)} style={{ fontSize: 'var(--font-size-xs)', padding: '4px 10px' }}>保存</button>
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-sub)', textAlign: 'right', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-sub)', textAlign: 'right', lineHeight: 1.4 }}>
                         {formatTimeCN(c.timestamp)}
                       </div>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div dangerouslySetInnerHTML={{ __html: c.content }} style={{ fontSize: '14px', lineHeight: '1.7', color: 'var(--comment-text)', wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: '100%', overflow: 'hidden' }} />
-                      <div style={{ fontSize: '11px', color: 'var(--comment-meta)', textAlign: 'right', lineHeight: 1.4 }}>
+                      <div dangerouslySetInnerHTML={{ __html: c.content }} style={{ fontSize: 'var(--font-size-md)', lineHeight: '1.7', color: 'var(--comment-text)', wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: '100%', overflow: 'hidden' }} />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--comment-meta)', textAlign: 'right', lineHeight: 1.4 }}>
                         {formatTimeCN(c.timestamp)}
                       </div>
                     </div>
@@ -690,13 +702,13 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
                   placeholder="发表新评论..."
                   style={{
                     width: '100%', minHeight: '80px', borderRadius: '10px',
-                    padding: '12px', fontSize: '13px', resize: 'vertical', boxSizing: 'border-box',
+                    padding: '12px', fontSize: 'var(--font-size-body)', resize: 'vertical', boxSizing: 'border-box',
                     fontFamily: 'inherit',
                   }}
                 />
                 <div style={{ marginTop: '10px', textAlign: 'center' }}>
                   <button className="btn" onClick={doPostComment} disabled={posting || !postText.trim()}
-                    style={{ padding: '8px 24px', fontSize: '13px' }}>
+                    style={{ padding: '8px 24px', fontSize: 'var(--font-size-body)' }}>
                     {posting ? '发送中...' : '发表评论'}
                   </button>
                 </div>

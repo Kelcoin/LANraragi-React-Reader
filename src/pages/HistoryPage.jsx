@@ -7,7 +7,7 @@ import ArchiveSearchBox from '../components/ArchiveSearchBox';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import ArchiveDeletionFailureDialog from '../components/ArchiveDeletionFailureDialog';
 import { HomeSectionGlyph, ToolbarGlyph, getSectionGlyphColor } from '../components/AppGlyphs';
-import { getArchiveDisplayMode, getCropCover, getHideRead, getHistory, loadHistoryState, removeHistoryItems } from '../lib/history';
+import { getArchiveDisplayMode, getCropCover, getHideRead, getHistory, loadHistoryState, pruneHistoryItems, removeHistoryItems } from '../lib/history';
 import { mergeLatestHistoryItems } from '../lib/historyProgressCache';
 import { isArchiveMissingError, runHistoryExistenceCheck } from '../lib/historyMaintenance';
 import { hasValidWorkerConfig } from '../lib/worker-config';
@@ -16,9 +16,10 @@ import { lrrApi } from '../lib/api';
 import { deleteArchiveWithFavoriteSync } from '../lib/archiveDeletion';
 import { getEhFavoriteDeleteSync } from '../lib/ehFavoriteSync';
 import { navigateToMetadata } from '../lib/navigation';
-import { removeWatchlistItem } from '../lib/watchlist';
+import { pruneWatchlistItem } from '../lib/watchlist';
 import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowArchiveProgress } from '../lib/archiveProgress';
 import { clearConfiguredArchiveReadingProgress } from '../lib/archiveProgressActions';
+import { useToast } from '../components/Toast';
 
 function HeaderGlyph() {
   return <HomeSectionGlyph name="continue" size={24} color={getSectionGlyphColor('continue')} />;
@@ -84,9 +85,21 @@ function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
     <ArchiveGrid className="archive-list-loading-grid" displayMode={displayMode} aria-busy="true">
       {Array.from({ length: count }, (_, index) => (
         <div className={`archive-list-loading-card${displayMode === 'compact' ? ' is-compact' : ''}`} key={`history-loading-${index}`}>
-          <div className="archive-list-loading-cover shimmer-strip" />
-          <div className="archive-list-loading-line shimmer-strip" />
-          <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+          {displayMode === 'compact' ? (
+            <>
+              <div className="archive-list-loading-title shimmer-strip" />
+              <div className="archive-list-loading-progress shimmer-strip" />
+              <div className="archive-list-loading-date shimmer-strip" />
+              <div className="archive-list-loading-author shimmer-strip" />
+              <div className="archive-list-loading-tags shimmer-strip" />
+            </>
+          ) : (
+            <>
+              <div className="archive-list-loading-cover shimmer-strip" />
+              <div className="archive-list-loading-line shimmer-strip" />
+              <div className="archive-list-loading-line archive-list-loading-line-short shimmer-strip" />
+            </>
+          )}
         </div>
       ))}
     </ArchiveGrid>
@@ -94,6 +107,7 @@ function ArchiveListLoadingGrid({ count = 8, displayMode = 'card' }) {
 }
 
 export default function HistoryPage({ onSelectArchive, onBack }) {
+  const { showToast } = useToast();
   const archiveDisplayMode = getArchiveDisplayMode();
   const workerReady = hasValidWorkerConfig();
   const [history, setHistoryState] = useState(() => getHistory());
@@ -109,7 +123,6 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
   const [archiveDeleting, setArchiveDeleting] = useState(false);
   const [archiveDeleteSyncConfirmed, setArchiveDeleteSyncConfirmed] = useState(true);
   const [archiveFailureReport, setArchiveFailureReport] = useState(null);
-  const [notice, setNotice] = useState('');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [lastSelectedId, setLastSelectedId] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -195,13 +208,13 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     try {
       const removed = await runHistoryExistenceCheck({ force: true });
       setHistoryState(getHistory());
-      if (removed > 0) setNotice(`已清理 ${removed} 条失效记录。`);
-    } catch (error) {
-      setNotice(`清理失败：${error?.message || '未知错误'}`);
+        if (removed > 0) showToast(`已清理 ${removed} 条失效记录。`, 'success');
+      } catch (error) {
+        showToast(`清理失败：${error?.message || '未知错误'}`, 'error');
     } finally {
       setChecking(false);
     }
-  }, [checking]);
+  }, [checking, showToast]);
 
   const toggleSelection = useCallback((id, event) => {
     if (!id) return;
@@ -249,14 +262,18 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
 
   const handleRemoveHistory = useCallback(async () => {
     if (!Array.isArray(deleteTarget?.ids) || deleteTarget.ids.length === 0) return;
-    await removeHistoryItems(deleteTarget.ids);
-    setHistoryState(getHistory());
-    setSelectedIds((prev) => {
-      const removeSet = new Set(deleteTarget.ids);
-      return new Set(Array.from(prev).filter((id) => !removeSet.has(id)));
-    });
-    setDeleteTarget(null);
-  }, [deleteTarget]);
+    try {
+      await removeHistoryItems(deleteTarget.ids);
+      setHistoryState(getHistory());
+      setSelectedIds((prev) => {
+        const removeSet = new Set(deleteTarget.ids);
+        return new Set(Array.from(prev).filter((id) => !removeSet.has(id)));
+      });
+      setDeleteTarget(null);
+    } catch (error) {
+      showToast(`删除历史记录失败：${error?.message || '未知错误'}`, 'error');
+    }
+  }, [deleteTarget, showToast]);
 
   const handleDownload = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -272,9 +289,9 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setNotice(`下载失败：${error?.message || '未知错误'}`);
+      showToast(`下载失败：${error?.message || '未知错误'}`, 'error');
     }
-  }, []);
+  }, [showToast]);
 
   const handleCopyLink = useCallback(async (archive) => {
     const archiveId = archive?.arcid || archive?.id;
@@ -283,9 +300,9 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     try {
       await navigator.clipboard.writeText(url);
     } catch {
-      setNotice(`无法自动复制，请手动复制：${url}`);
+      showToast(`无法自动复制，请手动复制：${url}`, 'info', { autoHide: false });
     }
-  }, []);
+  }, [showToast]);
 
   const handleClearArchiveProgress = useCallback(async (archive) => {
     const result = await clearConfiguredArchiveReadingProgress(archive);
@@ -313,7 +330,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
           ehFailures.push({ url: galleryUrl, message: error?.message || 'E-Hentai 收藏夹删除失败' });
         },
       });
-      await Promise.all([removeHistoryItems([archiveId]), removeWatchlistItem(archiveId)]);
+      await Promise.all([pruneHistoryItems([archiveId]), pruneWatchlistItem(archiveId)]);
       setHistoryState(getHistory());
       setArchiveDeleteTarget(null);
       if (ehFailures.length > 0) {
@@ -321,13 +338,13 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
       }
     } catch (error) {
       if (isArchiveMissingError(error)) {
-        await removeHistoryItems([archiveId]);
+        await pruneHistoryItems([archiveId]);
         setHistoryState(getHistory());
         setArchiveDeleteTarget(null);
         if (ehFailures.length > 0) {
           setArchiveFailureReport({ ehFailures, lrrFailures: [], message: '档案已不存在于 LANraragi，相关历史记录已清理；E-Hentai 收藏夹移除失败。' });
         } else {
-          setNotice('档案已不存在于 LANraragi，相关历史记录已清理。');
+            showToast('档案已不存在于 LANraragi，相关历史记录已清理。', 'success');
         }
       } else {
         setArchiveDeleteTarget(null);
@@ -340,19 +357,19 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
     } finally {
       setArchiveDeleting(false);
     }
-  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting, workerReady]);
+  }, [archiveDeleteSyncConfirmed, archiveDeleteTarget, archiveDeleting, showToast, workerReady]);
 
   return (
     <>
-      <div className="history-page" style={{ padding: isNarrow ? '16px 10px' : '24px 20px' }}>
-        <div className="history-page-header">
+      <div className="history-page page-workspace">
+        <div className="history-page-header page-header">
           <div className="history-page-title-block">
             <div className="history-page-title-row">
               <h1 className="history-page-title">
                 <HeaderGlyph />
                 阅读历史
               </h1>
-              <div className="history-page-summary">
+              <div className="history-page-summary page-summary">
                 <span className="history-summary-part">共 {history.length} 条记录</span>
                 {hideRead && <span className="history-summary-part">当前显示 {filteredHistory.length} 条</span>}
                 {query.trim() && <span className="history-summary-part">搜索结果 {searchedHistory.length} 条</span>}
@@ -360,10 +377,10 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
             </div>
           </div>
           <div className="history-page-actions">
-            <button className="btn" onClick={onBack}>返回</button>
+            <button className="btn btn-secondary" onClick={onBack}>返回</button>
             {workerReady && (
             <button
-              className="btn"
+              className="btn btn-secondary"
               onClick={handleSyncHistory}
               disabled={syncing || checking}
               title="从 Worker 刷新阅读历史"
@@ -371,19 +388,18 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
               {syncing ? '刷新中' : '刷新'}
             </button>
             )}
-            <button className="btn" onClick={handleCheckHistory} disabled={checking}>
+            <button className="btn btn-secondary" onClick={handleCheckHistory} disabled={checking}>
               {checking ? '检查中' : '清理失效'}
             </button>
           </div>
         </div>
 
         <section
-          className="glass-panel section-reveal section-reveal-delay-1"
+          className="surface archive-workspace history-page-surface section-reveal section-reveal-delay-1"
           inert={checking ? '' : undefined}
           aria-busy={checking}
-          style={{ padding: isNarrow ? '16px 14px' : '20px 24px' }}
         >
-          <div className="history-section-header">
+          <div className="history-section-header archive-toolbar">
             <div className="history-section-title">
               <HeaderGlyph />
               <span>全部历史记录</span>
@@ -392,22 +408,17 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
               {selectedCount > 0 && (
                 <>
                   <span>{selectedCount} 项已选</span>
-                  <button className="btn" onClick={requestBatchDelete}>删除选中</button>
-                  <button className="btn" onClick={clearSelection}>取消选择</button>
+                  <button className="btn btn-secondary" onClick={requestBatchDelete}>删除选中</button>
+                  <button className="btn btn-secondary" onClick={clearSelection}>取消选择</button>
                 </>
               )}
               {selectionMode && selectedCount === 0 && searchedHistory.length > 0 && (
-                <button className="btn" onClick={selectAllVisible}>全选当前</button>
+                <button className="btn btn-secondary" onClick={selectAllVisible}>全选当前</button>
               )}
               {searchedHistory.length > 0 && (
                 <button
-                  className="btn"
+                  className={`btn btn-secondary${selectionMode ? ' is-selected' : ''}`}
                   onClick={toggleSelectionMode}
-                  style={{
-                    background: selectionMode ? 'var(--accent)' : undefined,
-                    borderColor: selectionMode ? 'var(--accent)' : undefined,
-                    color: selectionMode ? 'var(--accent-contrast)' : undefined,
-                  }}
                 >
                   {selectionMode ? '退出多选' : '多选'}
                 </button>
@@ -422,21 +433,15 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
           {initialLoading && searchedHistory.length === 0 ? (
             <ArchiveListLoadingGrid count={8} displayMode={archiveDisplayMode} />
           ) : searchedHistory.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: isNarrow ? '22px' : '28px' }}>
+            <div className="history-content-groups">
               {groupedHistory.map((group) => (
-                <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: isNarrow ? '12px' : '16px' }}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(92px, auto) 1fr auto',
-                    alignItems: 'center',
-                    gap: isNarrow ? '10px' : '14px',
-                    color: 'var(--text-sub)',
-                  }}>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: 700 }}>{group.title}</span>
+                <div className="history-period-group" key={group.key}>
+                  <div className="history-period-header">
+                    <div className="history-period-title-wrap">
+                      <span className="history-period-title">{group.title}</span>
                     </div>
-                    <div style={{ height: '1px', background: 'var(--glass-border)' }} />
-                    <div style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
+                    <div className="history-period-rule" />
+                    <div className="history-period-count">
                       {group.items.length} 条
                     </div>
                   </div>
@@ -452,28 +457,12 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
                           overlay={selectionMode ? (
                             <button
                               type="button"
+                              className={`btn btn-quiet btn-icon archive-selection-overlay${selected ? ' is-selected' : ''}`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toggleSelection(h.id, e);
                               }}
                               title={`选择历史记录，最后阅读于 ${formatHistoryDate(h.time)}`}
-                              style={{
-                                position: 'absolute',
-                                zIndex: 5,
-                                top: '8px',
-                                left: '8px',
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '8px',
-                                border: selected ? '1px solid var(--accent)' : '1px solid color-mix(in srgb, var(--accent-contrast) 26%, transparent)',
-                                background: selected ? 'var(--accent)' : 'var(--overlay-bg)',
-                                color: 'var(--accent-contrast)',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                boxShadow: 'var(--shadow-soft)',
-                              }}
                             >
                               {selected && <ToolbarGlyph name="check" size={15} color="var(--accent-contrast)" />}
                             </button>
@@ -500,7 +489,7 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
               ))}
             </div>
           ) : (
-            <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--text-sub)', fontSize: '14px' }}>
+            <div className="history-empty-state">
               {query.trim() ? '没有匹配的阅读历史' : (hideRead && history.length > 0 ? '所有档案均已读完' : '暂无阅读历史')}
             </div>
           )}
@@ -545,17 +534,6 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
         report={archiveFailureReport}
         message={archiveFailureReport?.message}
         onClose={() => setArchiveFailureReport(null)}
-      />
-      <ConfirmDialog
-        open={!!notice}
-        title="操作提示"
-        message={notice}
-        confirmLabel="知道了"
-        showCancel={false}
-        destructive={false}
-        initialFocusSelector="[data-dialog-confirm]"
-        onConfirm={() => setNotice('')}
-        onCancel={() => setNotice('')}
       />
     </>
   );

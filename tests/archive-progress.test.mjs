@@ -1,13 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
+  ARCHIVE_PROGRESS_VISIBILITY,
   clearArchiveProgressMarker,
   clearArchiveReadingProgress,
   hasArchiveReadingProgress,
   hasArchiveProgressMarker,
   markArchiveProgressCleared,
+  shouldShowArchiveProgress,
   shouldPersistArchiveReadingProgress,
 } from '../src/lib/archiveProgress.js';
+
+const read = (path) => readFileSync(path, 'utf8');
+
+test('history-only progress visibility excludes watchlist and random archives', () => {
+  assert.equal(shouldShowArchiveProgress(ARCHIVE_PROGRESS_VISIBILITY.HISTORY, true), true);
+  assert.equal(shouldShowArchiveProgress(ARCHIVE_PROGRESS_VISIBILITY.HISTORY, false), false);
+  assert.equal(shouldShowArchiveProgress(ARCHIVE_PROGRESS_VISIBILITY.GLOBAL, false), true);
+  assert.equal(shouldShowArchiveProgress(ARCHIVE_PROGRESS_VISIBILITY.DISABLED, true), false);
+
+  const home = read('src/pages/Home.jsx');
+  const watchlist = read('src/pages/WatchlistPage.jsx');
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(home, /showWatchlistArchiveProgress = shouldShowArchiveProgress\(readerSettings\.progressBarVisibility, false\)/);
+  assert.match(home, /watchlistWithProgress\.map[\s\S]*?<ArchiveCard[^\n]*showProgressBar={showWatchlistArchiveProgress}/);
+  assert.match(watchlist, /showWatchlistArchiveProgress = shouldShowArchiveProgress\(progressBarVisibility, false\)/);
+  assert.match(watchlist, /showProgressBar={showWatchlistArchiveProgress}/);
+  assert.match(reader, /shouldShowArchiveProgress\(progressBarVisibility, type === 'history'\)/);
+});
 
 test('clear progress uses force page zero and removes local history after server success', async () => {
   const calls = [];

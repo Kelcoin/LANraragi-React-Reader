@@ -69,24 +69,47 @@ export function getImmersiveSpreadGeometry({
   };
 }
 
-export function getContainedHalfFrame(size, container, cropSide) {
+export function getContainedHalfFrame(size, container, cropSide, cropInsets = {}) {
   const width = Number(size?.width) || 0;
   const height = Number(size?.height) || 0;
   const containerWidth = Number(container?.width) || 0;
   const containerHeight = Number(container?.height) || 0;
   if (width <= 0 || height <= 0 || containerWidth <= 0 || containerHeight <= 0) return null;
 
-  const halfWidth = width / 2;
-  const scale = Math.min(containerWidth / halfWidth, containerHeight / height);
-  const renderedHalfWidth = halfWidth * scale;
+  const clampInset = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+  let cropLeft = clampInset(cropInsets.left);
+  let cropRight = clampInset(cropInsets.right);
+  let cropTop = clampInset(cropInsets.top);
+  let cropBottom = clampInset(cropInsets.bottom);
+  if (cropLeft + cropRight >= 1) [cropLeft, cropRight] = [0, 0];
+  if (cropTop + cropBottom >= 1) [cropTop, cropBottom] = [0, 0];
+  const contentLeft = cropLeft;
+  const contentRight = 1 - cropRight;
+  const contentTop = cropTop;
+  const contentBottom = 1 - cropBottom;
+
+  const contentMiddle = (contentLeft + contentRight) / 2;
+  const selectedLeft = cropSide === 'right' ? contentMiddle : contentLeft;
+  const selectedRight = cropSide === 'right' ? contentRight : contentMiddle;
+  const selectedWidth = (selectedRight - selectedLeft) * width;
+  const selectedHeight = (contentBottom - contentTop) * height;
+  const scale = Math.min(containerWidth / selectedWidth, containerHeight / selectedHeight);
+  const renderedWidth = width * scale;
   const renderedHeight = height * scale;
-  const centeredLeft = (containerWidth - renderedHalfWidth) / 2;
+  const centeredLeft = (containerWidth - selectedWidth * scale) / 2;
+  const centeredTop = (containerHeight - selectedHeight * scale) / 2;
 
   return {
-    width: width * scale,
+    width: renderedWidth,
     height: renderedHeight,
-    left: cropSide === 'right' ? centeredLeft - renderedHalfWidth : centeredLeft,
-    top: (containerHeight - renderedHeight) / 2,
+    left: centeredLeft - selectedLeft * renderedWidth,
+    top: centeredTop - contentTop * renderedHeight,
+    clipInsets: {
+      top: cropTop,
+      right: cropSide === 'right' ? cropRight : 1 - selectedRight,
+      bottom: cropBottom,
+      left: selectedLeft,
+    },
   };
 }
 
