@@ -295,6 +295,9 @@ test('super-resolution failures disable the archive except for cancellation', ()
   assert.deepEqual(readerUiState.resolveSuperResolutionFailure({ name: 'NotSupportedError' }), {
     disable: true, notify: true,
   });
+  assert.deepEqual(readerUiState.resolveSuperResolutionFailure(
+    new Error('Super-resolution inference exceeds the 64000000 pixel limit'),
+  ), { disable: false, notify: false, pageTooLarge: true });
 });
 
 test('super-resolution oversized confirmation uses the inference output limit', () => {

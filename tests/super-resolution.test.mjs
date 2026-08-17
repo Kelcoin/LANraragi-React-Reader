@@ -2407,14 +2407,14 @@ test('ships a pinned Waifu2x CUNet x2 manifest with Android-safe cropped-output 
   assert.equal(validateManifest(model), true);
 });
 
-test('selects FP16 Waifu2x only for capable adapters and falls back after failure', () => {
+test('selects FP32 Waifu2x by default and FP16 only after FP32 failure', () => {
   assert.equal(typeof superResolution.selectWaifu2xManifest, 'function');
   const fp32 = superResolution.getSuperResolutionModel('waifu2x');
   const adapterInfo = {
     maxStorageBufferBindingSize: 128 * 1024 * 1024,
     shaderF16: true,
   };
-  const fp16 = superResolution.selectWaifu2xManifest(adapterInfo);
+  const fp16 = superResolution.selectWaifu2xManifest(adapterInfo, new Set([fp32.id]));
 
   assert.equal(fp16.id, 'waifu2x-cunet-art-scale2x-fp16-20260816');
   assert.equal(fp16.precision, 'fp16');
@@ -2431,7 +2431,8 @@ test('selects FP16 Waifu2x only for capable adapters and falls back after failur
     ...adapterInfo,
     maxStorageBufferBindingSize: 127 * 1024 * 1024,
   }), fp32);
-  assert.equal(superResolution.selectWaifu2xManifest(adapterInfo, new Set([fp16.id])), fp32);
+  assert.equal(superResolution.selectWaifu2xManifest(adapterInfo), fp32);
+  assert.equal(superResolution.selectWaifu2xManifest(adapterInfo, new Set([fp32.id, fp16.id])), fp32);
   assert.notEqual(
     superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fp16),
     superResolution.getSuperResolutionCacheKey('https://example.test/page.jpg', fp32),
@@ -2534,7 +2535,7 @@ test('accepts FP16 Waifu2x 304px input and 536px cropped output geometry', async
   const model = superResolution.selectWaifu2xManifest({
     maxStorageBufferBindingSize: 128 * 1024 * 1024,
     shaderF16: true,
-  });
+  }, new Set([superResolution.getSuperResolutionModel('waifu2x').id]));
   let encoded;
   const session = {
     inputNames: ['x'],

@@ -260,6 +260,34 @@ function copyScaledAlphaNearest({
   }
 }
 
+function hasNonZeroRgbTile(outputTensor, layout, width, crop, tile, scale) {
+  const tileWidth = tile.core.width * scale;
+  const tileHeight = tile.core.height * scale;
+  const sampleStepX = Math.max(1, Math.floor(tileWidth / 8));
+  const sampleStepY = Math.max(1, Math.floor(tileHeight / 8));
+  for (let y = 0; y < tileHeight; y += sampleStepY) {
+    for (let x = 0; x < tileWidth; x += sampleStepX) {
+      const [red, green, blue] = readTensorRgb(outputTensor, layout, width, x + crop, y + crop);
+      if (Math.abs(red) > 1e-6 || Math.abs(green) > 1e-6 || Math.abs(blue) > 1e-6) return true;
+    }
+  }
+  return false;
+}
+
+function copyScaledTileNearest({ sourcePixels, sourceWidth, sourceHeight, outputPixels, outputWidth, tile, scale }) {
+  for (let y = 0; y < tile.core.height * scale; y += 1) {
+    const sourceY = Math.min(sourceHeight - 1, tile.core.y + Math.floor(y / scale));
+    for (let x = 0; x < tile.core.width * scale; x += 1) {
+      const sourceX = Math.min(sourceWidth - 1, tile.core.x + Math.floor(x / scale));
+      const source = (sourceY * sourceWidth + sourceX) * 4;
+      const target = ((tile.core.y * scale + y) * outputWidth + tile.core.x * scale + x) * 4;
+      outputPixels[target] = sourcePixels[source];
+      outputPixels[target + 1] = sourcePixels[source + 1];
+      outputPixels[target + 2] = sourcePixels[source + 2];
+    }
+  }
+}
+
 function readTensorRgb(tensor, layout, width, x, y) {
   if (layout === 'nchw') {
     const planeSize = width * tensor.dims[2];
@@ -477,7 +505,20 @@ async function processBlobImage({
           );
           const crop = (tilePlan.padding - (manifest.outputInset ?? 0)) * scale;
           const outputTensorWidth = output.width;
-          if (colorSpace === 'rgb' && outputLayout === 'nchw') {
+          const tileHasSignal = colorSpace !== 'rgb'
+            || hasNonZeroRgbTile(outputTensor, outputLayout, outputTensorWidth, crop, tile, scale);
+          if (!tileHasSignal) {
+            // 某些 WebGPU FP16 推理偶发返回整块零值，保留原图避免黑块污染整页。
+            copyScaledTileNearest({
+              sourcePixels: image.pixels,
+              sourceWidth: image.width,
+              sourceHeight: image.height,
+              outputPixels,
+              outputWidth,
+              tile,
+              scale,
+            });
+          } else if (colorSpace === 'rgb' && outputLayout === 'nchw') {
             blitNchwRgbTile({
               outputTensor,
               outputPixels,

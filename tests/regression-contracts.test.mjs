@@ -893,8 +893,9 @@ test('Reader gives visible super-resolution critical priority and preserves orig
   assert.match(reader, /createSuperResolutionRuntime\(\)/);
   assert.match(reader, /runtime\.init\(srManifest\)/);
   assert.match(reader, /processSuperResolutionImageSource\(src, \{/);
-  assert.match(reader, /source = src;[\s\S]{0,180}processSuperResolutionImageSource/);
-  assert.match(reader, /commitPageImage\(originalResolved, originalDecoded,[\s\S]{0,800}processSuperResolutionImageSource/);
+  assert.match(reader, /sourceUrl = visibleSourceRef\.current;[\s\S]{0,500}processSuperResolutionImageSource/);
+  assert.match(reader, /commitPageImage\(originalResolved, originalDecoded,/);
+  assert.match(reader, /sourceUrl = visibleSourceRef\.current[\s\S]{0,500}processSuperResolutionImageSource/);
   assert.match(reader, /commitImmersiveImage\(originalDecoded,[\s\S]{0,240}startSuperResolutionUpgrade/);
   assert.match(reader, /keepAlive: true/);
   assert.match(reader, /getForegroundSuperResolutionPageIndices\(\{/);
@@ -951,7 +952,7 @@ test('Reader sequentially super-resolves future preload pages before previously 
 
 test('Reader preview decoding uses super-resolution output dimensions', () => {
   const reader = read('src/pages/Reader.jsx');
-  assert.match(reader, /sourceSize: pendingSuperResolutionSource \|\| sourceSize/);
+  assert.match(reader, /sourceSize: (?:pendingSuperResolutionSource|pendingSource) \|\| sourceSize/);
   assert.match(reader, /sourceSize: superResolutionSource,/);
 });
 
@@ -1016,7 +1017,7 @@ test('Reader retries FP32 once when the FP16 Waifu2x profile cannot initialize',
 
   assert.match(reader, /selectWaifu2xManifest/);
   assert.match(reader, /selectWaifu2xManifest\(srSupport\.adapterInfo, srFailedProfileIds\)/);
-  assert.equal(reader.match(/shouldFallbackWaifu2xProfile\(\{ modelValue: srModel\?\.value, manifest: srManifest \}\)/g)?.length, 2);
+  assert.equal(reader.match(/shouldFallbackWaifu2xProfile\(\{ modelValue: srModel\?\.value, manifest: srManifest, adapterInfo: srSupport\.adapterInfo \}\)/g)?.length, 2);
   assert.match(reader, /setSrFailedProfileIds/);
 });
 
@@ -1515,7 +1516,8 @@ test('normal Reader holds old spread geometry until every target slot is decoded
   assert.match(reader, /getPendingSpreadRenderState/);
   assert.match(reader, /normalSpreadRenderState\.units\.forEach/);
   assert.match(reader, /slotIndex < normalSpreadRenderState\.visibleSlotCount/);
-  assert.match(reader, /handleNormalSpreadUnitReady/);
+  assert.match(reader, /handleNormalPageDecoded/);
+  assert.match(reader, /targetSpread\.every\(\(unit\) => normalReadyPageIndicesRef\.current\.has/);
 });
 
 test('home animates only a newly inserted watchlist card and respects reduced motion', () => {

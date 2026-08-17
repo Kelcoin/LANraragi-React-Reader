@@ -87,7 +87,9 @@ const WAIFU2X_UPCONV7_MANIFEST = Object.freeze({
 });
 
 export function scheduleSuperResolutionUpgrade(queue, key, task, priority = IMAGE_LOAD_PRIORITY.PRELOAD) {
-  return queue.schedule(key, task, priority);
+  // 超分永远是原图就绪后的后台升级，不能占用关键原图解码槽位。
+  const backgroundPriority = Math.min(priority, IMAGE_LOAD_PRIORITY.ADJACENT);
+  return queue.schedule(key, task, backgroundPriority);
 }
 
 export function cancelVisibleSuperResolutionJobs(cacheKey) {
@@ -147,8 +149,9 @@ export function getSuperResolutionModel(value) {
 
 export function selectWaifu2xManifest(adapterInfo, failedProfileIds = new Set()) {
   const maxBindingSize = Number(adapterInfo?.maxStorageBufferBindingSize);
+  const fp32Failed = failedProfileIds?.has?.(WAIFU2X_FP32_MANIFEST.id) === true;
   const fp16Failed = failedProfileIds?.has?.(WAIFU2X_FP16_MANIFEST.id) === true;
-  if (adapterInfo?.shaderF16 === true
+  if (fp32Failed && adapterInfo?.shaderF16 === true
     && maxBindingSize >= WAIFU2X_FP16_MIN_BINDING_SIZE
     && !fp16Failed) {
     return WAIFU2X_FP16_MANIFEST;
@@ -156,8 +159,12 @@ export function selectWaifu2xManifest(adapterInfo, failedProfileIds = new Set())
   return WAIFU2X_FP32_MANIFEST;
 }
 
-export function shouldFallbackWaifu2xProfile({ modelValue, manifest } = {}) {
-  return modelValue === 'waifu2x' && manifest?.precision === 'fp16';
+export function shouldFallbackWaifu2xProfile({ modelValue, manifest, adapterInfo } = {}) {
+  if (modelValue !== 'waifu2x') return false;
+  if (manifest?.precision === 'fp16') return true;
+  return manifest?.precision === undefined
+    && adapterInfo?.shaderF16 === true
+    && Number(adapterInfo?.maxStorageBufferBindingSize) >= WAIFU2X_FP16_MIN_BINDING_SIZE;
 }
 
 function hasText(value) {

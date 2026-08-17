@@ -77,7 +77,8 @@ test('normal paged reader keeps adjacent decode-window images mounted offscreen'
   assert.match(source, /const decodeWindowUnits =/);
   assert.match(source, /reader-page:\$\{unit\.pageIndex\}:\$\{unit\.splitPart\}/);
   assert.match(source, /aria-hidden=\{visible \? undefined : 'true'\}/);
-  assert.match(source, /onReady=\{visible \? handleNormalSpreadUnitReady : undefined\}/);
+  assert.match(source, /onReady=\{handleNormalPageDecoded\}/);
+  assert.match(source, /normalTargetReady[\s\S]*normalReadyPageIndicesRef\.current\.has/);
   assert.match(source, /if \(preserveReadySource\) \{\s*setShowLoadingStatus\(false\);[\s\S]*onReady\?\.\(pageIndex\)/);
 });
 

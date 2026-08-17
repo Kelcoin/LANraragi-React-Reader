@@ -282,9 +282,13 @@ export function resolveImmersiveZoomPan({
 }
 
 const WEBGPU_SHADER_FAILURE_PATTERN = /Failed to create a WebGPU (?:compute|render) pipeline|Invalid ShaderModule/i;
+const SUPER_RESOLUTION_PIXEL_LIMIT_PATTERN = /Super-resolution inference exceeds the \d+ pixel limit/i;
 
 export function resolveSuperResolutionFailure(error) {
   if (error?.name === 'AbortError') return { disable: false, notify: false };
+  if (typeof error?.message === 'string' && SUPER_RESOLUTION_PIXEL_LIMIT_PATTERN.test(error.message)) {
+    return { disable: false, notify: false, pageTooLarge: true };
+  }
   if (typeof error?.message === 'string' && WEBGPU_SHADER_FAILURE_PATTERN.test(error.message)) {
     return { disable: true, notify: true, webgpuShader: true };
   }

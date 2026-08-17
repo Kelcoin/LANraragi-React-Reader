@@ -321,8 +321,10 @@ const PageImage = React.forwardRef(({
 
   useLayoutEffect(() => {
     const precision = previewDecodeEnabled && !fullPrecision ? 'optimized' : 'full';
-    const precisionKey = `${precision}:${superResolution?.manifest?.id ?? 'original'}`;
-    const preserveReadySource = readyPageUrlRef.current === pageUrl && readyPrecisionRef.current === precisionKey;
+    const precisionKey = `${precision}:original`;
+    const preserveReadySource = readyPageUrlRef.current === pageUrl
+      && readyPrecisionRef.current?.startsWith(`${precision}:`)
+      && !!visibleSourceRef.current;
     if (preserveReadySource) {
       setShowLoadingStatus(false);
       setNetworkPending(false);
@@ -332,8 +334,6 @@ const PageImage = React.forwardRef(({
 
     let isMounted = true;
     let decodeTicket = null;
-    let superResolutionTicket = null;
-    let pendingSuperResolutionSource = null;
     const requestSeq = ++requestSeqRef.current;
     setShowLoadingStatus(false);
     setNetworkPending(false);
@@ -411,62 +411,7 @@ const PageImage = React.forwardRef(({
               }, priority);
               await decodeTicket.promise;
             }
-            if (!superResolution || !isMounted || requestSeq !== requestSeqRef.current) {
-              readyPrecisionRef.current = precisionKey;
-              return;
-            }
-            superResolutionTicket = scheduleSuperResolutionUpgrade(
-              readerImageDecodeQueue,
-              `super-resolution:${pageUrl}:${requestSeq}`,
-              async (signal) => {
-                try {
-                  let source = src;
-                  try {
-                    pendingSuperResolutionSource = await processSuperResolutionImageSource(src, {
-                      ...superResolution,
-                      signal,
-                      keepAlive: true,
-                      cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
-                      getCachedSource: getCachedImage,
-                      cacheResult: putImage,
-                    });
-                    source = pendingSuperResolutionSource.src;
-                  } catch (error) {
-                    if (error?.name === 'AbortError') throw error;
-                    onSuperResolutionError?.(error);
-                    readyPrecisionRef.current = precisionKey;
-                    return;
-                  }
-                  const enhancedResolved = await getReaderPreviewSource(source, {
-                    enabled: previewDecodeEnabled,
-                    fullPrecision: true,
-                    sourceSize: pendingSuperResolutionSource || sourceSize,
-                    signal,
-                  });
-                  const enhancedDecoded = await decodeImageSource(enhancedResolved.src, { signal });
-                  if (pendingSuperResolutionSource && enhancedResolved.src !== pendingSuperResolutionSource.src) {
-                    pendingSuperResolutionSource.dispose();
-                    pendingSuperResolutionSource = null;
-                  }
-                  if (commitPageImage(
-                    enhancedResolved,
-                    enhancedDecoded,
-                    pendingSuperResolutionSource,
-                    precisionKey,
-                  )) pendingSuperResolutionSource = null;
-                } catch (error) {
-                  pendingSuperResolutionSource?.dispose();
-                  pendingSuperResolutionSource = null;
-                  throw error;
-                }
-              },
-              priority,
-            );
-            // 原图已经就绪；超分只在后台替换，避免阻塞首屏和翻页。
             readyPrecisionRef.current = precisionKey;
-            superResolutionTicket.promise.catch((error) => {
-              if (error?.name !== 'AbortError') onSuperResolutionError?.(error);
-            });
             return;
           }
           setImgSrc(src);
@@ -494,10 +439,68 @@ const PageImage = React.forwardRef(({
     return () => {
       isMounted = false;
       decodeTicket?.cancel();
-      superResolutionTicket?.cancel();
-      pendingSuperResolutionSource?.dispose();
     };
-  }, [allowNetworkFallback, cacheOnly, cropBorders, fullPrecision, onError, onLoadStart, onNaturalSize, onReady, onSuperResolutionError, pageIndex, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize, superResolution]);
+  }, [allowNetworkFallback, cacheOnly, cropBorders, fullPrecision, onError, onLoadStart, onNaturalSize, onReady, pageIndex, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize]);
+
+  useEffect(() => {
+    if (!serializedDecode || !superResolution || readyPageUrlRef.current !== pageUrl || !visibleSourceRef.current) return undefined;
+    let active = true;
+    let ticket = null;
+    let pendingSource = null;
+    const precision = previewDecodeEnabled && !fullPrecision ? 'optimized' : 'full';
+    const enhancedKey = `${precision}:${superResolution.manifest?.id ?? 'original'}`;
+    const sourceUrl = visibleSourceRef.current;
+    ticket = scheduleSuperResolutionUpgrade(
+      readerImageDecodeQueue,
+      `super-resolution:${pageUrl}:${superResolution.manifest?.id ?? 'model'}`,
+      async (signal) => {
+        try {
+          pendingSource = await processSuperResolutionImageSource(sourceUrl, {
+            ...superResolution,
+            signal,
+            keepAlive: true,
+            cacheKey: getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution.manifest),
+            getCachedSource: getCachedImage,
+            cacheResult: putImage,
+          });
+          const enhancedResolved = await getReaderPreviewSource(pendingSource.src, {
+            enabled: previewDecodeEnabled,
+            fullPrecision: true,
+            sourceSize: pendingSource || sourceSize,
+            signal,
+          });
+          const enhancedDecoded = await decodeImageSource(enhancedResolved.src, { signal });
+          if (!active || readyPageUrlRef.current !== pageUrl || !imgRef.current) {
+            pendingSource?.dispose();
+            return;
+          }
+          if (pendingSource && enhancedResolved.src !== pendingSource.src) {
+            pendingSource.dispose();
+            pendingSource = null;
+          }
+          superResolutionSourceRef.current?.dispose();
+          superResolutionSourceRef.current = pendingSource;
+          pendingSource = null;
+          visibleSourceRef.current = enhancedResolved.src;
+          readyPrecisionRef.current = enhancedKey;
+          setNaturalSize({ width: enhancedResolved.width || enhancedDecoded.width, height: enhancedResolved.height || enhancedDecoded.height });
+          setImgSrc(enhancedResolved.src);
+          setLoadState('ready');
+        } catch (error) {
+          pendingSource?.dispose();
+          pendingSource = null;
+          if (error?.name !== 'AbortError') onSuperResolutionError?.(error);
+        }
+      },
+      priority,
+    );
+    ticket.promise.catch(() => {});
+    return () => {
+      active = false;
+      ticket?.cancel();
+      pendingSource?.dispose();
+    };
+  }, [fullPrecision, onSuperResolutionError, pageUrl, previewDecodeEnabled, priority, serializedDecode, sourceSize, superResolution]);
 
   useEffect(() => () => {
     superResolutionSourceRef.current?.dispose();
@@ -1278,6 +1281,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       : 0,
     shownAt: 0,
   }));
+  const normalReadyPageIndicesRef = useRef(new Set());
   const { canShowMetadata, canShowPageCount, canNavigate, canRenderPage } = getReaderCapabilities(renderState, pages.length);
   const currentPageReady = canRenderPage
     && pageLoadPhase.status === 'ready'
@@ -1353,7 +1357,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setSrRuntimeContext({ runtime, manifest: srManifest, backend });
     }).catch((error) => {
       if (!active) return;
-      if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest })) {
+      if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest, adapterInfo: srSupport.adapterInfo })) {
         setSrFailedProfileIds((current) => {
           if (current.has(srManifest.id)) return current;
           const next = new Set(current);
@@ -1393,7 +1397,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const handleSuperResolutionError = useCallback((error) => {
     const failure = resolveSuperResolutionFailure(error);
     if (!failure.notify) return;
-    if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest })) {
+    if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest, adapterInfo: srSupport.adapterInfo })) {
       setSrFailedProfileIds((current) => {
         if (current.has(srManifest.id)) return current;
         const next = new Set(current);
@@ -1419,6 +1423,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   function getSuperResolutionForPage(pageIndex, foreground = true) {
     if (!foreground || !srArchiveEnabled || !scheduledSrRuntimeContext) return null;
     const size = pageSizes[pageIndex];
+    if (!(Number(size?.width) > 0 && Number(size?.height) > 0)) return null;
     if (isSuperResolutionPageTooLarge(size, srManifest?.scale)) {
       return null;
     }
@@ -3282,7 +3287,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (pages.length === 0) return;
     const bounded = Math.max(0, Math.min(targetIndex, pages.length - 1));
     const promoted = promoteImmersiveTarget(bounded, targetSplitPart);
-    const visibleImmediately = assumeVisible || promoted;
+    const targetSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: bounded, splitPart: targetSplitPart });
+    const targetSpread = readerSpreads[Math.max(0, targetSpreadIndex)] || [];
+    const normalTargetReady = viewMode === 'normal' && !webtoonActive && targetSpread.length > 0
+      && targetSpread.every((unit) => normalReadyPageIndicesRef.current.has(unit.pageIndex));
+    const visibleImmediately = assumeVisible || promoted || normalTargetReady;
     void exitColdRestoreMode();
     if (resetZoom) {
       zoomScaleRef.current = 1.0;
@@ -3309,7 +3318,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       shownAt: visibleImmediately || bounded === prev.visibleIndex ? prev.shownAt : Date.now(),
     }));
     if (!preserveSwipePosition && swipeContainerRef.current) swipeContainerRef.current.style.transform = 'translateX(0px)';
-  }, [checkIndicatorOverlap, exitColdRestoreMode, pages.length, promoteImmersiveTarget, scheduleZoomTransform, showTransientPageIndicator, viewMode]);
+  }, [checkIndicatorOverlap, exitColdRestoreMode, pages.length, promoteImmersiveTarget, readerSpreads, scheduleZoomTransform, showTransientPageIndicator, viewMode, webtoonActive]);
   commitPageTargetRef.current = commitPageTarget;
 
   // ===== 3. Auto turn timer =====
@@ -3466,21 +3475,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     ));
   }, []);
 
-  const normalSpreadKey = currentSpread
-    .map((unit) => `${unit.pageIndex}:${unit.splitPart}`)
-    .join('|');
-  const normalSpreadReadyRef = useRef({ key: '', pages: new Set() });
-  if (normalSpreadReadyRef.current.key !== normalSpreadKey) {
-    normalSpreadReadyRef.current = { key: normalSpreadKey, pages: new Set() };
-  }
-  const handleNormalSpreadUnitReady = useCallback((pageIndex) => {
-    const readyState = normalSpreadReadyRef.current;
-    if (readyState.key !== normalSpreadKey) return;
-    readyState.pages.add(pageIndex);
-    if (currentSpread.every((unit) => readyState.pages.has(unit.pageIndex))) {
+  const handleNormalPageDecoded = useCallback((pageIndex) => {
+    normalReadyPageIndicesRef.current.add(pageIndex);
+    if (currentSpread.every((unit) => normalReadyPageIndicesRef.current.has(unit.pageIndex))) {
       handlePageVisualReady(currentIndex);
     }
-  }, [currentIndex, currentSpread, handlePageVisualReady, normalSpreadKey]);
+  }, [currentIndex, currentSpread, handlePageVisualReady]);
 
   const handlePageVisualError = useCallback((pageIndex) => {
     if (typeof pageIndex !== 'number') return;
@@ -3838,13 +3838,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     void (async () => {
       for (const pageIndex of [...forward, ...read]) {
         if (cancelled) return;
-        if (isSuperResolutionPageTooLarge(pageSizesRef.current[pageIndex], srManifest?.scale)) continue;
+        const pageSize = pageSizesRef.current[pageIndex];
+        if (!(Number(pageSize?.width) > 0 && Number(pageSize?.height) > 0)) continue;
+        if (isSuperResolutionPageTooLarge(pageSize, srManifest?.scale)) continue;
         const pageUrl = pages[pageIndex];
         if (!pageUrl) continue;
         activeTicket = scheduleSuperResolutionPreload(pageUrl, scheduledSrRuntimeContext);
         try {
           await activeTicket.promise;
         } catch (error) {
+          if (resolveSuperResolutionFailure(error).pageTooLarge) continue;
           if (error?.name !== 'AbortError') handleSuperResolutionError(error);
           return;
         } finally {
@@ -3863,6 +3866,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     pageLoadPhase.status,
     pageLoadPhase.targetIndex,
     pages,
+    pageSizes,
     scheduledSrRuntimeContext,
     settings.preloadCount,
     srArchiveEnabled,
@@ -4547,7 +4551,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                         loadingHint={visible ? '正在请求图像' : undefined}
                         errorLabel={visible ? `第 ${unit.pageIndex + 1} 页加载失败` : undefined}
                         onLoadStart={visible && unit.pageIndex === currentIndex ? handlePageVisualLoadStart : undefined}
-                        onReady={visible ? handleNormalSpreadUnitReady : undefined}
+                        onReady={handleNormalPageDecoded}
                         onError={visible && unit.pageIndex === currentIndex ? handlePageVisualError : undefined}
                       />
                     </div>
