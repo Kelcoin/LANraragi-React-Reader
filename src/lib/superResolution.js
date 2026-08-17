@@ -1,4 +1,5 @@
 import { createSuperResolutionRuntime as createRuntime } from './superResolutionRuntime.js';
+import { probeOrtWebGpuBackend } from './superResolutionOrt.js';
 import { IMAGE_LOAD_PRIORITY } from './imageLoadQueue.js';
 import { isAnimatedImageBlob } from './readerPreviewDecode.js';
 import {
@@ -295,21 +296,31 @@ export function detectSuperResolutionSupport() {
   return { supported: true, reason: '' };
 }
 
-export async function verifySuperResolutionSupport({ requestAdapter } = {}) {
+export async function verifySuperResolutionSupport({
+  requestAdapter,
+  probeBackend = probeOrtWebGpuBackend,
+} = {}) {
   const initial = detectSuperResolutionSupport();
   if (!initial.supported && typeof requestAdapter !== 'function') return initial;
   try {
     const adapter = await requestHighPerformanceWebGpuAdapter(requestAdapter);
-    return adapter
-      ? {
-        supported: true,
-        reason: '',
-        adapterInfo: {
-          maxStorageBufferBindingSize: Number(adapter.limits?.maxStorageBufferBindingSize) || 0,
-          shaderF16: adapter.features?.has?.('shader-f16') === true,
-        },
-      }
-      : { supported: false, reason: WEBGPU_ADAPTER_UNAVAILABLE_REASON };
+    if (!adapter) return { supported: false, reason: WEBGPU_ADAPTER_UNAVAILABLE_REASON };
+    try {
+      await probeBackend();
+    } catch {
+      return {
+        supported: false,
+        reason: '当前环境无法加载 ONNX Runtime WebGPU 后端，无法启用超分。',
+      };
+    }
+    return {
+      supported: true,
+      reason: '',
+      adapterInfo: {
+        maxStorageBufferBindingSize: Number(adapter.limits?.maxStorageBufferBindingSize) || 0,
+        shaderF16: adapter.features?.has?.('shader-f16') === true,
+      },
+    };
   } catch {
     return { supported: false, reason: WEBGPU_ADAPTER_UNAVAILABLE_REASON };
   }

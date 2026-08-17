@@ -6,7 +6,10 @@ import * as imageCache from '../src/lib/imageCache.js';
 import * as superResolution from '../src/lib/superResolution.js';
 import * as tiling from '../src/lib/superResolutionTiling.js';
 import { createImageDecodeQueue, IMAGE_LOAD_PRIORITY } from '../src/lib/imageLoadQueue.js';
-import { patchOrtSegmentedOffsetTypes } from '../src/lib/superResolutionOrt.js';
+import {
+  patchOrtSegmentedOffsetTypes,
+  probeOrtWebGpuBackend,
+} from '../src/lib/superResolutionOrt.js';
 import { createSuperResolutionRuntime as createRawSuperResolutionRuntime } from '../src/lib/superResolutionRuntime.js';
 
 function createWorkerHarness() {
@@ -149,6 +152,34 @@ test('ORT shader compatibility wrapper does not retain compile diagnostics', asy
 
   assert.match(source, /patchOrtSegmentedOffsetTypes\(descriptor\.code\)/);
   assert.doesNotMatch(source, /SR-WGSL|compilationInfo|pushErrorScope|popErrorScope|WithDiagnostics/);
+});
+
+test('ORT WebGPU probe creates and releases a minimal session', async () => {
+  let releaseCount = 0;
+  let receivedModel;
+  let receivedOptions;
+  await probeOrtWebGpuBackend({
+    loadBackend: async (backend) => {
+      assert.equal(backend, 'webgpu');
+      return {
+        InferenceSession: {
+          async create(model, options) {
+            receivedModel = model;
+            receivedOptions = options;
+            return { async release() { releaseCount += 1; } };
+          },
+        },
+      };
+    },
+  });
+
+  assert.ok(receivedModel instanceof Uint8Array);
+  assert.ok(receivedModel.byteLength < 128);
+  assert.deepEqual(receivedOptions.executionProviders, [{
+    name: 'webgpu',
+    powerPreference: 'high-performance',
+  }]);
+  assert.equal(releaseCount, 1);
 });
 
 test('Real-CUGAN reflects tile edges and disposes every inference tensor', async () => {
@@ -3072,6 +3103,7 @@ test('reports WebGPU adapter limits and shader-f16 support', async () => {
       limits: { maxStorageBufferBindingSize: 134217728 },
       features: new Set(['shader-f16']),
     }),
+    probeBackend: async () => {},
   });
 
   assert.deepEqual(support, {
@@ -3081,6 +3113,23 @@ test('reports WebGPU adapter limits and shader-f16 support', async () => {
       maxStorageBufferBindingSize: 134217728,
       shaderF16: true,
     },
+  });
+});
+
+test('rejects WebGPU when the ONNX Runtime backend cannot initialize', async () => {
+  const support = await superResolution.verifySuperResolutionSupport({
+    requestAdapter: async () => ({
+      limits: { maxStorageBufferBindingSize: 134217728 },
+      features: new Set(['shader-f16']),
+    }),
+    probeBackend: async () => {
+      throw new Error('no available backend found');
+    },
+  });
+
+  assert.deepEqual(support, {
+    supported: false,
+    reason: '当前环境无法加载 ONNX Runtime WebGPU 后端，无法启用超分。',
   });
 });
 

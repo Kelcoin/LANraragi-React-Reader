@@ -32,3 +32,8 @@ export function presentEhError(code, detail = '') {
 export function isTerminalGalleryError(code) {
   return code === 'GALLERY_NOT_FOUND' || code === 'GALLERY_COPYRIGHT_REMOVED' || code === 'GALLERY_UNAVAILABLE';
 }
+
+export function shouldKeepEhCommentsOnRefreshFailure(cachedComments, visibleComments) {
+  return (Array.isArray(cachedComments) && cachedComments.length > 0)
+    || (Array.isArray(visibleComments) && visibleComments.length > 0);
+}

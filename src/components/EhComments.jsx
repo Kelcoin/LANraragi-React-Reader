@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ToolbarGlyph } from './AppGlyphs';
-import { isTerminalGalleryError, presentEhError } from '../lib/ehCommentsState';
+import {
+  isTerminalGalleryError,
+  presentEhError,
+  shouldKeepEhCommentsOnRefreshFailure,
+} from '../lib/ehCommentsState';
 import {
   createEhCommentsCacheKey,
   deleteEhCommentsCache,
@@ -213,6 +217,8 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
   const hasAutoLoadedRef = useRef(false);
   const requestSeqRef = useRef(0);
   const requestAbortRef = useRef(null);
+  const commentsRef = useRef(comments);
+  commentsRef.current = comments;
 
   const [apiData, setApiData] = useState(EMPTY_API_DATA);
   const [postText, setPostText] = useState('');
@@ -230,6 +236,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
     requestSeqRef.current += 1;
     requestAbortRef.current?.abort();
     requestAbortRef.current = null;
+    commentsRef.current = [];
     setComments([]);
     setLoading(false);
     setLoaded(false);
@@ -298,6 +305,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
             return;
           }
           cachedComments = cachedState.comments;
+          commentsRef.current = cachedComments;
           setComments(cachedComments);
           setLoading(false);
           setLoaded(true);
@@ -379,6 +387,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
 
       if (!isCurrent()) return;
       if (finalComments.length > 0 || !cachedComments) {
+        commentsRef.current = finalComments;
         setComments(finalComments);
         setLoaded(true);
         writeEhCommentsCache(cacheKey, finalComments).catch(() => {});
@@ -390,6 +399,21 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
     } catch (e) {
       if (requestSeqRef.current !== requestSeq) return;
       if (controller.signal.aborted && !timedOut) return;
+      const keepVisibleComments = shouldKeepEhCommentsOnRefreshFailure(
+        cachedComments,
+        commentsRef.current,
+      );
+      if (isTerminalGalleryError(e?.ehCode)) {
+        if (!keepVisibleComments) {
+          await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
+        }
+      }
+      if (keepVisibleComments) {
+        setLoaded(true);
+        setError(null);
+        setNeedsCookie(false);
+        return;
+      }
       if (e instanceof TypeError && e.message === 'Failed to fetch') {
         showError('NETWORK_ERROR');
       } else if (timedOut) {
@@ -397,18 +421,6 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       } else {
         showError(e.ehCode || 'UNKNOWN_WORKER_ERROR', e.ehDetail || e.message);
       }
-      if (isTerminalGalleryError(e?.ehCode)) {
-        if (!cachedComments) {
-          await writeEhCommentsCache(cacheKey, [], { unavailable: e.ehCode }).catch(() => {});
-        }
-        if (cachedComments) {
-          // Background SWR refresh hit a terminal page (Worker error): keep the valid
-          // cached comments instead of replacing them with an error state.
-          setLoaded(true);
-          return;
-        }
-      }
-      if (cachedComments) setLoaded(true);
     } finally {
       clearTimeout(timeout);
       if (requestSeqRef.current === requestSeq) {

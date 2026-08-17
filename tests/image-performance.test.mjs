@@ -480,9 +480,10 @@ test('scroll mode ignores resize-driven page size changes so the list is never r
 
 test('EH comments keep valid cached comments when a background refresh returns nothing', () => {
   const comments = read('src/components/EhComments.jsx');
-  assert.match(comments, /if \(cachedComments\) \{\s*\/\/ Background SWR refresh hit a terminal page/);
+  assert.match(comments, /shouldKeepEhCommentsOnRefreshFailure\(\s*cachedComments,\s*commentsRef\.current,\s*\)/);
+  assert.match(comments, /if \(keepVisibleComments\) \{\s*setLoaded\(true\);\s*setError\(null\);/);
   assert.match(comments, /finalComments\.length > 0 \|\| !cachedComments/);
-  assert.match(comments, /if \(isTerminalGalleryError\(e\?\.ehCode\)\) \{\s*if \(!cachedComments\)/);
+  assert.match(comments, /if \(isTerminalGalleryError\(e\?\.ehCode\)\) \{\s*if \(!keepVisibleComments\)/);
 });
 
 test('history page merges writes made during hydration instead of overwriting them', () => {

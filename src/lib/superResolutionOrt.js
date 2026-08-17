@@ -2,6 +2,21 @@ const ortWebGpuModuleUrl = new URL('../../node_modules/onnxruntime-web/dist/ort-
 const ortWebGpuBinaryUrl = new URL('../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm', import.meta.url).href;
 
 let webGpuShaderCompatibilityInstalled = false;
+let webGpuProbePromise = null;
+
+// A 1x1 float Identity graph. Creating this session forces ORT to load its
+// WebAssembly bootstrap and register the WebGPU execution provider.
+const WEBGPU_PROBE_MODEL = new Uint8Array([
+  0x08, 0x08, 0x42, 0x02, 0x10, 0x0d, 0x3a, 0x3b,
+  0x0a, 0x10, 0x0a, 0x01, 0x58, 0x12, 0x01, 0x59,
+  0x22, 0x08, 0x49, 0x64, 0x65, 0x6e, 0x74, 0x69,
+  0x74, 0x79, 0x12, 0x05, 0x70, 0x72, 0x6f, 0x62,
+  0x65, 0x5a, 0x0f, 0x0a, 0x01, 0x58, 0x12, 0x0a,
+  0x0a, 0x08, 0x08, 0x01, 0x12, 0x04, 0x0a, 0x02,
+  0x08, 0x01, 0x62, 0x0f, 0x0a, 0x01, 0x59, 0x12,
+  0x0a, 0x0a, 0x08, 0x08, 0x01, 0x12, 0x04, 0x0a,
+  0x02, 0x08, 0x01,
+]);
 
 export function patchOrtSegmentedOffsetTypes(source) {
   if (typeof source !== 'string' || !source.includes('_by_offset')) return source;
@@ -68,4 +83,20 @@ export async function loadOrtBackend(backend) {
   };
   ort.env.webgpu.powerPreference = 'high-performance';
   return ort;
+}
+
+export function probeOrtWebGpuBackend({ loadBackend = loadOrtBackend } = {}) {
+  const probe = async () => {
+    const ort = await loadBackend('webgpu');
+    const session = await ort.InferenceSession.create(WEBGPU_PROBE_MODEL, {
+      executionProviders: [{ name: 'webgpu', powerPreference: 'high-performance' }],
+      graphOptimizationLevel: 'disabled',
+    });
+    if (!session) throw new Error('ONNX Runtime returned no WebGPU probe session');
+    if (typeof session.release === 'function') await session.release();
+  };
+
+  if (loadBackend !== loadOrtBackend) return probe();
+  if (!webGpuProbePromise) webGpuProbePromise = probe();
+  return webGpuProbePromise;
 }

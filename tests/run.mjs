@@ -19,6 +19,7 @@ import './archive-deletion.test.mjs';
 import './session-state.test.mjs';
 import './pwa-install.test.mjs';
 import './eh-comments-cache.test.mjs';
+import './eh-comments-state.test.mjs';
 import './worker-behavior.test.mjs';
 import './icon-assets.test.mjs';
 import './app-version.test.mjs';

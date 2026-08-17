@@ -4418,7 +4418,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <SettingHint text={'整个超分功能的开关。\n开启后会在阅读页沉浸模式显示超分按钮，并在阅读设置中提供模型与自动化选项。\n预超分页数与“预加载”数量一致；实际同时处理数量受“最大同时解码”限制。\n图片过大、不适合超分时，沉浸模式中的超分按钮会自动隐藏。'}>启用超分</SettingHint>
                     <div className="settings-control settings-toggle-control"><ToggleSwitch label="启用超分" checked={settings.srEnabled} disabled={(srSupport.checking || !srSupport.supported || !srManifest) && !settings.srEnabled} onChange={handleToggleSrEnabled} /></div>
                   </div>
-                  {srSupport.checking && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>正在检测 WebGPU 显卡适配器…</div>}
+                  {srSupport.checking && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>正在检测超分运行环境…</div>}
                   {!srSupport.supported && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>{srSupport.reason}</div>}
                   {srSupport.supported && !srManifest && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>当前模型尚未配置可验证的模型文件。</div>}
                   {srRuntimeError && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>{srRuntimeError}</div>}
