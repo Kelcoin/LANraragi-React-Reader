@@ -79,6 +79,11 @@
   box-shadow: none;
 }
 
+.settings-layout .reader-model-select-control {
+  flex-basis: 190px;
+  width: 190px;
+}
+
 .settings-layout .settings-subgroup + .settings-subgroup {
   border-color: var(--border-subtle);
 }

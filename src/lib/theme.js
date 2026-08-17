@@ -26,6 +26,7 @@ const CUSTOM_THEME_PROPERTIES = [
   '--secondary', '--secondary-strong', '--secondary-soft',
   '--positive', '--positive-strong', '--positive-soft', '--warning', '--warning-soft',
   '--danger', '--danger-soft', '--focus-ring', '--overlay', '--reader-stage',
+  '--scrollbar-thumb', '--scrollbar-thumb-hover',
   '--reader-toolbar-bg', '--reader-control-bg', '--reader-control-hover-bg', '--reader-control-border', '--reader-control-text',
   '--reader-overlay-text', '--reader-stage-border', '--reader-panel-bg', '--reader-skeleton-base', '--reader-skeleton-highlight',
   '--comment-header-bg', '--comment-content-bg', '--comment-card-bg', '--comment-card-border', '--comment-positive', '--comment-negative',
@@ -197,9 +198,21 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
 
   const dark = resolvedTheme === 'dark';
   const canvas = clampCanvasLuminance(normalized.background, dark);
-  const surface1 = dark ? mixHex(canvas, '#ffffff', 0.075) : mixHex(canvas, '#ffffff', 0.68);
-  const surface2 = dark ? mixHex(canvas, '#ffffff', 0.15) : mixHex(canvas, '#ffffff', 0.36);
-  const surface3 = dark ? mixHex(canvas, '#ffffff', 0.23) : mixHex(canvas, '#000000', 0.08);
+  const surface1 = mixHex(
+    dark ? mixHex(canvas, '#ffffff', 0.075) : mixHex(canvas, '#ffffff', 0.68),
+    normalized.secondary,
+    dark ? 0.07 : 0.04,
+  );
+  const surface2 = mixHex(
+    dark ? mixHex(canvas, '#ffffff', 0.15) : mixHex(canvas, '#ffffff', 0.36),
+    normalized.secondary,
+    dark ? 0.12 : 0.07,
+  );
+  const surface3 = mixHex(
+    dark ? mixHex(canvas, '#ffffff', 0.23) : mixHex(canvas, '#000000', 0.08),
+    normalized.accent,
+    dark ? 0.08 : 0.05,
+  );
   const accent = ensureReadable(normalized.accent, surface1, dark ? 3.2 : 4.5);
   const secondary = ensureReadable(normalized.secondary, surface1, dark ? 3.2 : 4.5);
   const accentStrong = ensureReadable(dark ? mixHex(accent, '#ffffff', 0.2) : mixHex(accent, '#000000', 0.2), surface1, dark ? 3.2 : 4.5);
@@ -221,7 +234,7 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
     '--surface': surface1,
     '--surface-subtle': surface2,
     '--surface-raised': surface3,
-    '--surface-hover': dark ? mixHex(surface2, '#ffffff', 0.1) : mixHex(surface2, '#000000', 0.04),
+    '--surface-hover': mixHex(surface2, accent, dark ? 0.14 : 0.08),
     '--surface-inset': mixHex(surface1, surface2, 0.52),
     '--text-primary': textMain,
     '--text-secondary': textSub,
@@ -240,6 +253,8 @@ export function createCustomThemeTokens(palette, resolvedTheme = 'light') {
     '--danger-soft': mixHex(surface1, danger, dark ? 0.2 : 0.1),
     '--focus-ring': accent,
     '--overlay': dark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(28, 25, 21, 0.55)',
+    '--scrollbar-thumb': borderHover,
+    '--scrollbar-thumb-hover': accent,
     '--reader-stage': 'var(--surface-inset)',
     '--accent': accent,
     '--accent-strong': accentStrong,

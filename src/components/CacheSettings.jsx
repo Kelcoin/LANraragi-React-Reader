@@ -32,7 +32,7 @@ export default function CacheSettings() {
         <div className="cache-usage-text">{stats ? `已用 ${formatBytes(stats.bytes)} / ${formatBytes(stats.limit)} · ${stats.entries} 项` : '暂时无法读取缓存用量'}</div>
         <div className="cache-usage-track" aria-hidden="true"><span style={{ width: `${usagePercent}%` }} /></div>
       </div>
-      <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => run(async () => clearImageCache({ disk: true }))}>清空缓存</button>
+      <button type="button" className="btn btn-secondary cache-clear-button" disabled={busy} onClick={() => run(async () => clearImageCache({ disk: true }))}>清空缓存</button>
     </div>
   </div>;
 }
