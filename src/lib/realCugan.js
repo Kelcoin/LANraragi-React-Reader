@@ -161,6 +161,8 @@ export function createRealCuganProcessor({
     isCancelled,
     yieldControl = defaultYieldControl,
     waitUntilRunnable = async () => {},
+    resumeState,
+    onResumeState,
   } = {}) {
     if (disposed) throw new Error('Real-CUGAN processor is disposed');
     if (!(pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray)
@@ -169,10 +171,19 @@ export function createRealCuganProcessor({
     }
     const outputWidth = width * SCALE;
     const outputHeight = height * SCALE;
-    const outputPixels = new Uint8ClampedArray(outputWidth * outputHeight * 4);
     const plan = createTilePlan(width, height, { tileCore: TILE_CORE, padding: PADDING });
+    const canResume = resumeState?.outputPixels instanceof Uint8ClampedArray
+      && resumeState.outputPixels.length === outputWidth * outputHeight * 4
+      && Number.isInteger(resumeState.nextTileIndex)
+      && resumeState.nextTileIndex >= 0
+      && resumeState.nextTileIndex <= plan.tiles.length;
+    const outputPixels = canResume
+      ? resumeState.outputPixels
+      : new Uint8ClampedArray(outputWidth * outputHeight * 4);
+    const firstTileIndex = canResume ? resumeState.nextTileIndex : 0;
 
-    for (const tile of plan.tiles) {
+    for (let tileIndex = firstTileIndex; tileIndex < plan.tiles.length; tileIndex += 1) {
+      const tile = plan.tiles[tileIndex];
       await waitUntilRunnable(isCancelled);
       throwIfCancelled(isCancelled);
       const input = tf.tensor4d(createTileInput(pixels, width, height, tile), [1, INPUT_SIZE, INPUT_SIZE, 3]);
@@ -211,6 +222,7 @@ export function createRealCuganProcessor({
         disposeOutput(rawOutput);
         input.dispose?.();
       }
+      onResumeState?.({ outputPixels, nextTileIndex: tileIndex + 1 });
       await yieldControl();
       throwIfCancelled(isCancelled);
     }

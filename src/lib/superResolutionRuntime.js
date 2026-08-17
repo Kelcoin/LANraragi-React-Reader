@@ -44,6 +44,9 @@ function getResponsePayload(data) {
   if (data.type === 'ready') return { backend: data.backend };
   const payload = { ...data };
   delete payload.type;
+  delete payload.evictedResumeKeys;
+  delete payload.resumeRetained;
+  delete payload.resumeKey;
   return payload;
 }
 
@@ -92,15 +95,31 @@ export function createSuperResolutionRuntime({
   let initializedManifest = null;
   let completedPages = 0;
   let recycling = null;
+  const suspendedResumeKeys = new Set();
+  const cancelledResumeRequests = new Map();
 
   function handleMessage(event) {
     const data = event?.data;
     if (!data || data.requestId === undefined) return;
+    if (Array.isArray(data.evictedResumeKeys)) {
+      for (const resumeKey of data.evictedResumeKeys) suspendedResumeKeys.delete(resumeKey);
+    }
+
+    const cancelledResumeKey = cancelledResumeRequests.get(data.requestId);
+    if (cancelledResumeKey && data.type === 'cancelled') return;
+    if (cancelledResumeKey && (data.type === 'error' || data.type === 'result')) {
+      cancelledResumeRequests.delete(data.requestId);
+      if (data.type !== 'error' || !data.resumeRetained) {
+        suspendedResumeKeys.delete(cancelledResumeKey);
+      }
+      return;
+    }
 
     const request = pending.get(data.requestId);
     if (!request) return;
     if (data.type === 'error') {
       pending.delete(data.requestId);
+      if (request.resumeKey && !data.resumeRetained) suspendedResumeKeys.delete(request.resumeKey);
       request.reject(toError(data.error));
       return;
     }
@@ -118,8 +137,11 @@ export function createSuperResolutionRuntime({
     if (expectedType === 'ready') {
       initializedManifest = request.manifest;
       completedPages = 0;
+      suspendedResumeKeys.clear();
+      cancelledResumeRequests.clear();
     } else {
       completedPages += 1;
+      if (request.resumeKey) suspendedResumeKeys.delete(request.resumeKey);
     }
     request.resolve(getResponsePayload(data));
   }
@@ -152,7 +174,13 @@ export function createSuperResolutionRuntime({
     const message = { ...payload, type, requestId };
 
     return new Promise((resolve, reject) => {
-      pending.set(requestId, { type, manifest: payload.manifest, resolve, reject });
+      pending.set(requestId, {
+        type,
+        manifest: payload.manifest,
+        resumeKey: payload.resumeKey,
+        resolve,
+        reject,
+      });
       try {
         if (transfer.length > 0) worker.postMessage(message, transfer);
         else worker.postMessage(message);
@@ -175,7 +203,8 @@ export function createSuperResolutionRuntime({
   // per-process GPU memory budgets (iOS WKWebView) accumulate memory until the
   // web content process is killed and the page reloads mid-read.
   function recycleWorker() {
-    if (disposed || !initializedManifest || completedPages < recycleAfterPages || pending.size > 0) {
+    if (disposed || !initializedManifest || completedPages < recycleAfterPages
+      || pending.size > 0 || suspendedResumeKeys.size > 0) {
       return null;
     }
     if (recycling) return recycling;
@@ -212,7 +241,7 @@ export function createSuperResolutionRuntime({
   }
 
   async function processBlob(blob, options = {}) {
-    const { manifest, requestId, signal } = options ?? {};
+    const { manifest, requestId, signal, resumeKey } = options ?? {};
     if (!isBlobLike(blob)) {
       return Promise.reject(new TypeError('blob must be a Blob'));
     }
@@ -224,22 +253,28 @@ export function createSuperResolutionRuntime({
 
     const recyclePromise = recycleWorker();
     if (recyclePromise) await recyclePromise.catch(() => {});
-    const promise = postRequest('process', { requestId: id, blob, manifest });
+    if (signal?.aborted) return Promise.reject(createAbortError());
+    const promise = postRequest('process', { requestId: id, blob, manifest, resumeKey });
     if (!signal || typeof signal.addEventListener !== 'function') return promise;
 
-    const handleAbort = () => cancel(id);
+    const handleAbort = () => cancel(id, resumeKey);
     signal.addEventListener('abort', handleAbort, { once: true });
     return promise.finally(() => signal.removeEventListener?.('abort', handleAbort));
   }
 
-  function cancel(requestId) {
+  function cancel(requestId, resumeKey) {
     if (disposed) return;
     const request = pending.get(requestId);
+    const checkpointKey = resumeKey ?? request?.resumeKey;
     if (request) {
       pending.delete(requestId);
       request.reject(createAbortError());
     }
-    worker.postMessage({ type: 'cancel', requestId });
+    if (checkpointKey && (request || cancelledResumeRequests.has(requestId))) {
+      suspendedResumeKeys.add(checkpointKey);
+      cancelledResumeRequests.set(requestId, checkpointKey);
+    }
+    worker.postMessage({ type: 'cancel', requestId, ...(checkpointKey ? { resumeKey: checkpointKey } : {}) });
   }
 
   function pause() {

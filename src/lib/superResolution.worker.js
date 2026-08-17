@@ -9,6 +9,7 @@ import {
 
 const WEBGPU_BACKEND = 'webgpu';
 const MODEL_CACHE_NAME = 'readoshi-super-resolution-models-v1';
+const MAX_RESUME_CHECKPOINT_BYTES = 64 * 1024 * 1024;
 let productionOrt = null;
 
 function createNamedError(name, message) {
@@ -402,6 +403,10 @@ async function processBlobImage({
   tensorFactory,
   yieldControl,
   waitUntilRunnable,
+  resumeKey,
+  getResumeCheckpoint,
+  saveResumeCheckpoint,
+  deleteResumeCheckpoint,
 }) {
   const { scale, inputLayout, outputLayout } = validateProcessManifest(manifest);
   const decoded = await decodeImage(blob);
@@ -423,110 +428,133 @@ async function processBlobImage({
       padding: manifest.padding,
     });
     const colorSpace = manifest.colorSpace ?? 'rgb';
-    const outputPixels = new Uint8ClampedArray(outputWidth * outputHeight * 4);
+    const checkpointIdentity = {
+      engine: manifest.engine ?? 'onnx',
+      manifestId: manifest.id,
+      sourceWidth: image.width,
+      sourceHeight: image.height,
+      outputWidth,
+      outputHeight,
+    };
+    const checkpoint = getResumeCheckpoint(resumeKey, checkpointIdentity);
+    const outputPixels = checkpoint?.outputPixels
+      ?? new Uint8ClampedArray(outputWidth * outputHeight * 4);
+    const firstTileIndex = checkpoint?.nextTileIndex ?? 0;
     const inputName = manifest.inputName ?? session.inputNames?.[0] ?? 'input';
     const outputName = manifest.outputName ?? session.outputNames?.[0] ?? 'output';
 
-    for (const tile of tilePlan.tiles) {
-      await waitUntilRunnable(isCancelled);
-      if (!isCurrent() || isCancelled()) {
-        throw createNamedError('AbortError', 'Super-resolution request was cancelled');
-      }
-      const padded = createPaddedRgba(
-        image,
-        tile,
-        tilePlan.padding,
-        manifest.inputWidth,
-        manifest.inputHeight,
-      );
-      const tensorInput = createTensorData(padded, inputLayout, colorSpace);
-      const inputTensor = await tensorFactory(tensorInput.data, tensorInput.dims);
-      let outputTensor;
-      try {
-        const results = await session.run({ [inputName]: inputTensor });
-        outputTensor = results?.[outputName] ?? Object.values(results ?? {})[0];
+    try {
+      for (let tileIndex = firstTileIndex; tileIndex < tilePlan.tiles.length; tileIndex += 1) {
+        const tile = tilePlan.tiles[tileIndex];
+        await waitUntilRunnable(isCancelled);
         if (!isCurrent() || isCancelled()) {
           throw createNamedError('AbortError', 'Super-resolution request was cancelled');
         }
-        const output = validateOutputTensor(
-          outputTensor,
-          padded.width,
-          padded.height,
-          scale,
-          outputLayout,
-          colorSpace,
-          manifest.outputInset ?? 0,
+        const padded = createPaddedRgba(
+          image,
+          tile,
+          tilePlan.padding,
+          manifest.inputWidth,
+          manifest.inputHeight,
         );
-        const crop = (tilePlan.padding - (manifest.outputInset ?? 0)) * scale;
-        const outputTensorWidth = output.width;
-        if (colorSpace === 'rgb' && outputLayout === 'nchw') {
-          blitNchwRgbTile({
+        const tensorInput = createTensorData(padded, inputLayout, colorSpace);
+        const inputTensor = await tensorFactory(tensorInput.data, tensorInput.dims);
+        let outputTensor;
+        try {
+          const results = await session.run({ [inputName]: inputTensor });
+          outputTensor = results?.[outputName] ?? Object.values(results ?? {})[0];
+          if (!isCurrent() || isCancelled()) {
+            throw createNamedError('AbortError', 'Super-resolution request was cancelled');
+          }
+          const output = validateOutputTensor(
             outputTensor,
-            outputPixels,
-            outputWidth,
-            outputTensorWidth,
-            tile,
+            padded.width,
+            padded.height,
             scale,
-            crop,
-          });
-        } else {
-          for (let y = 0; y < tile.core.height * scale; y += 1) {
-            for (let x = 0; x < tile.core.width * scale; x += 1) {
-              const tensorX = x + crop;
-              const tensorY = y + crop;
-              const rgb = colorSpace === 'ycbcr-y'
-                ? yCbCrToRgb(
-                  outputTensor.data[tensorY * outputTensorWidth + tensorX],
-                  ...sampleCbCr(padded, tensorX, tensorY, scale),
-                )
-                : readTensorRgb(outputTensor, outputLayout, outputTensorWidth, tensorX, tensorY);
-              const target = ((tile.core.y * scale + y) * outputWidth + tile.core.x * scale + x) * 4;
-              outputPixels[target] = colorSpace === 'ycbcr-y' ? rgb[0] : clampByte(rgb[0]);
-              outputPixels[target + 1] = colorSpace === 'ycbcr-y' ? rgb[1] : clampByte(rgb[1]);
-              outputPixels[target + 2] = colorSpace === 'ycbcr-y' ? rgb[2] : clampByte(rgb[2]);
+            outputLayout,
+            colorSpace,
+            manifest.outputInset ?? 0,
+          );
+          const crop = (tilePlan.padding - (manifest.outputInset ?? 0)) * scale;
+          const outputTensorWidth = output.width;
+          if (colorSpace === 'rgb' && outputLayout === 'nchw') {
+            blitNchwRgbTile({
+              outputTensor,
+              outputPixels,
+              outputWidth,
+              outputTensorWidth,
+              tile,
+              scale,
+              crop,
+            });
+          } else {
+            for (let y = 0; y < tile.core.height * scale; y += 1) {
+              for (let x = 0; x < tile.core.width * scale; x += 1) {
+                const tensorX = x + crop;
+                const tensorY = y + crop;
+                const rgb = colorSpace === 'ycbcr-y'
+                  ? yCbCrToRgb(
+                    outputTensor.data[tensorY * outputTensorWidth + tensorX],
+                    ...sampleCbCr(padded, tensorX, tensorY, scale),
+                  )
+                  : readTensorRgb(outputTensor, outputLayout, outputTensorWidth, tensorX, tensorY);
+                const target = ((tile.core.y * scale + y) * outputWidth + tile.core.x * scale + x) * 4;
+                outputPixels[target] = colorSpace === 'ycbcr-y' ? rgb[0] : clampByte(rgb[0]);
+                outputPixels[target + 1] = colorSpace === 'ycbcr-y' ? rgb[1] : clampByte(rgb[1]);
+                outputPixels[target + 2] = colorSpace === 'ycbcr-y' ? rgb[2] : clampByte(rgb[2]);
+              }
             }
           }
+        } finally {
+          disposeTensor(outputTensor);
+          disposeTensor(inputTensor);
         }
-      } finally {
-        disposeTensor(outputTensor);
-        disposeTensor(inputTensor);
+        saveResumeCheckpoint(resumeKey, {
+          ...checkpointIdentity,
+          outputPixels,
+          nextTileIndex: tileIndex + 1,
+        });
+        await yieldControl(8);
+        await waitUntilRunnable(isCancelled);
+        if (!isCurrent() || isCancelled()) {
+          throw createNamedError('AbortError', 'Super-resolution request was cancelled');
+        }
       }
-      await yieldControl(8);
-      await waitUntilRunnable(isCancelled);
+
+      copyScaledAlphaNearest({
+        sourcePixels: image.pixels,
+        sourceWidth: image.width,
+        sourceHeight: image.height,
+        outputPixels,
+        outputWidth,
+        outputHeight,
+        scale,
+      });
       if (!isCurrent() || isCancelled()) {
         throw createNamedError('AbortError', 'Super-resolution request was cancelled');
       }
+      const encodedImage = await prepareDisplayImage({
+        pixels: outputPixels,
+        width: outputWidth,
+        height: outputHeight,
+        type: 'image/png',
+      });
+      const resultBlob = await encodeImage(encodedImage);
+      if (!isCurrent() || isCancelled()) {
+        throw createNamedError('AbortError', 'Super-resolution request was cancelled');
+      }
+      deleteResumeCheckpoint(resumeKey);
+      return {
+        type: 'result',
+        requestId,
+        blob: resultBlob,
+        width: encodedImage.width,
+        height: encodedImage.height,
+      };
+    } catch (error) {
+      if (error?.name !== 'AbortError') deleteResumeCheckpoint(resumeKey);
+      throw error;
     }
-
-    copyScaledAlphaNearest({
-      sourcePixels: image.pixels,
-      sourceWidth: image.width,
-      sourceHeight: image.height,
-      outputPixels,
-      outputWidth,
-      outputHeight,
-      scale,
-    });
-    if (!isCurrent() || isCancelled()) {
-      throw createNamedError('AbortError', 'Super-resolution request was cancelled');
-    }
-    const encodedImage = await prepareDisplayImage({
-      pixels: outputPixels,
-      width: outputWidth,
-      height: outputHeight,
-      type: 'image/png',
-    });
-    const resultBlob = await encodeImage(encodedImage);
-    if (!isCurrent() || isCancelled()) {
-      throw createNamedError('AbortError', 'Super-resolution request was cancelled');
-    }
-    return {
-      type: 'result',
-      requestId,
-      blob: resultBlob,
-      width: encodedImage.width,
-      height: encodedImage.height,
-    };
   } finally {
     decoded.close?.();
   }
@@ -543,6 +571,10 @@ async function processPixelProcessorBlob({
   encodeImage,
   yieldControl,
   waitUntilRunnable,
+  resumeKey,
+  getResumeCheckpoint,
+  saveResumeCheckpoint,
+  deleteResumeCheckpoint,
 }) {
   const decoded = await decodeImage(blob);
   try {
@@ -559,10 +591,23 @@ async function processPixelProcessorBlob({
     if (!isCurrent() || isCancelled()) {
       throw createNamedError('AbortError', 'Super-resolution request was cancelled');
     }
+    const checkpointIdentity = {
+      engine: manifest.engine,
+      manifestId: manifest.id,
+      sourceWidth: image.width,
+      sourceHeight: image.height,
+      outputWidth: expectedWidth,
+      outputHeight: expectedHeight,
+    };
     const output = await processor.process(image.pixels, image.width, image.height, {
       isCancelled,
       yieldControl,
       waitUntilRunnable,
+      resumeState: getResumeCheckpoint(resumeKey, checkpointIdentity),
+      onResumeState: (state) => saveResumeCheckpoint(resumeKey, {
+        ...checkpointIdentity,
+        ...state,
+      }),
     });
     if (!isCurrent() || isCancelled()) {
       throw createNamedError('AbortError', 'Super-resolution request was cancelled');
@@ -581,6 +626,7 @@ async function processPixelProcessorBlob({
     if (!isCurrent() || isCancelled()) {
       throw createNamedError('AbortError', 'Super-resolution request was cancelled');
     }
+    deleteResumeCheckpoint(resumeKey);
     return {
       type: 'result',
       requestId,
@@ -588,6 +634,9 @@ async function processPixelProcessorBlob({
       width: encodedImage.width,
       height: encodedImage.height,
     };
+  } catch (error) {
+    if (error?.name !== 'AbortError') deleteResumeCheckpoint(resumeKey);
+    throw error;
   } finally {
     decoded.close?.();
   }
@@ -692,6 +741,61 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
   let paused = false;
   const pauseWaiters = new Set();
   const staleRequestIds = new Set();
+  const completedRequestIds = new Set();
+  const resumeCheckpoints = new Map();
+  const evictedResumeKeys = new Set();
+  let resumeCheckpointBytes = 0;
+
+  function deleteResumeCheckpoint(resumeKey) {
+    if (!resumeKey) return;
+    const checkpoint = resumeCheckpoints.get(resumeKey);
+    if (!checkpoint) return;
+    resumeCheckpointBytes -= checkpoint.outputPixels.byteLength;
+    resumeCheckpoints.delete(resumeKey);
+  }
+
+  function clearResumeCheckpoints() {
+    resumeCheckpoints.clear();
+    evictedResumeKeys.clear();
+    resumeCheckpointBytes = 0;
+  }
+
+  function appendEvictedResumeKeys(response) {
+    if (evictedResumeKeys.size === 0) return response;
+    const next = { ...response, evictedResumeKeys: [...evictedResumeKeys] };
+    evictedResumeKeys.clear();
+    return next;
+  }
+
+  function getResumeCheckpoint(resumeKey, identity) {
+    if (!resumeKey) return null;
+    const checkpoint = resumeCheckpoints.get(resumeKey);
+    if (!checkpoint) return null;
+    const matches = ['engine', 'manifestId', 'sourceWidth', 'sourceHeight', 'outputWidth', 'outputHeight']
+      .every((field) => checkpoint[field] === identity[field]);
+    if (!matches) {
+      deleteResumeCheckpoint(resumeKey);
+      return null;
+    }
+    resumeCheckpoints.delete(resumeKey);
+    resumeCheckpoints.set(resumeKey, checkpoint);
+    return checkpoint;
+  }
+
+  function saveResumeCheckpoint(resumeKey, checkpoint) {
+    if (!resumeKey || !(checkpoint?.outputPixels instanceof Uint8ClampedArray)) return;
+    deleteResumeCheckpoint(resumeKey);
+    const bytes = checkpoint.outputPixels.byteLength;
+    if (bytes > MAX_RESUME_CHECKPOINT_BYTES) return;
+    while (resumeCheckpointBytes + bytes > MAX_RESUME_CHECKPOINT_BYTES) {
+      const oldestKey = resumeCheckpoints.keys().next().value;
+      if (oldestKey === undefined) break;
+      deleteResumeCheckpoint(oldestKey);
+      evictedResumeKeys.add(oldestKey);
+    }
+    resumeCheckpoints.set(resumeKey, checkpoint);
+    resumeCheckpointBytes += bytes;
+  }
 
   function wakePauseWaiters() {
     const waiters = [...pauseWaiters];
@@ -731,6 +835,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
     wakePauseWaiters();
     const initGeneration = ++generation;
     validateInitManifest(manifest);
+    clearResumeCheckpoints();
 
     if (manifest.engine === 'realcugan-tfjs') {
       const initialized = await realCuganFactory(manifest);
@@ -746,6 +851,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
       backend = initialized.backend;
       activeManifest = manifest;
       staleRequestIds.clear();
+      completedRequestIds.clear();
       return { type: 'ready', requestId, backend };
     }
 
@@ -815,6 +921,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
     backend = selectedBackend;
     activeManifest = manifest;
     staleRequestIds.clear();
+    completedRequestIds.clear();
     return { type: 'ready', requestId, backend };
   }
 
@@ -830,6 +937,8 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
     backend = null;
     activeManifest = null;
     staleRequestIds.clear();
+    completedRequestIds.clear();
+    clearResumeCheckpoints();
 
     try {
       if (currentSession && typeof currentSession.release === 'function') {
@@ -852,6 +961,7 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
           return await initialize(requestId, message.manifest);
         case 'process':
           if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');
+          completedRequestIds.delete(requestId);
           if (staleRequestIds.delete(requestId)) {
             throw createNamedError('AbortError', 'Super-resolution request was cancelled');
           }
@@ -883,6 +993,10 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
                 encodeImage,
                 yieldControl,
                 waitUntilRunnable,
+                resumeKey: message.resumeKey,
+                getResumeCheckpoint,
+                saveResumeCheckpoint,
+                deleteResumeCheckpoint,
               }).then((result) => ({ ...result, backend: processBackend }))
               : () => processBlobImage({
                 blob: message.blob,
@@ -899,14 +1013,25 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
                 tensorFactory,
                 yieldControl,
                 waitUntilRunnable,
+                resumeKey: message.resumeKey,
+                getResumeCheckpoint,
+                saveResumeCheckpoint,
+                deleteResumeCheckpoint,
               }).then((result) => ({ ...result, backend: processBackend }));
             const result = inferenceChain.then(runInference, runInference);
             inferenceChain = result.catch(() => {});
-            return await result;
+            try {
+              return appendEvictedResumeKeys(await result);
+            } finally {
+              completedRequestIds.add(requestId);
+              if (completedRequestIds.size > 256) {
+                completedRequestIds.delete(completedRequestIds.values().next().value);
+              }
+            }
           }
         case 'cancel':
           if (disposed) throw createNamedError('DisposedError', 'Super-resolution worker is disposed');
-          staleRequestIds.add(requestId);
+          if (!completedRequestIds.has(requestId)) staleRequestIds.add(requestId);
           wakePauseWaiters();
           return { type: 'cancelled', requestId };
         case 'pause':
@@ -924,7 +1049,12 @@ export function createSuperResolutionWorkerHandler(dependencies = {}) {
           throw createNamedError('ProtocolError', `Unknown message type: ${String(message?.type)}`);
       }
     } catch (error) {
-      return createErrorResponse(requestId, error);
+      const response = createErrorResponse(requestId, error);
+      if (message?.type === 'process' && error?.name === 'AbortError' && message.resumeKey) {
+        response.resumeKey = message.resumeKey;
+        response.resumeRetained = resumeCheckpoints.has(message.resumeKey);
+      }
+      return message?.type === 'process' ? appendEvictedResumeKeys(response) : response;
     }
   }
 

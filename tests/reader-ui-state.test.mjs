@@ -195,6 +195,30 @@ test('foreground super-resolution contains only pages visible in the current rea
   })], [7, 8]);
 });
 
+test('super-resolution background order prefers future preload pages, then nearest read pages', () => {
+  assert.deepEqual(readerUiState.getSuperResolutionPreloadPageIndices({
+    pageCount: 10,
+    currentIndex: 3,
+    currentSpread: [{ pageIndex: 3 }],
+    preloadCount: 3,
+  }), {
+    forward: [4, 5, 6],
+    read: [2, 1, 0],
+  });
+});
+
+test('super-resolution background order skips every page in the visible spread', () => {
+  assert.deepEqual(readerUiState.getSuperResolutionPreloadPageIndices({
+    pageCount: 10,
+    currentIndex: 3,
+    currentSpread: [{ pageIndex: 3 }, { pageIndex: 4 }],
+    preloadCount: 3,
+  }), {
+    forward: [5, 6, 7],
+    read: [2, 1, 0],
+  });
+});
+
 test('immersive tap timing wins over tap location for double-tap zoom', () => {
   assert.equal(typeof readerUiState.resolveImmersiveTapAction, 'function');
   assert.equal(readerUiState.resolveImmersiveTapAction({

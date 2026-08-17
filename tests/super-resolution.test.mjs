@@ -231,6 +231,55 @@ test('Real-CUGAN yields between tiles and observes cancellation before the next 
   assert.equal(inferenceCount, 1);
 });
 
+test('Real-CUGAN resumes a cancelled page from its next unfinished tile', async () => {
+  const { createRealCuganProcessor } = await import('../src/lib/realCugan.js');
+  const firstYieldStarted = createDeferred();
+  const firstYieldGate = createDeferred();
+  let cancelled = false;
+  let inferenceCount = 0;
+  let checkpoint = null;
+  let yieldCount = 0;
+  const processor = createRealCuganProcessor({
+    tf: { tensor4d: () => ({ dispose() {} }) },
+    model: {
+      async executeAsync() {
+        inferenceCount += 1;
+        return {
+          shape: [1, 128, 128, 3],
+          async data() { return new Float32Array(128 * 128 * 3); },
+          dispose() {},
+        };
+      },
+      dispose() {},
+    },
+    async yieldControl() {
+      yieldCount += 1;
+      if (yieldCount === 1) {
+        firstYieldStarted.resolve();
+        await firstYieldGate.promise;
+      }
+    },
+  });
+  const pixels = new Uint8ClampedArray(128 * 64 * 4);
+  const first = processor.process(pixels, 128, 64, {
+    isCancelled: () => cancelled,
+    onResumeState: (state) => { checkpoint = state; },
+  });
+  await firstYieldStarted.promise;
+  cancelled = true;
+  firstYieldGate.resolve();
+  await assert.rejects(first, (error) => error?.name === 'AbortError');
+
+  cancelled = false;
+  const result = await processor.process(pixels, 128, 64, {
+    isCancelled: () => cancelled,
+    resumeState: checkpoint,
+    onResumeState: (state) => { checkpoint = state; },
+  });
+  assert.equal(result.width, 256);
+  assert.equal(inferenceCount, 2);
+});
+
 test('Real-CUGAN waits at tile boundaries before continuing inference', async () => {
   const { createRealCuganProcessor } = await import('../src/lib/realCugan.js');
   const secondTileWaiting = createDeferred();
@@ -1562,6 +1611,119 @@ test('ONNX inference yields between tiles and observes cancellation before the n
   assert.equal(runCount, 1);
 });
 
+test('a cancellation arriving after completion does not poison a reused worker request id', async () => {
+  let runCount = 0;
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => ({
+      inputNames: ['input'],
+      outputNames: ['output'],
+      async run() {
+        runCount += 1;
+        return {
+          output: {
+            dims: [1, 3, 2, 2],
+            data: new Float32Array(12),
+            dispose() {},
+          },
+        };
+      },
+      async release() {},
+    }),
+    decodeImage: async () => ({
+      width: 1,
+      height: 1,
+      pixels: new Uint8ClampedArray(4),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => new Blob(),
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-late-cancel', manifest });
+  const request = {
+    type: 'process',
+    requestId: 'reused-after-result',
+    blob: new Blob(['source']),
+    manifest,
+  };
+  assert.equal((await handler.handleMessage(request)).type, 'result');
+  await handler.handleMessage({ type: 'cancel', requestId: request.requestId });
+  assert.equal((await handler.handleMessage(request)).type, 'result');
+  assert.equal(runCount, 2);
+});
+
+test('ONNX inference resumes a cancelled page from its next unfinished tile', async () => {
+  const firstYieldStarted = createDeferred();
+  const firstYieldGate = createDeferred();
+  let yieldCount = 0;
+  let runCount = 0;
+  const session = {
+    inputNames: ['input'],
+    outputNames: ['output'],
+    async run() {
+      runCount += 1;
+      return {
+        output: {
+          dims: [1, 3, 2, 2],
+          data: new Float32Array(12),
+          dispose() {},
+        },
+      };
+    },
+    async release() {},
+  };
+  const fixture = createWorkerDependencies({
+    sessionFactory: async () => session,
+    decodeImage: async () => ({
+      width: 3,
+      height: 1,
+      pixels: new Uint8ClampedArray(12),
+      close() {},
+    }),
+    tensorFactory: (data, dims) => ({ data, dims }),
+    encodeImage: async () => new Blob(),
+    async yieldControl() {
+      yieldCount += 1;
+      if (yieldCount === 1) {
+        firstYieldStarted.resolve();
+        await firstYieldGate.promise;
+      }
+    },
+  });
+  const handler = await createWorkerHandler(fixture.dependencies);
+  const manifest = { ...workerManifest, tileCore: 1, padding: 0 };
+  await handler.handleMessage({ type: 'init', requestId: 'init-resume-cancelled', manifest });
+
+  const first = handler.handleMessage({
+    type: 'process',
+    requestId: 'resume-first',
+    resumeKey: 'archive:page-4:model',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  await firstYieldStarted.promise;
+  await handler.handleMessage({
+    type: 'cancel',
+    requestId: 'resume-first',
+    resumeKey: 'archive:page-4:model',
+  });
+  firstYieldGate.resolve();
+  const cancelled = await first;
+  assert.equal(cancelled.error?.name, 'AbortError');
+  assert.equal(cancelled.resumeRetained, true);
+
+  const resumed = await handler.handleMessage({
+    type: 'process',
+    requestId: 'resume-second',
+    resumeKey: 'archive:page-4:model',
+    blob: new Blob(['source']),
+    manifest,
+  });
+  assert.equal(resumed.type, 'result', resumed.error?.message);
+  assert.equal(runCount, 3);
+});
+
 test('ONNX inference resumes from the next tile without recomputing completed output', async () => {
   const firstYieldStarted = createDeferred();
   const firstYieldGate = createDeferred();
@@ -1830,12 +1992,14 @@ test('runtime forwards blobs and maps AbortSignal to worker cancellation', async
   const processPromise = runtime.processBlob(blob, {
     manifest: productionManifest,
     requestId: 'blob-result',
+    resumeKey: 'archive:page-1:model',
   });
   assert.deepEqual(harness.messages[0].message, {
     type: 'process',
     requestId: 'blob-result',
     blob,
     manifest: productionManifest,
+    resumeKey: 'archive:page-1:model',
   });
   const resultBlob = new Blob(['result'], { type: 'image/png' });
   harness.emit({
@@ -1858,12 +2022,14 @@ test('runtime forwards blobs and maps AbortSignal to worker cancellation', async
   const cancelledPromise = runtime.processBlob(blob, {
     manifest: productionManifest,
     requestId: 'blob-cancel',
+    resumeKey: 'archive:page-2:model',
     signal: controller.signal,
   });
   controller.abort();
   assert.deepEqual(harness.messages[2].message, {
     type: 'cancel',
     requestId: 'blob-cancel',
+    resumeKey: 'archive:page-2:model',
   });
   await assert.rejects(cancelledPromise, (error) => error?.name === 'AbortError');
   runtime.dispose();
@@ -1913,6 +2079,136 @@ test('runtime recycles the worker after the configured page threshold', async ()
   second.emit({ type: 'result', requestId: processMessage.requestId, blob: new Blob(['ok']) });
   const result = await pagePromise;
   assert.equal(result.blob.size, 2);
+  runtime.dispose();
+});
+
+test('runtime does not post a page aborted while the worker is recycling', async () => {
+  const first = createWorkerHarness();
+  const second = createWorkerHarness();
+  const workers = [first.worker, second.worker];
+  let factoryCalls = 0;
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => workers[Math.min(factoryCalls += 1, workers.length) - 1],
+    recycleAfterPages: 1,
+  });
+  const init = runtime.init(productionManifest);
+  first.emit({ type: 'ready', requestId: first.messages[0].message.requestId, backend: 'webgpu' });
+  await init;
+  const completed = runtime.processBlob(new Blob(['done']), { manifest: productionManifest });
+  const completedMessage = first.messages.at(-1).message;
+  first.emit({ type: 'result', requestId: completedMessage.requestId, blob: new Blob(['ok']) });
+  await completed;
+
+  const controller = new AbortController();
+  const aborted = runtime.processBlob(new Blob(['stale']), {
+    manifest: productionManifest,
+    signal: controller.signal,
+  });
+  controller.abort();
+  const reinitMessage = second.messages[0].message;
+  second.emit({ type: 'ready', requestId: reinitMessage.requestId, backend: 'webgpu' });
+  await assert.rejects(aborted, (error) => error?.name === 'AbortError');
+  assert.equal(second.messages.length, 1);
+  runtime.dispose();
+});
+
+test('runtime preserves only live worker checkpoints when deciding whether to recycle', async () => {
+  const first = createWorkerHarness();
+  const second = createWorkerHarness();
+  const workers = [first.worker, second.worker];
+  let factoryCalls = 0;
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => workers[Math.min(factoryCalls += 1, workers.length) - 1],
+    recycleAfterPages: 1,
+  });
+  const init = runtime.init(productionManifest);
+  const initMessage = first.messages[0].message;
+  first.emit({ type: 'ready', requestId: initMessage.requestId, backend: 'webgpu' });
+  await init;
+
+  const controller = new AbortController();
+  const cancelled = runtime.processBlob(new Blob(['partial']), {
+    manifest: productionManifest,
+    requestId: 'partial-page',
+    resumeKey: 'archive:partial:model',
+    signal: controller.signal,
+  });
+  controller.abort();
+  await assert.rejects(cancelled, (error) => error?.name === 'AbortError');
+  first.emit({ type: 'cancelled', requestId: 'partial-page' });
+  first.emit({
+    type: 'error',
+    requestId: 'partial-page',
+    error: { name: 'AbortError', message: 'cancelled' },
+    resumeRetained: true,
+  });
+
+  const eviction = runtime.processBlob(new Blob(['evict']), { manifest: productionManifest });
+  assert.equal(first.terminated, false);
+  const evictionMessage = first.messages.at(-1).message;
+  first.emit({
+    type: 'result',
+    requestId: evictionMessage.requestId,
+    blob: new Blob(['ok']),
+    evictedResumeKeys: ['archive:partial:model'],
+  });
+  await eviction;
+
+  const afterEviction = runtime.processBlob(new Blob(['recycle']), { manifest: productionManifest });
+  assert.equal(first.terminated, true);
+  const reinitMessage = second.messages[0].message;
+  second.emit({ type: 'ready', requestId: reinitMessage.requestId, backend: 'webgpu' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const processMessage = second.messages[1].message;
+  second.emit({ type: 'result', requestId: processMessage.requestId, blob: new Blob(['ok']) });
+  await afterEviction;
+  runtime.dispose();
+});
+
+test('runtime cancel derives the resume key stored on the pending request', async () => {
+  const harness = createWorkerHarness();
+  const runtime = superResolution.createSuperResolutionRuntime({ workerFactory: () => harness.worker });
+  const pending = runtime.processBlob(new Blob(['partial']), {
+    manifest: productionManifest,
+    requestId: 'manual-cancel',
+    resumeKey: 'archive:manual:model',
+  });
+  runtime.cancel('manual-cancel');
+  assert.deepEqual(harness.messages.at(-1).message, {
+    type: 'cancel',
+    requestId: 'manual-cancel',
+    resumeKey: 'archive:manual:model',
+  });
+  await assert.rejects(pending, (error) => error?.name === 'AbortError');
+  runtime.dispose();
+});
+
+test('runtime ignores checkpoint bookkeeping for an unknown cancellation', async () => {
+  const first = createWorkerHarness();
+  const second = createWorkerHarness();
+  const workers = [first.worker, second.worker];
+  let factoryCalls = 0;
+  const runtime = superResolution.createSuperResolutionRuntime({
+    workerFactory: () => workers[Math.min(factoryCalls += 1, workers.length) - 1],
+    recycleAfterPages: 1,
+  });
+  const init = runtime.init(productionManifest);
+  first.emit({ type: 'ready', requestId: first.messages[0].message.requestId, backend: 'webgpu' });
+  await init;
+  const completed = runtime.processBlob(new Blob(['done']), { manifest: productionManifest });
+  const completedMessage = first.messages.at(-1).message;
+  first.emit({ type: 'result', requestId: completedMessage.requestId, blob: new Blob(['ok']) });
+  await completed;
+
+  runtime.cancel('missing-request', 'archive:missing:model');
+  const next = runtime.processBlob(new Blob(['next']), { manifest: productionManifest });
+  assert.equal(first.terminated, true);
+  const reinitMessage = second.messages[0].message;
+  second.emit({ type: 'ready', requestId: reinitMessage.requestId, backend: 'webgpu' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const nextMessage = second.messages[1].message;
+  second.emit({ type: 'result', requestId: nextMessage.requestId, blob: new Blob(['ok']) });
+  await next;
   runtime.dispose();
 });
 
@@ -2542,6 +2838,31 @@ test('background super-resolution upgrades leave capacity for critical original 
   releaseUpgrades.resolve();
   await Promise.all([first.promise, second.promise]);
   assert.deepEqual(started, ['sr:first', 'original', 'sr:second']);
+});
+
+test('visible super-resolution upgrades preserve critical queue priority', async () => {
+  const queue = createImageDecodeQueue({ maxConcurrent: 1 });
+  const releaseBackground = createDeferred();
+  const started = [];
+  const background = superResolution.scheduleSuperResolutionUpgrade(queue, 'sr:background', async () => {
+    started.push('background');
+    await releaseBackground.promise;
+  });
+  const queuedBackground = superResolution.scheduleSuperResolutionUpgrade(queue, 'sr:queued', async () => {
+    started.push('queued-background');
+  });
+  const visible = superResolution.scheduleSuperResolutionUpgrade(
+    queue,
+    'sr:visible',
+    async () => { started.push('visible'); },
+    IMAGE_LOAD_PRIORITY.CRITICAL,
+  );
+
+  releaseBackground.resolve();
+  await visible.promise;
+  assert.deepEqual(started, ['background', 'visible']);
+  await queuedBackground.promise;
+  await background.promise;
 });
 
 test('shares a keep-alive visible-page inference across renderer switches', async () => {

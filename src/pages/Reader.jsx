@@ -39,6 +39,7 @@ import {
   getReaderArchivePanelModel,
   getReaderArchivePanelWindow,
   getForegroundSuperResolutionPageIndices,
+  getSuperResolutionPreloadPageIndices,
   getSettingsPaneNaturalHeight,
   getCenteredToolbarTitleWidth,
   getDrawerRowStride,
@@ -204,6 +205,28 @@ async function resolvePageImageSource(pageUrl, {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.blob();
   }, { priority });
+}
+
+function scheduleSuperResolutionPreload(pageUrl, superResolution) {
+  const cacheKey = getSuperResolutionCacheKey(toLocalUrl(pageUrl), superResolution?.manifest);
+  return scheduleSuperResolutionUpgrade(
+    readerImageDecodeQueue,
+    `super-resolution:${cacheKey}`,
+    async (signal) => {
+      if (await getCachedImage(cacheKey)) return true;
+      const src = await resolvePageImageSource(pageUrl, { priority: IMAGE_LOAD_PRIORITY.PRELOAD });
+      if (!src || signal.aborted) return false;
+      const result = await processSuperResolutionImageSource(src, {
+        ...superResolution,
+        signal,
+        cacheKey,
+        getCachedSource: getCachedImage,
+        cacheResult: putImage,
+      });
+      result.dispose();
+      return true;
+    },
+  );
 }
 
 const DRAWER_COLUMNS = 3;
@@ -436,6 +459,7 @@ const PageImage = React.forwardRef(({
                   throw error;
                 }
               },
+              priority,
             );
             try {
               await superResolutionTicket.promise;
@@ -2003,9 +2027,11 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     setPanY(0);
     setZoomScale(1.0);
     hideImmersiveControls();
-    disableArchiveSuperResolution();
+    if (settings.autoTurnActive) {
+      updateSettings((current) => ({ ...current, autoTurnActive: false }));
+    }
     setViewMode('normal');
-  }, [disableArchiveSuperResolution, hideImmersiveControls, scheduleZoomTransform]);
+  }, [hideImmersiveControls, scheduleZoomTransform, settings.autoTurnActive, updateSettings]);
 
   const applyZoomAtPoint = useCallback((
     nextScale,
@@ -2341,6 +2367,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   throw error;
                 }
               },
+              priority,
             );
             decodeTickets.push(upgradeTicket);
             upgradeTicket.promise.then((decoded) => {
@@ -3289,7 +3316,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   // ===== 3. Auto turn timer =====
   useEffect(() => {
     const pageReady = pageLoadPhase.status === 'ready' && pageLoadPhase.targetIndex === currentIndex;
-    if (settings.autoTurnActive && viewMode === 'immersive' && !webtoonActive && pageReady) {
+    if (settings.autoTurnActive && !webtoonActive && pageReady) {
       if (progressBarRef.current) {
         progressBarRef.current.style.transition = 'none';
         progressBarRef.current.style.width = '0%';
@@ -3306,18 +3333,23 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
     }
     return () => { if (autoTurnTimerRef.current) clearTimeout(autoTurnTimerRef.current); };
-  }, [settings.autoTurnActive, currentIndex, splitPart, currentSpreadIndex, settings.autoTurnInterval, viewMode, pageLoadPhase.status, pageLoadPhase.targetIndex, webtoonActive]);
+  }, [settings.autoTurnActive, currentIndex, splitPart, currentSpreadIndex, settings.autoTurnInterval, pageLoadPhase.status, pageLoadPhase.targetIndex, webtoonActive]);
 
   // ===== Page flip =====
   const handleNext = useCallback(() => {
     const target = getAdjacentSpreadLocation(readerSpreads, { pageIndex: currentIndex, splitPart }, 1);
     if (!target || currentSpreadIndex >= readerSpreads.length - 1) {
-      if (viewMode !== 'immersive') return;
+      if (viewMode !== 'immersive') {
+        if (settings.autoTurnActive) {
+          updateSettings((current) => ({ ...current, autoTurnActive: false }));
+        }
+        return;
+      }
       exitImmersiveMode();
       return;
     }
     commitPageTarget(target.pageIndex, { targetSplitPart: target.splitPart, showIndicator: viewMode === 'immersive' });
-  }, [commitPageTarget, currentIndex, currentSpreadIndex, exitImmersiveMode, readerSpreads, splitPart, viewMode]);
+  }, [commitPageTarget, currentIndex, currentSpreadIndex, exitImmersiveMode, readerSpreads, settings.autoTurnActive, splitPart, updateSettings, viewMode]);
 
   const handlePrev = useCallback(() => {
     const target = getAdjacentSpreadLocation(readerSpreads, { pageIndex: currentIndex, splitPart }, -1);
@@ -3791,6 +3823,52 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       }
     });
   }, [currentIndex, pageLoadPhase.status, pageLoadPhase.targetIndex, pages, settings.direction, settings.optimizedImageDecodeEnabled, settings.preloadCount]);
+
+  useEffect(() => {
+    if (!srArchiveEnabled || !scheduledSrRuntimeContext || pages.length === 0) return undefined;
+    if (coldRestoreRef.current) return undefined;
+    if (pageLoadPhase.status !== 'ready' || pageLoadPhase.targetIndex !== currentIndex) return undefined;
+    const { forward, read } = getSuperResolutionPreloadPageIndices({
+      pageCount: pages.length,
+      currentIndex,
+      currentSpread,
+      preloadCount: settings.preloadCount,
+    });
+    let cancelled = false;
+    let activeTicket = null;
+    void (async () => {
+      for (const pageIndex of [...forward, ...read]) {
+        if (cancelled) return;
+        if (isSuperResolutionPageTooLarge(pageSizesRef.current[pageIndex], srManifest?.scale)) continue;
+        const pageUrl = pages[pageIndex];
+        if (!pageUrl) continue;
+        activeTicket = scheduleSuperResolutionPreload(pageUrl, scheduledSrRuntimeContext);
+        try {
+          await activeTicket.promise;
+        } catch (error) {
+          if (error?.name !== 'AbortError') handleSuperResolutionError(error);
+          return;
+        } finally {
+          activeTicket = null;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      activeTicket?.cancel();
+    };
+  }, [
+    currentIndex,
+    currentSpread,
+    handleSuperResolutionError,
+    pageLoadPhase.status,
+    pageLoadPhase.targetIndex,
+    pages,
+    scheduledSrRuntimeContext,
+    settings.preloadCount,
+    srArchiveEnabled,
+    srManifest,
+  ]);
 
   // ===== Outside-click to close panels =====
   useEffect(() => {
@@ -4503,25 +4581,68 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               )}
             </div>
 
-            {!webtoonActive && <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '24px', padding: '20px 8px', flexShrink: 0 }}>
+            {!webtoonActive && <div
+              data-reader-normal-navigation
+              data-reader-nav-skeleton={!canNavigate ? 'true' : 'false'}
+              className={!canNavigate ? 'reader-shell-pulse' : undefined}
+              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: isMobile ? '6px' : '24px', padding: '20px 8px', flexShrink: 0 }}
+            >
               <button
+                type="button"
                 className="reader-page-nav-button"
+                data-reader-nav-action="auto-turn"
+                aria-pressed={settings.autoTurnActive}
+                onClick={handleToggleAutoTurn}
+                disabled={!canNavigate}
+                style={{ ...navBtnBase, opacity: canNavigate ? 1 : 0.3 }}
+                title={settings.autoTurnActive ? '停止自动翻页' : '开启自动翻页'}
+                aria-label={settings.autoTurnActive ? '停止自动翻页' : '开启自动翻页'}
+              >
+                <ToolbarGlyph name={settings.autoTurnActive ? 'pause' : 'play'} size={20} />
+              </button>
+              <button
+                type="button"
+                className="reader-page-nav-button"
+                data-reader-nav-action="left"
                 onClick={leftAction}
                 disabled={leftDisabled}
                 style={{ ...navBtnBase, opacity: leftDisabled ? 0.3 : 1 }}
+                title={isLTR ? '上一页' : '下一页'}
+                aria-label={isLTR ? '上一页' : '下一页'}
               >
                 ‹
               </button>
-              <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-sub)', userSelect: 'none', minWidth: '60px', textAlign: 'center' }}>
+              <span data-reader-nav-page-label style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-sub)', userSelect: 'none', minWidth: isMobile ? '48px' : '60px', textAlign: 'center' }}>
                   {canShowPageCount ? normalPageLabel : '— / —'}
               </span>
               <button
+                type="button"
                 className="reader-page-nav-button"
+                data-reader-nav-action="right"
                 onClick={rightAction}
                 disabled={rightDisabled}
                 style={{ ...navBtnBase, opacity: rightDisabled ? 0.3 : 1 }}
+                title={isLTR ? '下一页' : '上一页'}
+                aria-label={isLTR ? '下一页' : '上一页'}
               >
                 ›
+              </button>
+              <button
+                type="button"
+                className="reader-page-nav-button"
+                data-reader-nav-action="super-resolution"
+                aria-pressed={srArchiveEnabled}
+                onClick={handleToggleArchiveSuperResolution}
+                disabled={!canNavigate || !settings.srEnabled}
+                style={{ ...navBtnBase, opacity: canNavigate && settings.srEnabled ? 1 : 0.3 }}
+                title={!settings.srEnabled
+                  ? '请先在阅读设置中启用超分'
+                  : (srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分')}
+                aria-label={!settings.srEnabled
+                  ? '超分不可用'
+                  : (srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分')}
+              >
+                <ToolbarGlyph name={srArchiveEnabled ? 'superResolution' : 'superResolutionOff'} size={20} />
               </button>
             </div>}
           </div>

@@ -836,6 +836,20 @@ test('auto turn controls report state changes through the shared toast', () => {
   assert.match(reader, /const handleToggleAutoTurn = useCallback\(\(\) => \{[\s\S]*showToast\(next \? '已开启自动翻页' : '已停止自动翻页', 'info'\)/);
   assert.match(reader, /onClick=\{handleToggleAutoTurn\}/);
   assert.match(reader, /onClick=\{\(\) => \{ handleToggleAutoTurn\(\); revealImmersiveControls\(side\); \}\}/);
+  assert.match(reader, /settings\.autoTurnActive && !webtoonActive && pageReady/);
+  assert.doesNotMatch(reader, /settings\.autoTurnActive && viewMode === 'immersive'/);
+  assert.match(reader, /if \(viewMode !== 'immersive'\) \{[\s\S]{0,220}autoTurnActive: false/);
+});
+
+test('normal Reader navigation keeps auto-turn and super-resolution controls in its loading skeleton', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /data-reader-normal-navigation/);
+  assert.match(reader, /data-reader-nav-skeleton=\{!canNavigate \? 'true' : 'false'\}/);
+  assert.match(reader, /data-reader-nav-action="auto-turn"[\s\S]{0,500}settings\.autoTurnActive \? 'pause' : 'play'/);
+  assert.match(reader, /data-reader-nav-action="left"/);
+  assert.match(reader, /data-reader-nav-page-label/);
+  assert.match(reader, /data-reader-nav-action="right"/);
+  assert.match(reader, /data-reader-nav-action="super-resolution"[\s\S]{0,700}srArchiveEnabled \? 'superResolution' : 'superResolutionOff'/);
 });
 
 test('super-resolution reuses preload count and uses directional state glyphs', () => {
@@ -874,7 +888,7 @@ test('Reader confirms archive super-resolution for oversized pages and keeps tho
   assert.match(reader, /isSuperResolutionPageTooLarge\(size, srManifest\?\.scale\)/);
 });
 
-test('Reader super-resolution processes only visible pages and preserves original fallback', () => {
+test('Reader gives visible super-resolution critical priority and preserves original fallback', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /createSuperResolutionRuntime\(\)/);
   assert.match(reader, /runtime\.init\(srManifest\)/);
@@ -894,6 +908,7 @@ test('Reader super-resolution processes only visible pages and preserves origina
   assert.match(reader, /originalAlreadyReady && superResolution/);
   assert.match(reader, /reader-webtoon-flow-immersive[\s\S]{0,1000}priority=\{index === currentIndex\s*\? IMAGE_LOAD_PRIORITY\.CRITICAL\s*:\s*\(Math\.abs\(index - currentIndex\) === 1\s*\? IMAGE_LOAD_PRIORITY\.ADJACENT\s*:\s*IMAGE_LOAD_PRIORITY\.PRELOAD\)\}/);
   assert.match(reader, /fullPrecision: true,/);
+  assert.match(reader, /scheduleSuperResolutionUpgrade\([\s\S]{0,1800}priority,/);
   assert.match(reader, /decodeTickets\.forEach\(\(ticket\) => ticket\.cancel\(\)\)/);
 });
 
@@ -919,15 +934,19 @@ test('Reader snapshots do not persist immersive mode or image transforms', () =>
   assert.match(reader, /const \[panY, setPanY\] = useState\(0\)/);
 });
 
-test('Reader reuses derived image cache entries without processing hidden adjacent pages', () => {
+test('Reader sequentially super-resolves future preload pages before previously read pages', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /import \{[^}]*putImage[^}]*\} from '\.\.\/lib\/imageCache';/s);
   assert.match(reader, /getSuperResolutionCacheKey/);
   assert.match(reader, /cacheKey:\s*getSuperResolutionCacheKey\(/);
   assert.match(reader, /getCachedSource:\s*getCachedImage/);
   assert.match(reader, /cacheResult:\s*putImage/);
-  assert.doesNotMatch(reader, /scheduleSuperResolutionPreload/);
-  assert.doesNotMatch(reader, /super-resolution:\$\{cacheKey\}/);
+  assert.match(reader, /function scheduleSuperResolutionPreload/);
+  assert.match(reader, /super-resolution:\$\{cacheKey\}/);
+  assert.match(reader, /getSuperResolutionPreloadPageIndices\(\{/);
+  assert.match(reader, /for \(const pageIndex of \[\.\.\.forward, \.\.\.read\]\)/);
+  assert.match(reader, /activeTicket = scheduleSuperResolutionPreload/);
+  assert.match(reader, /await activeTicket\.promise/);
 });
 
 test('Reader preview decoding uses super-resolution output dimensions', () => {
@@ -951,10 +970,19 @@ test('Reader silently falls back for unsupported super-resolution images', () =>
   assert.match(reader, /超分失败，已关闭并显示原图/);
 });
 
-test('Reader disables archive super-resolution when immersive mode exits', () => {
+test('Reader exits immersive mode without disabling super-resolution but stops auto turn', () => {
   const reader = read('src/pages/Reader.jsx');
-  assert.match(reader, /const disableArchiveSuperResolution = useCallback/);
-  assert.match(reader, /const exitImmersiveMode = useCallback\(\(\) => \{[\s\S]{0,600}disableArchiveSuperResolution\(\)/);
+  const exitBody = reader.match(/const exitImmersiveMode = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[[^\]]*\]\);/)?.[1] || '';
+  assert.doesNotMatch(exitBody, /disableArchiveSuperResolution/);
+  assert.match(exitBody, /settings\.autoTurnActive/);
+  assert.match(exitBody, /autoTurnActive: false/);
+});
+
+test('automatic archive super-resolution is independent of Reader view mode', () => {
+  const reader = read('src/pages/Reader.jsx');
+  const automaticEffect = reader.match(/\/\/ 自动超分：[\s\S]*?useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[[^\]]*\]\);/)?.[1] || '';
+  assert.match(automaticEffect, /resolveArchiveSuperResolutionState/);
+  assert.doesNotMatch(automaticEffect, /viewMode|immersive/);
 });
 
 test('super-resolution output dimensions never replace original page dimensions', () => {

@@ -184,6 +184,32 @@ export function getForegroundSuperResolutionPageIndices({
   return new Set(indices.filter((index) => Number.isInteger(index) && index >= 0));
 }
 
+export function getSuperResolutionPreloadPageIndices({
+  pageCount,
+  currentIndex,
+  currentSpread = [],
+  preloadCount,
+} = {}) {
+  const count = Math.max(0, Math.floor(Number(pageCount) || 0));
+  const limit = Math.max(0, Math.floor(Number(preloadCount) || 0));
+  const visible = new Set(currentSpread
+    .map((unit) => unit?.pageIndex)
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < count));
+  if (Number.isInteger(currentIndex) && currentIndex >= 0 && currentIndex < count) {
+    visible.add(currentIndex);
+  }
+  const visibleIndices = [...visible];
+  const lastVisible = visibleIndices.length > 0 ? Math.max(...visibleIndices) : currentIndex;
+  const firstVisible = visibleIndices.length > 0 ? Math.min(...visibleIndices) : currentIndex;
+  const forward = [];
+  for (let index = lastVisible + 1; index < count && forward.length < limit; index += 1) {
+    forward.push(index);
+  }
+  const read = [];
+  for (let index = firstVisible - 1; index >= 0; index -= 1) read.push(index);
+  return { forward, read };
+}
+
 export function resolveImmersiveTapAction({
   timestamp,
   lastTimestamp,

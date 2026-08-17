@@ -86,8 +86,8 @@ const WAIFU2X_UPCONV7_MANIFEST = Object.freeze({
   },
 });
 
-export function scheduleSuperResolutionUpgrade(queue, key, task) {
-  return queue.schedule(key, task, IMAGE_LOAD_PRIORITY.PRELOAD);
+export function scheduleSuperResolutionUpgrade(queue, key, task, priority = IMAGE_LOAD_PRIORITY.PRELOAD) {
+  return queue.schedule(key, task, priority);
 }
 
 export function cancelVisibleSuperResolutionJobs(cacheKey) {
@@ -401,7 +401,7 @@ export async function processSuperResolutionImageSource(sourceUrl, {
     error.name = 'NotSupportedError';
     throw error;
   }
-  const result = await runtime.processBlob(sourceBlob, { manifest, signal });
+  const result = await runtime.processBlob(sourceBlob, { manifest, signal, resumeKey: cacheKey });
   abortIfNeeded(signal);
   if (!result?.blob) throw new TypeError('Super-resolution runtime returned no image Blob');
 
