@@ -11,6 +11,7 @@ export const DEFAULT_READER_SETTINGS = Object.freeze({
   splitWidePagesEnabled: false, rotateWidePagesEnabled: false,
   webtoonGap: 0, doublePageGap: 8,
   pageIndicatorVisibilityMode: 'auto',
+  showNormalNavigationControls: true,
   optimizedImageDecodeEnabled: true,
   maxConcurrentDecodes: 3,
   allowProgressRegression: true,
@@ -37,7 +38,7 @@ export function normalizeReaderSettings(value = {}) {
   for (const [key, choices] of Object.entries(allowed)) {
     if (!choices.includes(next[key])) next[key] = DEFAULT_READER_SETTINGS[key];
   }
-  for (const key of ['doublePageEnabled', 'cropBordersEnabled', 'splitWidePagesEnabled', 'rotateWidePagesEnabled', 'optimizedImageDecodeEnabled', 'allowProgressRegression']) {
+  for (const key of ['doublePageEnabled', 'cropBordersEnabled', 'splitWidePagesEnabled', 'rotateWidePagesEnabled', 'optimizedImageDecodeEnabled', 'allowProgressRegression', 'showNormalNavigationControls']) {
     next[key] = Boolean(next[key]);
   }
   next.preloadCount = Math.max(0, Math.min(10, Number(next.preloadCount) || 0));

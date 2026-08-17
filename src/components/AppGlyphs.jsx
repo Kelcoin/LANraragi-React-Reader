@@ -201,6 +201,10 @@ function renderToolbarGlyph(name) {
   switch (name) {
     case 'back':
       return <path d="M19 12H5M12 19l-7-7 7-7" />;
+    case 'chevronLeft':
+      return <path d="m14.5 5.5-6.5 6.5 6.5 6.5" />;
+    case 'chevronRight':
+      return <path d="m9.5 5.5 6.5 6.5-6.5 6.5" />;
     case 'close':
       return <path d="M6 6l12 12M18 6 6 18" />;
     case 'history':

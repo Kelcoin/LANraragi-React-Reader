@@ -462,13 +462,11 @@ const PageImage = React.forwardRef(({
               },
               priority,
             );
-            try {
-              await superResolutionTicket.promise;
-            } catch (error) {
-              if (error?.name === 'AbortError') throw error;
-              onSuperResolutionError?.(error);
-              readyPrecisionRef.current = precisionKey;
-            }
+            // 原图已经就绪；超分只在后台替换，避免阻塞首屏和翻页。
+            readyPrecisionRef.current = precisionKey;
+            superResolutionTicket.promise.catch((error) => {
+              if (error?.name !== 'AbortError') onSuperResolutionError?.(error);
+            });
             return;
           }
           setImgSrc(src);
@@ -4389,6 +4387,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     <SettingHint text={'自动识别并裁掉图片四周的白色或空边，让画面更紧凑。'}>自动裁白边</SettingHint>
                     <div className="settings-control settings-toggle-control"><ToggleSwitch label="自动裁白边" checked={settings.cropBordersEnabled} onChange={(checked) => updateSettings((s) => ({ ...s, cropBordersEnabled: checked }))} /></div>
                   </div>
+                  <div className="settings-row">
+                    <SettingHint text={'控制普通模式底部的自动翻页和超分按钮是否显示；上一页/下一页始终保留。'}>显示普通模式辅助按钮</SettingHint>
+                    <div className="settings-control settings-toggle-control"><ToggleSwitch label="显示普通模式辅助按钮" checked={settings.showNormalNavigationControls} onChange={(checked) => updateSettings((s) => ({ ...s, showNormalNavigationControls: checked }))} /></div>
+                  </div>
                   {[
                     ['splitWidePagesEnabled', '拆分宽页', '将过宽的横向跨页拆成两页依次显示。'],
                     ['rotateWidePagesEnabled', '旋转宽页', '将过宽的跨页旋转 90° 填满屏幕。'],
@@ -4588,7 +4590,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               className={!canNavigate ? 'reader-shell-pulse' : undefined}
               style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: isMobile ? '6px' : '24px', padding: '20px 8px', flexShrink: 0 }}
             >
-              <button
+              {settings.showNormalNavigationControls && <button
                 type="button"
                 className="reader-page-nav-button"
                 data-reader-nav-action="auto-turn"
@@ -4600,18 +4602,18 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 aria-label={settings.autoTurnActive ? '停止自动翻页' : '开启自动翻页'}
               >
                 <ToolbarGlyph name={settings.autoTurnActive ? 'pause' : 'play'} size={20} />
-              </button>
+              </button>}
               <button
                 type="button"
                 className="reader-page-nav-button"
                 data-reader-nav-action="left"
                 onClick={leftAction}
                 disabled={leftDisabled}
-                style={{ ...navBtnBase, opacity: leftDisabled ? 0.3 : 1 }}
+                style={{ ...navBtnBase, opacity: leftDisabled ? 0.3 : 1, marginLeft: settings.showNormalNavigationControls ? 12 : 0 }}
                 title={isLTR ? '上一页' : '下一页'}
                 aria-label={isLTR ? '上一页' : '下一页'}
               >
-                ‹
+                <ToolbarGlyph name="chevronLeft" size={24} />
               </button>
               <span data-reader-nav-page-label style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-sub)', userSelect: 'none', minWidth: isMobile ? '48px' : '60px', textAlign: 'center' }}>
                   {canShowPageCount ? normalPageLabel : '— / —'}
@@ -4626,16 +4628,16 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                 title={isLTR ? '下一页' : '上一页'}
                 aria-label={isLTR ? '下一页' : '上一页'}
               >
-                ›
+                <ToolbarGlyph name="chevronRight" size={24} />
               </button>
-              <button
+              {settings.showNormalNavigationControls && <button
                 type="button"
                 className="reader-page-nav-button"
                 data-reader-nav-action="super-resolution"
                 aria-pressed={srArchiveEnabled}
                 onClick={handleToggleArchiveSuperResolution}
                 disabled={!canNavigate || !settings.srEnabled}
-                style={{ ...navBtnBase, opacity: canNavigate && settings.srEnabled ? 1 : 0.3 }}
+                style={{ ...navBtnBase, opacity: canNavigate && settings.srEnabled ? 1 : 0.3, marginLeft: 12 }}
                 title={!settings.srEnabled
                   ? '请先在阅读设置中启用超分'
                   : (srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分')}
@@ -4644,7 +4646,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   : (srArchiveEnabled ? '关闭当前档案超分' : '为当前档案启用超分')}
               >
                 <ToolbarGlyph name={srArchiveEnabled ? 'superResolution' : 'superResolutionOff'} size={20} />
-              </button>
+              </button>}
             </div>}
           </div>
         ) : (

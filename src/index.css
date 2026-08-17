@@ -2934,6 +2934,8 @@ html[data-theme="light"] .archive-tag-namespace {
   margin-inline: auto;
 }
 .reader-page-nav-button { background: var(--reader-control-bg) !important; border-color: var(--reader-control-border) !important; color: var(--reader-control-text) !important; }
+.reader-page-nav-button[data-reader-nav-action="left"] { margin-left: 12px; }
+.reader-page-nav-button[data-reader-nav-action="super-resolution"] { margin-left: 12px; }
 .reader-page-nav-button:not(:disabled):hover { background: var(--reader-control-hover-bg) !important; }
 .reader-panel-surface { background: var(--reader-panel-bg) !important; color: var(--text-primary) !important; border-color: var(--reader-control-border) !important; }
 .reader-skeleton-surface { background: var(--reader-skeleton-base) !important; border-color: var(--reader-control-border) !important; }
