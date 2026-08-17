@@ -5,7 +5,7 @@
     padding: 8px 12px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
-    background: var(--surface);
+    background: var(--surface-raised);
     color: var(--text-primary);
     box-shadow: var(--shadow-control);
     cursor: pointer;
@@ -18,11 +18,11 @@
   }
 
   .btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--accent); }
-  .btn:active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
+  .btn:active:not(:disabled) { transform: scale(0.985); box-shadow: none; }
   .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
   .btn-primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
-  .btn-secondary { background: var(--surface); color: var(--text-primary); }
+  .btn-secondary { background: var(--surface-raised); color: var(--text-primary); }
   .btn-quiet { background: transparent; border-color: transparent; box-shadow: none; }
   .btn-danger { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
   .btn-danger:hover:not(:disabled) { background: var(--danger); color: var(--accent-contrast); }
@@ -34,7 +34,7 @@
     padding: 8px 11px;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    background: var(--surface);
+    background: var(--surface-raised);
     color: var(--text-primary);
     box-shadow: var(--shadow-control);
     transition: background-color var(--motion-base) var(--motion-curve), border-color var(--motion-base) var(--motion-curve), box-shadow var(--motion-base) var(--motion-curve);
@@ -138,9 +138,9 @@
   .custom-select-positioner { z-index: var(--z-popover); width: var(--anchor-width); }
   .custom-select-popup { width: 100%; max-height: min(320px, var(--available-height)); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-popover); }
   .custom-select-list { max-height: min(320px, var(--available-height)); padding: 5px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
-  .custom-select-option { min-height: 40px; padding: 8px 9px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: var(--radius-xs) !important; outline: none; cursor: pointer; color: var(--text-primary); font-size: var(--font-size-md); }
+  .custom-select-option { min-height: 40px; padding: 8px 9px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: var(--radius-xs) !important; outline: none; cursor: pointer; color: var(--text-primary); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }
   .custom-select-option[data-highlighted]:not([data-selected]) { background: var(--surface-hover); }
-  .custom-select-option[data-selected] { background: var(--accent-soft); color: var(--accent-strong); font-weight: var(--font-weight-semibold); }
+  .custom-select-option[data-selected] { background: var(--accent-soft); color: var(--accent-strong); }
   .custom-select-option-text { min-width: 0; }
   .custom-select-check { flex: 0 0 auto; color: var(--accent-strong); }
   .secret-input { padding: 8px 12px; font-size: var(--font-size-body); }

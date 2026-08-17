@@ -424,14 +424,20 @@ test('archive browsing pages share unframed bands and bounded workspaces', () =>
   assert.match(pages, /\.archive-workspace\s*\{[^}]*background:\s*var\(--surface\);[^}]*border:\s*1px solid var\(--border-subtle\)/s);
 });
 
-test('archive cards use quiet covers and moss progress at every viewport', () => {
+test('archive cards use quiet covers and a subtle edge-aligned progress track', () => {
+  const index = read('src/index.css');
   const pages = read('src/styles/pages.css');
-  assert.match(pages, /\.archive-card-shell\s*\{[^}]*border-radius:\s*var\(--radius-md\);[^}]*box-shadow:\s*none/s);
+  assert.match(pages, /\.archive-card-shell\s*\{[^}]*border-radius:\s*var\(--radius-md\);[^}]*background:\s*var\(--surface-raised\);[^}]*box-shadow:\s*none/s);
+  assert.match(pages, /\.archive-card-compact\s*\{[^}]*background:\s*var\(--surface-raised\);/s);
+  assert.match(index, /\.archive-card-compact:hover,\s*\.archive-card-compact:focus-visible\s*\{[^}]*background:\s*var\(--surface-hover\);/s);
+  assert.match(pages, /\.home-skeleton-card\s*\{[^}]*background:\s*var\(--surface-raised\);/s);
   assert.match(pages, /\.archive-cover-frame\s*\{[^}]*border-radius:\s*var\(--radius-md\)/s);
-  assert.match(pages, /\.archive-card-progress\s*\{[^}]*height:\s*[23]px/s);
+  assert.match(pages, /\.archive-card-progress\s*\{[^}]*height:\s*3px;[^}]*margin-top:\s*3px;[^}]*border-radius:\s*999px;[^}]*background:\s*color-mix\(in srgb, var\(--positive\) 12%, var\(--surface-raised\)\)/s);
+  assert.match(index, /\.archive-card-progress-fill\s*\{[^}]*border-radius:\s*inherit;/s);
   assert.match(pages, /\.archive-card-progress-fill\s*\{[^}]*background:\s*var\(--positive\)/s);
-  assert.match(pages, /\.archive-card-shell:hover\s*\{[^}]*transform:\s*translateY\(-2px\)/s);
-  assert.match(pages, /\.watchlist-card[^}]*\.archive-card-shell\s*\{[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*none/s);
+  assert.doesNotMatch(pages, /\.archive-card-progress-fill\s*\{[^}]*border-radius:/s);
+  assert.match(pages, /\.archive-card-shell:hover\s*\{[^}]*transform:\s*translateY\(-2px\);[^}]*background:\s*var\(--surface-hover\);/s);
+  assert.match(pages, /\.watchlist-card[^}]*\.archive-card-shell\s*\{[^}]*background:\s*var\(--surface-raised\);[^}]*box-shadow:\s*none/s);
   assert.match(pages, /@media \(max-width:\s*390px\)[\s\S]*min-width:\s*0;[\s\S]*flex-wrap:\s*wrap/s);
 });
 
@@ -654,6 +660,51 @@ test('shared text buttons inherit the language-aware font and palette tabs use s
   assert.doesNotMatch(css, /\.theme-palette-mode-tab(?:\.is-active)?\s*\{[^}]*color:\s*#fff/s);
 });
 
+test('palette mode tabs pair their labels with the shared SVG theme glyphs', () => {
+  const home = read('src/pages/Home.jsx');
+  const glyphs = read('src/components/AppGlyphs.jsx');
+  const css = read('src/index.css');
+
+  assert.match(home, /<ThemeModeGlyph mode=\{mode\} size=\{18\} \/>[\s\S]{0,100}\{mode === 'light' \? '浅色模式' : '深色模式'\}/);
+  assert.match(glyphs, /case 'light':[\s\S]*case 'dark':/);
+  assert.match(css, /\.theme-palette-mode-tab\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*gap:\s*8px;/s);
+});
+
+test('large settings choices use the bold weight without changing every text button', () => {
+  const primitives = read('src/styles/primitives.css');
+  const css = read('src/index.css');
+  const cacheSettings = read('src/components/CacheSettings.jsx');
+
+  assert.match(css, /\.theme-palette-mode-tab\s*\{[^}]*font-weight:\s*var\(--font-weight-bold\);/s);
+  assert.match(css, /\.settings-tool-button\s*\{[^}]*font-weight:\s*var\(--font-weight-bold\);/s);
+  assert.match(cacheSettings, /className="btn btn-secondary cache-clear-button"/);
+  assert.match(cacheSettings, />清空缓存<\/button>/);
+  assert.match(css, /\.cache-clear-button\s*\{[^}]*font-weight:\s*var\(--font-weight-bold\);/s);
+  assert.match(primitives, /\.btn\s*\{[^}]*font-weight:\s*var\(--font-weight-semibold\);/s);
+});
+
+test('shared controls rise above component surfaces and press inward without clipping', () => {
+  const primitives = read('src/styles/primitives.css');
+
+  assert.match(primitives, /\.btn\s*\{[^}]*background:\s*var\(--surface-raised\);/s);
+  assert.match(primitives, /\.field\s*\{[^}]*background:\s*var\(--surface-raised\);/s);
+  assert.match(primitives, /\.btn-secondary\s*\{[^}]*background:\s*var\(--surface-raised\);/s);
+  assert.match(primitives, /\.btn-primary\s*\{[^}]*background:\s*var\(--accent\);/s);
+  assert.match(primitives, /\.btn-quiet\s*\{[^}]*background:\s*transparent;/s);
+  assert.match(primitives, /\.btn:active:not\(:disabled\)\s*\{[^}]*transform:\s*scale\(0\.985\);/s);
+  assert.doesNotMatch(primitives, /\.btn:active:not\(:disabled\)\s*\{[^}]*translateY/s);
+});
+
+test('custom theme interaction states use palette colors and slider cursors describe interaction', () => {
+  const css = read('src/index.css');
+
+  assert.match(css, /\.archive-category-button:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--accent-soft\);[^}]*border-color:\s*var\(--accent\);/s);
+  assert.doesNotMatch(css, /\.archive-category-button:hover:not\(:disabled\)\s*\{[^}]*var\(--positive/s);
+  assert.match(css, /\.theme-color-picker-hue\s*\{[^}]*cursor:\s*pointer;/s);
+  assert.doesNotMatch(css, /\.theme-color-picker-hue\s*\{[^}]*cursor:\s*ew-resize;/s);
+  assert.match(css, /\.theme-color-picker-hue:active\s*\{[^}]*cursor:\s*grabbing;/s);
+});
+
 test('standalone cancel actions use bordered secondary buttons', () => {
   const home = read('src/pages/Home.jsx');
   const dialogs = read('src/components/ConfirmDialog.jsx');
@@ -767,6 +818,8 @@ test('custom select interaction uses Base UI state attributes only', () => {
   assert.doesNotMatch(index, /\.custom-select-option\[aria-selected/);
   assert.match(primitives, /\.custom-select-option\[data-highlighted\]:not\(\[data-selected\]\)\s*\{[^}]*background:\s*var\(--surface-hover\);/s);
   assert.match(primitives, /\.custom-select-option\[data-selected\]\s*\{[^}]*background:\s*var\(--accent-soft\);[^}]*color:\s*var\(--accent-strong\);/s);
+  assert.match(primitives, /\.custom-select-option\s*\{[^}]*font-weight:\s*var\(--font-weight-semibold\);/s);
+  assert.doesNotMatch(primitives, /\.custom-select-option\[data-selected\]\s*\{[^}]*font-weight:/s);
   assert.match(primitives, /\.custom-select-list\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*gap:\s*2px;/s);
   assert.match(primitives, /\.custom-select-option\s*\{[^}]*min-height:\s*40px;/s);
 });

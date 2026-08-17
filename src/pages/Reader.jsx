@@ -4424,7 +4424,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   {srRuntimeError && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--danger-text)', marginTop: '2px' }}>{srRuntimeError}</div>}
                   <div className="settings-row">
                     <span className="settings-row-title">超分模型</span>
-                    <div className="settings-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} disabled={!settings.srEnabled} compact /></div>
+                    <div className="settings-control reader-model-select-control"><CustomSelect value={settings.srModel} options={SUPER_RESOLUTION_MODELS} onChange={(v) => updateSettings((s) => ({ ...s, srModel: v }))} disabled={!settings.srEnabled} compact /></div>
                   </div>
                   <div className="settings-row">
                     <SettingHint text={'自动超分逻辑：按归档体积 / 页数算出每页平均体积，低于下方阈值时自动启用当前档案超分。'}>自动启用超分</SettingHint>

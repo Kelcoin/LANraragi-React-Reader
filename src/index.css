@@ -3286,7 +3286,7 @@ html[data-theme="light"] .shimmer-strip {
 
 .archive-card-compact:hover,
 .archive-card-compact:focus-visible {
-  background: var(--surface-raised);
+  background: var(--surface-hover);
   border-color: var(--border-strong);
 }
 
@@ -4087,7 +4087,7 @@ html[data-theme="light"] .shimmer-strip {
   overflow-y: auto;
   overflow-x: clip;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: auto;
 }
 
 .settings-panel-footer {
@@ -4184,9 +4184,14 @@ html[data-theme="light"] .shimmer-strip {
 
 .theme-palette-mode-tab {
   min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border-color: transparent;
   background: transparent;
   color: var(--text-secondary);
+  font-weight: var(--font-weight-bold);
   box-shadow: none;
 }
 
@@ -4349,8 +4354,12 @@ html[data-theme="light"] .shimmer-strip {
   height: 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
-  cursor: ew-resize;
+  cursor: pointer;
   touch-action: none;
+}
+
+.theme-color-picker-hue:active {
+  cursor: grabbing;
 }
 
 .theme-color-picker-hue-thumb {
@@ -4467,6 +4476,14 @@ html[data-theme="light"] .shimmer-strip {
   gap: 10px;
 }
 
+.settings-tool-button {
+  font-weight: var(--font-weight-bold);
+}
+
+.cache-clear-button {
+  font-weight: var(--font-weight-bold);
+}
+
 .upload-page {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
@@ -4479,6 +4496,14 @@ html[data-theme="light"] .shimmer-strip {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+}
+
+.upload-page-header > .btn,
+.upload-results-actions > .btn {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: var(--font-size-body);
+  line-height: 1.2;
 }
 
 .upload-page-header { margin-bottom: 22px; }
@@ -4494,6 +4519,11 @@ html[data-theme="light"] .shimmer-strip {
 .upload-title-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
 
 .upload-mode-tabs { max-width: none; }
+.upload-page .upload-mode-tab {
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: var(--font-size-md);
+}
 .upload-results-actions { display: flex; gap: 8px; align-items: center; }
 .upload-panel { padding: 22px; display: flex; flex-direction: column; gap: 15px; min-height: 460px; }
 .upload-mode-panel-stack { display: grid; flex: 1 1 auto; min-width: 0; }
@@ -4835,8 +4865,8 @@ html[data-theme="light"] .shimmer-strip {
 }
 
 .archive-category-button:hover:not(:disabled) {
-  background: var(--positive-soft);
-  border-color: var(--positive);
+  background: var(--accent-soft);
+  border-color: var(--accent);
   color: var(--text-primary);
   transform: translateY(-1px);
   box-shadow: none;

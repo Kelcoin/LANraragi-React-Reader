@@ -1057,11 +1057,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       const fixedHeight = Array.from(dialog.children)
         .filter((child) => child !== pane)
         .reduce((total, child) => total + child.getBoundingClientRect().height, 0);
+      const dialogFrame = dialog.offsetHeight - dialog.clientHeight;
       const overlay = dialog.parentElement;
       const overlayStyle = getComputedStyle(overlay);
       const viewportLimit = overlay.clientHeight - ['paddingTop', 'paddingBottom']
         .reduce((total, property) => total + (Number.parseFloat(overlayStyle[property]) || 0), 0);
-      setSettingsPanelHeight(Math.min(Math.ceil(fixedHeight + paneHeight), Math.floor(viewportLimit)));
+      setSettingsPanelHeight(Math.min(Math.ceil(fixedHeight + paneHeight + dialogFrame), Math.floor(viewportLimit)));
     };
     updateHeight();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateHeight);
@@ -3033,6 +3034,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                     className={`btn btn-quiet theme-palette-mode-tab${themePaletteMode === mode ? ' is-active' : ''}`}
                     onClick={() => setThemePaletteMode(mode)}
                   >
+                    <ThemeModeGlyph mode={mode} size={18} />
                     {mode === 'light' ? '浅色模式' : '深色模式'}
                   </button>
                 ))}

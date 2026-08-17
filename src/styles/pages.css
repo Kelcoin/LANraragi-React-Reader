@@ -73,7 +73,7 @@
   flex-direction: column;
   padding: 12px;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
 }
@@ -516,7 +516,7 @@
 .archive-card-shell {
   box-sizing: border-box;
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   box-shadow: none;
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease, box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1), background-color var(--motion-base) var(--motion-curve);
@@ -532,7 +532,7 @@
 .archive-card-shell[data-disabled="true"] { cursor: not-allowed; }
 .archive-card-shell[data-touch-callout="none"] { -webkit-touch-callout: none; }
 .archive-title-slot[data-mobile="true"] { cursor: pointer; }
-.archive-card-shell:hover { border-color: var(--border-strong); }
+.archive-card-shell:hover { background: var(--surface-hover); border-color: var(--border-strong); }
 .archive-card-shell.is-selected { position: relative; }
 
 .archive-card-compact {
@@ -546,11 +546,11 @@
   min-height: 48px;
   padding: 8px 14px;
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-raised);
 }
 
 .archive-card-compact:hover,
-.archive-card-compact:focus-visible { background: var(--surface-raised); border-color: var(--border-strong); }
+.archive-card-compact:focus-visible { background: var(--surface-hover); border-color: var(--border-strong); }
 
 .archive-cover-frame {
   width: 100%;
@@ -816,7 +816,7 @@
 
   :root .archive-card-shell {
     border-radius: var(--radius-md);
-    background: var(--surface);
+    background: var(--surface-raised);
     border-color: var(--border-subtle);
     box-shadow: none;
     transition:
@@ -827,6 +827,7 @@
 
   :root .archive-card-shell:hover {
     transform: translateY(-2px);
+    background: var(--surface-hover);
     border-color: var(--border-strong);
     box-shadow: none;
   }
@@ -840,9 +841,10 @@
 
   :root .archive-card-progress {
     height: 3px;
+    margin-top: 3px;
     border: 0;
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
-    background: var(--surface-inset);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--positive) 12%, var(--surface-raised));
   }
 
   .archive-card-progress-fill {
@@ -855,7 +857,7 @@
 
   :root .watchlist-card .archive-card-shell,
   :root .watchlist-card:not(.watchlist-card-plain) .archive-card-shell {
-    background: var(--surface);
+    background: var(--surface-raised);
     border-color: color-mix(in srgb, var(--positive) 58%, var(--border-subtle));
     box-shadow: none;
   }
@@ -867,7 +869,7 @@
 
   .archive-card-compact {
     border-radius: var(--radius-sm);
-    background: var(--surface);
+    background: var(--surface-raised);
     box-shadow: none;
   }
 

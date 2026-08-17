@@ -469,17 +469,20 @@ test('upload modes share settings tabs, animate as equal-height layers, and auto
   assert.match(css, /\.upload-mode-panel-stack\s*\{[^}]*display:\s*grid;/s);
   assert.match(css, /\.upload-mode-panel\s*\{[^}]*grid-area:\s*1 \/ 1;/s);
   assert.match(css, /\.upload-mode-panel\.is-active\s*\{[^}]*opacity:\s*1;/s);
+  assert.match(css, /\.upload-page\s+\.upload-mode-tab\s*\{[^}]*min-height:\s*40px;[^}]*padding:\s*8px 12px;[^}]*font-size:\s*var\(--font-size-md\);/s);
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.upload-mode-panel[\s\S]*transition:\s*none/s);
 });
 
 test('upload task controls use global buttons and concise list labels', () => {
   const page = read('src/pages/UploadPage.jsx');
+  const css = read('src/index.css');
 
   assert.match(page, /<h2>任务列表<\/h2>/);
   assert.doesNotMatch(page, /任务状态|completedCount|upload-primary-action/);
   assert.doesNotMatch(page, /选择的文件会加入下方任务列表，点击「开始处理」统一上传。/);
   assert.match(page, /className="btn" onClick=\{runPending\} disabled=\{running \|\| clearingResults \|\| queuedTaskCount === 0\}>\s*\{running \? '处理中…' : '开始处理'\}/);
   assert.match(page, /className="btn" onClick=\{clearResults\} disabled=\{running \|\| clearingResults \|\| results\.length === 0\}>清空列表<\/button>/);
+  assert.match(css, /\.upload-page-header\s*>\s*\.btn,\s*\.upload-results-actions\s*>\s*\.btn\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*6px 10px;[^}]*font-size:\s*var\(--font-size-body\);/s);
 });
 
 test('upload task rows animate on insert and before list clearing', () => {
@@ -509,12 +512,12 @@ test('tag suggestion panel hides scrollbars without reserving a hidden gutter', 
   assert.match(css, /\.no-scrollbar\s*\{[^}]*scrollbar-gutter:\s*auto;/s);
 });
 
-test('mobile settings panel clips horizontal overflow and keeps consistent scrollbars', () => {
+test('mobile settings panel clips horizontal overflow and only reserves real scrollbars', () => {
   const css = read('src/index.css');
   assert.match(css, /html,[\s\S]*body\s*\{[^}]*overflow-x:\s*clip;/s);
   assert.match(css, /\.settings-overlay\s*\{[^}]*max-width:\s*100vw;[^}]*overflow-x:\s*clip;/s);
   assert.match(css, /\.settings-panel\s*\{[^}]*min-width:\s*0;[^}]*overflow-x:\s*clip;/s);
-  assert.match(css, /\.settings-panel-scroll\s*\{[^}]*min-width:\s*0;[^}]*overflow-x:\s*clip;[^}]*scrollbar-gutter:\s*stable both-edges;/s);
+  assert.match(css, /\.settings-panel-scroll\s*\{[^}]*min-width:\s*0;[^}]*overflow-x:\s*clip;[^}]*scrollbar-gutter:\s*auto;/s);
   assert.match(css, /\.settings-panel-scroll,[\s\S]*\.reader-drawer-scroll,[\s\S]*\.upload-task-list\s*\{[^}]*scrollbar-width:\s*thin;/s);
 });
 
@@ -870,9 +873,12 @@ test('super-resolution reuses preload count and uses directional state glyphs', 
 
 test('Reader model selector explains each super-resolution option', () => {
   const reader = read('src/pages/Reader.jsx');
+  const readerCss = read('src/styles/reader.css');
   const select = read('src/components/CustomSelect.jsx');
 
   assert.match(reader, /<span className="settings-row-title">超分模型<\/span>/);
+  assert.match(reader, /className="settings-control reader-model-select-control"/);
+  assert.match(readerCss, /\.reader-model-select-control\s*\{[^}]*flex-basis:\s*190px;[^}]*width:\s*190px;/s);
   assert.doesNotMatch(reader, /<SettingHint text=\{srModel\?\.description/);
   assert.match(select, /option\.description/);
   assert.match(select, /SettingHint/);
@@ -2124,6 +2130,26 @@ test('custom theme palette normalizes, persists, generates semantic tokens, and 
   assert.equal(properties.has('--accent'), false);
   assert.equal(writeStoredThemePalette(null, storage), null);
   assert.equal(readStoredThemePalette(storage), null);
+});
+
+test('custom theme colors drive interactive surfaces and scrollbars without replacing status semantics', () => {
+  const violet = createCustomThemeTokens({ accent: '#a85ee8', secondary: '#4a3270', background: '#08091a' }, 'dark');
+  const amber = createCustomThemeTokens({ accent: '#d28a3d', secondary: '#6f4b2d', background: '#08091a' }, 'dark');
+
+  assert.notEqual(violet['--surface-subtle'], amber['--surface-subtle']);
+  assert.notEqual(violet['--surface-hover'], amber['--surface-hover']);
+  assert.equal(violet['--scrollbar-thumb'], violet['--border-strong']);
+  assert.equal(violet['--scrollbar-thumb-hover'], violet['--accent']);
+  assert.equal(violet['--positive'], amber['--positive']);
+});
+
+test('settings panel height includes its frame and only reserves a scrollbar when needed', () => {
+  const home = read('src/pages/Home.jsx');
+  const css = read('src/index.css');
+
+  assert.match(home, /const dialogFrame = dialog\.offsetHeight - dialog\.clientHeight;/);
+  assert.match(home, /fixedHeight \+ paneHeight \+ dialogFrame/);
+  assert.match(css, /\.settings-panel-scroll\s*\{[^}]*scrollbar-gutter:\s*auto;/s);
 });
 
 test('continue-reading and watchlist heading hover keeps background transparent while enlarging type', () => {
