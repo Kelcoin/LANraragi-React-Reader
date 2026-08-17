@@ -2438,6 +2438,22 @@ test('selects FP16 Waifu2x only for capable adapters and falls back after failur
   );
 });
 
+test('only Waifu2x CUNet FP16 failures use the FP32 fallback path', () => {
+  assert.equal(typeof superResolution.shouldFallbackWaifu2xProfile, 'function');
+  assert.equal(superResolution.shouldFallbackWaifu2xProfile({
+    modelValue: 'waifu2x',
+    manifest: { precision: 'fp16' },
+  }), true);
+  assert.equal(superResolution.shouldFallbackWaifu2xProfile({
+    modelValue: 'waifu2x-upconv7',
+    manifest: { precision: 'fp16' },
+  }), false);
+  assert.equal(superResolution.shouldFallbackWaifu2xProfile({
+    modelValue: 'waifu2x',
+    manifest: {},
+  }), false);
+});
+
 test('ships an explicit FP16 Waifu2x UpConv7 manifest with independent cache identity', () => {
   const fp32 = superResolution.getSuperResolutionModel('waifu2x');
   const fast = superResolution.getSuperResolutionModel('waifu2x-upconv7');

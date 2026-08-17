@@ -21,6 +21,7 @@ import {
   processSuperResolutionImageSource,
   scheduleSuperResolutionUpgrade,
   selectWaifu2xManifest,
+  shouldFallbackWaifu2xProfile,
   validateSuperResolutionManifest,
   verifySuperResolutionSupport,
 } from '../lib/superResolution';
@@ -1354,7 +1355,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       setSrRuntimeContext({ runtime, manifest: srManifest, backend });
     }).catch((error) => {
       if (!active) return;
-      if (srManifest.precision === 'fp16') {
+      if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest })) {
         setSrFailedProfileIds((current) => {
           if (current.has(srManifest.id)) return current;
           const next = new Set(current);
@@ -1381,7 +1382,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       cancelVisibleSuperResolutionJobs();
       runtime.dispose();
     };
-  }, [settings.srEnabled, showToast, srManifest, srSupport.checking, srSupport.supported]);
+  }, [settings.srEnabled, showToast, srManifest, srModel, srSupport.checking, srSupport.supported]);
   const disableArchiveSuperResolution = useCallback(() => {
     srArchiveManualRef.current = {
       archiveId: String(archive?.arcid ?? archive?.id ?? archiveId),
@@ -1394,7 +1395,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const handleSuperResolutionError = useCallback((error) => {
     const failure = resolveSuperResolutionFailure(error);
     if (!failure.notify) return;
-    if (srManifest?.precision === 'fp16') {
+    if (shouldFallbackWaifu2xProfile({ modelValue: srModel?.value, manifest: srManifest })) {
       setSrFailedProfileIds((current) => {
         if (current.has(srManifest.id)) return current;
         const next = new Set(current);
@@ -1410,7 +1411,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     if (srErrorToastKeyRef.current === message) return;
     srErrorToastKeyRef.current = message;
     showToast(`超分失败，已关闭并显示原图：${message}`, 'error');
-  }, [disableArchiveSuperResolution, showToast, srManifest]);
+  }, [disableArchiveSuperResolution, showToast, srManifest, srModel]);
   const currentPageSize = pageSizes[currentIndex];
   const currentPageTooLargeForSuperResolution = isSuperResolutionPageTooLarge(currentPageSize, srManifest?.scale);
   const scheduledSrRuntimeContext = srRuntimeContext;

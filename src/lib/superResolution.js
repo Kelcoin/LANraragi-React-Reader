@@ -156,6 +156,10 @@ export function selectWaifu2xManifest(adapterInfo, failedProfileIds = new Set())
   return WAIFU2X_FP32_MANIFEST;
 }
 
+export function shouldFallbackWaifu2xProfile({ modelValue, manifest } = {}) {
+  return modelValue === 'waifu2x' && manifest?.precision === 'fp16';
+}
+
 function hasText(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }

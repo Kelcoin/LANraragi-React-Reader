@@ -1016,7 +1016,7 @@ test('Reader retries FP32 once when the FP16 Waifu2x profile cannot initialize',
 
   assert.match(reader, /selectWaifu2xManifest/);
   assert.match(reader, /selectWaifu2xManifest\(srSupport\.adapterInfo, srFailedProfileIds\)/);
-  assert.match(reader, /if \(srManifest\.precision === 'fp16'\)/);
+  assert.equal(reader.match(/shouldFallbackWaifu2xProfile\(\{ modelValue: srModel\?\.value, manifest: srManifest \}\)/g)?.length, 2);
   assert.match(reader, /setSrFailedProfileIds/);
 });
 
