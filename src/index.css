@@ -621,6 +621,11 @@ textarea:focus-visible,
   border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent);
+  transition: border-color var(--motion-base) var(--motion-curve);
+}
+
+.secret-input-shell:hover {
+  border-color: var(--border-strong);
 }
 
 .secret-input {
@@ -633,7 +638,11 @@ textarea:focus-visible,
 
 .secret-input-shell:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.secret-input-shell:has(.secret-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .secret-input-shell:focus-within .secret-input {

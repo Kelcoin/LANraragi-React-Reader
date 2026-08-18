@@ -27,6 +27,7 @@
 .settings-section > .settings-section-inner {
   min-height: 0;
   overflow: hidden;
+  padding: 4px;
 }
 
 .settings-section-stack {
@@ -59,6 +60,7 @@
   overflow: hidden;
   display: grid;
   gap: 12px;
+  padding-inline: 4px;
 }
 
 .settings-eh-cookie-field {
@@ -304,6 +306,8 @@
 .settings-worker-url {
   padding: 8px 12px;
   font-size: var(--font-size-body);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--reader-overlay-text) 3.5%, transparent);
 }
 .home-carousel-header > :last-child { display: flex; align-items: center; gap: 8px; }
 .home-carousel-header > .home-carousel-actions.home-random-actions { gap: 6px; }
