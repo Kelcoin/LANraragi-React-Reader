@@ -536,11 +536,16 @@ const PageImage = React.forwardRef(({
     onReady?.(pageIndex);
   }, [cropBorders, imgSrc, onNaturalSize, onReady, pageIndex, pageUrl, serializedDecode]);
 
-  const handleMountedImageError = useCallback(() => {
+  const handleMountedImageError = useCallback((event) => {
+    if (serializedDecode) {
+      event.currentTarget.style.display = 'none';
+      return;
+    }
+    if (event.currentTarget !== imgRef.current || event.currentTarget.src !== imgSrc) return;
     readyPageUrlRef.current = null;
     setLoadState('error');
     onError?.(pageIndex);
-  }, [onError, pageIndex]);
+  }, [imgSrc, onError, pageIndex, serializedDecode]);
 
   const isReady = !!imgSrc && loadState === 'ready';
   useEffect(() => {
@@ -582,7 +587,9 @@ const PageImage = React.forwardRef(({
         overflow: 'hidden',
         minWidth: 0,
         minHeight: 0,
-        background: isImmersive ? 'var(--immersive-bg)' : 'transparent',
+        background: isImmersive
+          ? 'var(--immersive-bg)'
+          : (!isReady ? 'var(--reader-stage)' : 'transparent'),
       }}
     >
       <img
@@ -597,7 +604,7 @@ const PageImage = React.forwardRef(({
         onError={handleMountedImageError}
         onContextMenu={(e) => isImmersive && e.preventDefault()}
         style={{
-          display: cropFrame ? 'none' : 'block',
+          display: isReady && !cropFrame ? 'block' : 'none',
           width: showRotate ? 'auto' : (style?.width || '100%'),
           height: showRotate ? 'auto' : (style?.height || '100%'),
           maxWidth: showRotate ? `${shellSize.height}px` : style?.maxWidth,
@@ -636,7 +643,7 @@ const PageImage = React.forwardRef(({
           }}
         />
       )}
-      {!isReady && (loadState === 'error' || showLoadingStatus) && (
+      {!isReady && ((!serializedDecode && loadState === 'error') || showLoadingStatus) && (
         <div
           className="reader-image-loading-status"
           role="status" aria-live="polite"
@@ -4576,7 +4583,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     justifyContent: 'center',
                     padding: '24px',
                     textAlign: 'center',
-                    background: 'var(--immersive-bg)',
+                    background: 'var(--reader-stage)',
                     color: 'var(--immersive-text)',
                     fontSize: 'clamp(18px, 3vw, 30px)',
                     fontWeight: 'var(--font-weight-bold)',

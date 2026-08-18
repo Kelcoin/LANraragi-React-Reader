@@ -367,6 +367,15 @@ test('paged readers retain the visible frame until the replacement spread is dec
   assert.match(reader, /commits\.forEach\(\(commit\) =>[\s\S]{0,80}commit\(\)/);
 });
 
+test('reader image shells hide native broken-image chrome during decode transitions', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /display:\s*isReady && !cropFrame \? 'block' : 'none'/);
+  assert.match(reader, /background:\s*isImmersive[\s\S]{0,120}\? 'var\(--immersive-bg\)'[\s\S]{0,120}: \(!isReady \? 'var\(--reader-stage\)' : 'transparent'\)/);
+  assert.match(reader, /!serializedDecode && loadState === 'error'/);
+  assert.match(reader, /if \(serializedDecode\) \{\s*event\.currentTarget\.style\.display = 'none';/s);
+  assert.match(reader, /normalPagePending[\s\S]{0,700}background:\s*'var\(--reader-stage\)'/);
+});
+
 test('swipe completion never clears the visible bitmap before its replacement is ready', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.doesNotMatch(
