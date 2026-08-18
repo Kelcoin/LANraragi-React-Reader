@@ -2325,13 +2325,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <h1 className="home-brand-title" translate="no" aria-label="Readoshi">
             <span className="home-brand-logo" aria-hidden="true" />
             <span className="home-project-name" aria-hidden="true">Readoshi</span>
-            {serverOnline !== null && (
-              <button
+            <button
                 type="button"
                 onClick={() => probeServerStatus({ force: true })}
                 aria-label="探测 LRR 服务器状态"
-                title={serverProbeRunning ? '正在探测 LRR 服务器' : '点击重新探测 LRR 服务器'}
-                className={`btn btn-quiet btn-icon server-status-button${serverProbeRunning ? ' is-probing' : ''}${serverOnline ? ' is-online' : ' is-offline'}`}
+                title={serverProbeRunning ? '正在探测 LRR 服务器' : (serverOnline ? '点击重新探测 LRR 服务器' : 'LRR 服务器异常，点击重试')}
+                className={`btn btn-quiet btn-icon server-status-button${serverProbeRunning ? ' is-probing' : ''}${serverOnline === null ? ' is-pending' : (serverOnline ? ' is-online' : ' is-offline')}`}
               >
                 {serverProbeRunning && (
                   <>
@@ -2340,8 +2339,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   </>
                 )}
                 <span className="server-status-dot" />
-              </button>
-            )}
+            </button>
           </h1>
           <div className="home-welcome">
             <span>欢迎回来</span><span className="home-welcome-detail">，继续你的探索之旅</span>

@@ -349,6 +349,7 @@
 .server-status-ripple-secondary { opacity: .22; animation-delay: .42s; }
 .server-status-button.is-online { color: var(--good); }
 .server-status-button.is-offline { color: var(--danger); }
+.server-status-button.is-pending { color: var(--text-muted); }
 .server-status-dot {
   display: inline-block;
   width: 8px;
