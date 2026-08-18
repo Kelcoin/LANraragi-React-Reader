@@ -11,7 +11,7 @@ test('Docker publishing uses Node 22 and publishes amd64 and arm64 images', () =
   const dockerfile = read('Dockerfile');
   const workflow = read('.github/workflows/docker-publish.yml');
   assert.match(dockerfile, /^FROM node:22-alpine AS builder$/m);
-  assert.match(workflow, /docker\/setup-qemu-action@v3/);
+  assert.match(workflow, /docker\/setup-qemu-action@v4/);
   assert.match(workflow, /platforms: linux\/amd64,linux\/arm64/);
 });
 
