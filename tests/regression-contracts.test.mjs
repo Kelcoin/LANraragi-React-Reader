@@ -1576,9 +1576,12 @@ test('home continue-reading cards reuse carousel entrance and successful-exit mo
   assert.match(home, /historyExitIds/);
   assert.match(home, /addEventListener\('lrr:history-changed'/);
   assert.match(home, /historyMotionReadyRef/);
+  assert.match(home, /setHistory\(initialHistory\);\s*historyMotionReadyRef\.current = true;/);
   assert.match(home, /if \(!historyMotionReadyRef\.current\)/);
   assert.match(home, /getVisibleContinueReadingItems\(historyRef\.current, hideReadRef\.current\)/);
   assert.match(home, /getVisibleContinueReadingItems\(next, nextHideRead\)/);
+  assert.match(home, /loadHistoryState\(\)\.then\(\(state\) => \{[\s\S]{0,180}hideReadRef\.current = state\.hideRead;[\s\S]{0,80}\}\)/);
+  assert.doesNotMatch(home, /loadHistoryState\(\)\.then\(\(state\) => \{[\s\S]{0,220}setHistory\(state\.histories\)/);
   assert.match(home, /const handleToggleHideRead = useCallback\(\(\) => \{\s*setHideRead\(!hideReadRef\.current\)\.catch/s);
   assert.match(home, /if \(!historyExitTimerRef\.current\) setHistory\(getHistory\(\)\)/);
   assert.match(home, /hist-\$\{h\.id\}[\s\S]{0,250}home-carousel-card-exit[\s\S]{0,180}home-carousel-card-enter/);

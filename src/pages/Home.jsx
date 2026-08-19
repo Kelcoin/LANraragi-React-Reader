@@ -1172,15 +1172,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     const initialHistory = getHistory();
     historyRef.current = initialHistory;
     setHistory(initialHistory);
+    historyMotionReadyRef.current = true;
     if (coldRestoreRef.current) {
-      historyMotionReadyRef.current = true;
       return;
     }
     loadHistoryState().then((state) => {
-      historyRef.current = state.histories;
+      // loadHistoryState emits lrr:history-changed after hydration. Let the
+      // shared refresh handler apply the state so inserted/removed cards animate.
       hideReadRef.current = state.hideRead;
-      setHistory(state.histories);
-      setHideReadState(state.hideRead);
     }).catch(() => {
       const next = getHistory();
       const nextHideRead = getHideRead();
@@ -1188,8 +1187,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       hideReadRef.current = nextHideRead;
       setHistory(next);
       setHideReadState(nextHideRead);
-    }).finally(() => {
-      historyMotionReadyRef.current = true;
     });
   }, []);
 
