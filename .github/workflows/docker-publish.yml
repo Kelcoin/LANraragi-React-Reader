@@ -18,6 +18,10 @@ on:
       - 'docker-entrypoint.sh'
       - 'nginx.conf.template'
 
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   publish:
     runs-on: ubuntu-latest

@@ -10,9 +10,10 @@ const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), '
 test('Docker publishing uses Node 22 and publishes amd64 and arm64 images', () => {
   const dockerfile = read('Dockerfile');
   const workflow = read('.github/workflows/docker-publish.yml');
-  assert.match(dockerfile, /^FROM node:22-alpine AS builder$/m);
+  assert.match(dockerfile, /^FROM --platform=\$BUILDPLATFORM node:22-alpine AS builder$/m);
   assert.match(workflow, /docker\/setup-qemu-action@v4/);
   assert.match(workflow, /platforms: linux\/amd64,linux\/arm64/);
+  assert.match(workflow, /cancel-in-progress: true/);
 });
 
 test('Home server status stays visible and uses a bounded probe', () => {
