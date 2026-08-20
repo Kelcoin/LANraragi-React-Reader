@@ -2465,7 +2465,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           null,
           immersiveSuperResolutionSourceRegistryRef.current,
         );
-        imgRef.current.src = '';
+        imgRef.current.removeAttribute('src');
         imgRef.current.style.display = 'none';
         delete imgRef.current.dataset.pageIndex;
         delete imgRef.current.dataset.readerUnit;
@@ -4050,6 +4050,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const targetPending = pages.length > 0 && currentIndex !== displayedIndex;
   const displayedSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: displayedIndex, splitPart });
   const displayedSpread = readerSpreads[Math.max(0, displayedSpreadIndex)] || [];
+  // Keep the last decoded spread mounted while the requested spread is still decoding.
+  // This prevents a target geometry/empty image from flashing before the atomic commit.
+  const immersiveRenderSpread = targetPending && !webtoonActive ? displayedSpread : currentSpread;
   const normalSpreadRenderState = getPendingSpreadRenderState(currentSpread, displayedSpread, targetPending);
   const decodeWindowUnits = (() => {
     const entries = new Map();
@@ -4076,7 +4079,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   })();
   const normalPagePending = targetPending && !webtoonActive;
   const pageSwitchLabel = normalPagePending ? `正在切换到第 ${normalTargetIndex + 1} 页…` : '';
-  const immersivePagePending = viewMode === 'immersive' && normalPagePending;
+  const immersiveHasDisplayedBitmap = [imgCurrRef.current, imgCurrSecondRef.current]
+    .some((image) => image?.dataset.pageIndex === String(displayedIndex) && image.complete && image.naturalWidth > 0);
+  const immersivePagePending = viewMode === 'immersive' && normalPagePending && !immersiveHasDisplayedBitmap;
   const spreadPageNumbers = [...new Set(currentSpread.map((unit) => unit.pageIndex + 1))].sort((a, b) => a - b);
   const normalPageLabel = currentSpread.some((unit) => unit.cropSide)
     ? `${normalTargetIndex + 1}（${splitPart + 1}/2） / ${pages.length}`
@@ -4877,7 +4882,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               <div
                 ref={zoomWrapperRef}
                 style={{
-                  ...getImmersiveSpreadGroupStyle(currentSpread),
+                  ...getImmersiveSpreadGroupStyle(immersiveRenderSpread),
                   display: 'flex', justifyContent: 'center', alignItems: 'center',
                   transform: `translate3d(${panRef.current.x}px, ${panRef.current.y}px, 0) scale(${zoomScaleRef.current})`,
                   transformOrigin: 'center center',
@@ -4885,7 +4890,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   willChange: zoomScaleRef.current > 1 ? 'transform' : 'auto',
                 }}
               >
-                <div style={getImmersiveSpreadSlotStyle(currentSpread, 0)}>
+                <div style={getImmersiveSpreadSlotStyle(immersiveRenderSpread, 0)}>
                   <img
                     ref={imgCurrRef}
                     alt=""
@@ -4894,7 +4899,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     onContextMenu={(e) => e.preventDefault()}
                   />
                 </div>
-                <div style={{ ...getImmersiveSpreadSlotStyle(currentSpread, 1), display: currentSpread[1] ? 'flex' : 'none' }}>
+                <div style={{ ...getImmersiveSpreadSlotStyle(immersiveRenderSpread, 1), display: immersiveRenderSpread[1] ? 'flex' : 'none' }}>
                   <img
                     ref={imgCurrSecondRef}
                     alt=""

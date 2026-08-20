@@ -8,7 +8,7 @@ import { resolveAppVersion } from './scripts/app-version.mjs';
 
 const isolationHeaders = Object.freeze({
   'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Embedder-Policy': 'credentialless',
 });
 
 function readEnvLocal(cwd) {

@@ -3,6 +3,7 @@ import { resolveReaderPreviewDecodeSize } from './cachePolicy.js';
 const PREVIEW_CACHE_LIMIT = 12;
 const PREVIEW_CACHE_BYTES = 48 * 1024 ** 2;
 const previewCache = new Map();
+const previewJobs = new Map();
 let previewCacheBytes = 0;
 
 function abortIfNeeded(signal) {
@@ -270,26 +271,40 @@ export async function getReaderPreviewSource(sourceUrl, {
     return { src: cached.objectUrl, ...dimensions, isPreview: true };
   }
 
-  let bitmap;
+  let previewJob = previewJobs.get(cacheKey);
+  if (!previewJob) {
+    previewJob = (async () => {
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(blob, {
+          resizeWidth: target.width,
+          resizeHeight: target.height,
+          resizeQuality: 'high',
+        });
+        const canvas = typeof OffscreenCanvas === 'function'
+          ? new OffscreenCanvas(target.width, target.height)
+          : Object.assign(document.createElement('canvas'), { width: target.width, height: target.height });
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, target.width, target.height);
+        const previewBlob = await canvasToBlob(canvas);
+        if (!previewBlob) return null;
+        return rememberPreview(cacheKey, previewBlob);
+      } finally {
+        bitmap?.close?.();
+      }
+    })();
+    previewJobs.set(cacheKey, previewJob);
+    previewJob.finally(() => {
+      if (previewJobs.get(cacheKey) === previewJob) previewJobs.delete(cacheKey);
+    }).catch(() => {});
+  }
   try {
-    bitmap = await createImageBitmap(blob, {
-      resizeWidth: target.width,
-      resizeHeight: target.height,
-      resizeQuality: 'high',
-    });
+    const previewUrl = await previewJob;
     abortIfNeeded(signal);
-    const canvas = typeof OffscreenCanvas === 'function'
-      ? new OffscreenCanvas(target.width, target.height)
-      : Object.assign(document.createElement('canvas'), { width: target.width, height: target.height });
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, target.width, target.height);
-    const previewBlob = await canvasToBlob(canvas);
-    abortIfNeeded(signal);
-    if (!previewBlob) return { src: sourceUrl, ...dimensions, isPreview: false };
-    return { src: rememberPreview(cacheKey, previewBlob), ...dimensions, isPreview: true };
+    return previewUrl
+      ? { src: previewUrl, ...dimensions, isPreview: true }
+      : { src: sourceUrl, ...dimensions, isPreview: false };
   } catch (error) {
     if (error?.name === 'AbortError') throw error;
     return { src: sourceUrl, ...dimensions, isPreview: false };
-  } finally {
-    bitmap?.close?.();
   }
 }

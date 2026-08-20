@@ -124,11 +124,9 @@ export async function setArchiveFavorite(archiveId, favorite) {
 }
 
 async function fetchCategories() {
-  try {
-    const data = await lrrApi.getCategories();
-    if (Array.isArray(data)) return data;
-  } catch {}
-  return [];
+  const data = await lrrApi.getCategories();
+  if (!Array.isArray(data)) throw new Error('LANraragi 返回了无效的分类列表');
+  return data;
 }
 
 export function getStoredCategories() {
@@ -138,8 +136,8 @@ export function getStoredCategories() {
 
 export async function loadCategories(options = {}) {
   ensureCurrentScope();
-  const { cacheOnly = false } = options;
-  const cached = loadFromCache();
+  const { cacheOnly = false, forceRefresh = false } = options;
+  const cached = forceRefresh ? null : loadFromCache();
   if (cached) {
     categoriesCache = cached;
     return cached;
@@ -150,12 +148,11 @@ export async function loadCategories(options = {}) {
   if (categoriesPromise) return categoriesPromise;
 
   categoriesPromise = (async () => {
+    const fallback = categoriesCache || loadFromCache() || [];
     try {
-      categoriesCache = await fetchCategories();
-      if (categoriesCache.length > 0) saveToCache(categoriesCache);
-      return categoriesCache;
+      return setCategoriesCache(await fetchCategories());
     } catch {
-      return categoriesCache || [];
+      return fallback;
     } finally {
       categoriesPromise = null;
     }
@@ -177,11 +174,7 @@ export function startCategoriesUpdateTimer() {
   stopCategoriesUpdateTimer();
   const doUpdate = async () => {
     try {
-      const data = await fetchCategories();
-      if (data.length > 0) {
-        categoriesCache = data;
-        saveToCache(data);
-      }
+      setCategoriesCache(await fetchCategories());
     } catch {}
     updateTimer = setTimeout(doUpdate, UPDATE_INTERVAL);
   };

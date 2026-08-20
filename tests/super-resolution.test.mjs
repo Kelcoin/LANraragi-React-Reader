@@ -111,10 +111,10 @@ test('production Worker loads the WebGPU build without WebGL or WASM fallbacks',
   assert.match(ortSource, /ort\.env\.wasm\.wasmPaths\s*=\s*\{[\s\S]*mjs:[\s\S]*wasm:/);
   assert.match(viteSource, /worker:\s*\{\s*format:\s*'es',?\s*\}/);
   assert.match(viteSource, /'Cross-Origin-Opener-Policy':\s*'same-origin'/);
-  assert.match(viteSource, /'Cross-Origin-Embedder-Policy':\s*'require-corp'/);
+  assert.match(viteSource, /'Cross-Origin-Embedder-Policy':\s*'credentialless'/);
   assert.match(viteSource, /preview:\s*\{\s*headers:\s*isolationHeaders\s*\}/);
   assert.match(nginxSource, /add_header Cross-Origin-Opener-Policy "same-origin" always;/);
-  assert.match(nginxSource, /add_header Cross-Origin-Embedder-Policy "require-corp" always;/);
+  assert.match(nginxSource, /add_header Cross-Origin-Embedder-Policy "credentialless" always;/);
   assert.match(runtimeSource, /new Worker\(new URL\('\.\/superResolution\.worker\.js', import\.meta\.url\)/);
   assert.doesNotMatch(runtimeSource, /new globalThis\.Worker\(new URL/);
   assert.doesNotMatch(workerSource, /forceFallbackAdapter/);

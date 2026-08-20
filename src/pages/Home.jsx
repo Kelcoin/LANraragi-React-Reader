@@ -1074,6 +1074,16 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     };
   }, [settingsCategory, showConfig]);
 
+  const refreshCategories = useCallback(async () => {
+    const data = await loadCategories({ forceRefresh: true });
+    if (!Array.isArray(data)) return;
+    setCategories(data);
+    setSelectedCategory((current) => {
+      if (!current || current.id === UNTAGGED_CATEGORY_ID) return current;
+      return data.find((category) => category.id === current.id) || null;
+    });
+  }, []);
+
   const probeServerStatus = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!force && serverProbePromiseRef.current) return serverProbePromiseRef.current;
     if (!force && Date.now() - serverProbeLastAtRef.current < 2500) {
@@ -1085,6 +1095,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       if (!silent) setServerProbeRunning(true);
       try {
         await loadServerInfo({ forceRefresh: true });
+        if (serverOnline !== true) await refreshCategories();
         setServerOnline(true);
         return true;
       } catch {
@@ -1098,7 +1109,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
     serverProbePromiseRef.current = task;
     return task;
-  }, [serverOnline]);
+  }, [refreshCategories, serverOnline]);
 
   const exitColdRestoreMode = useCallback(() => {
     if (!coldRestoreRef.current) return;
@@ -2092,14 +2103,17 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const handleManualRefreshArchives = useCallback(async () => {
     requestPresetMenuClose();
     dispatchArchiveRefresh('start');
-    const refreshed = await doFetch(true, { background: true, force: true, clearSearchCache: true });
+    const [refreshed] = await Promise.all([
+      doFetch(true, { background: true, force: true, clearSearchCache: true }),
+      refreshCategories(),
+    ]);
     if (!refreshed) {
       dispatchArchiveRefresh('fail');
       return;
     }
     dispatchArchiveRefresh('replace');
     requestAnimationFrame(() => dispatchArchiveRefresh('finish'));
-  }, [doFetch, requestPresetMenuClose]);
+  }, [doFetch, refreshCategories, requestPresetMenuClose]);
 
   useEffect(() => {
     if (didApplyUrlFilterRef.current) return;

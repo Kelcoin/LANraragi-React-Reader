@@ -367,6 +367,24 @@ test('paged readers retain the visible frame until the replacement spread is dec
   assert.match(reader, /commits\.forEach\(\(commit\) =>[\s\S]{0,80}commit\(\)/);
 });
 
+test('immersive readers keep the decoded spread visible until the target commits atomically', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const immersiveRenderSpread = targetPending && !webtoonActive \? displayedSpread : currentSpread/);
+  assert.match(reader, /getImmersiveSpreadGroupStyle\(immersiveRenderSpread\)/);
+  assert.match(reader, /const immersiveHasDisplayedBitmap = \[imgCurrRef\.current, imgCurrSecondRef\.current\]/);
+  assert.match(reader, /normalPagePending && !immersiveHasDisplayedBitmap/);
+  assert.match(reader, /imgRef\.current\.removeAttribute\('src'\)/);
+});
+
+test('reader preview transcodes are shared by preload and foreground decode', () => {
+  const preview = read('src/lib/readerPreviewDecode.js');
+  assert.match(preview, /const previewJobs = new Map\(\)/);
+  assert.match(preview, /let previewJob = previewJobs\.get\(cacheKey\)/);
+  assert.match(preview, /previewJobs\.set\(cacheKey, previewJob\)/);
+  assert.match(preview, /previewJobs\.delete\(cacheKey\)/);
+  assert.match(preview, /abortIfNeeded\(signal\);[\s\S]{0,100}return previewUrl/);
+});
+
 test('reader image shells hide native broken-image chrome during decode transitions', () => {
   const reader = read('src/pages/Reader.jsx');
   assert.match(reader, /display:\s*isReady && !cropFrame \? 'block' : 'none'/);

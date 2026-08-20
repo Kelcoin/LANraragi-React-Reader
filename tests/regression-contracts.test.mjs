@@ -2156,6 +2156,16 @@ test('custom theme palette normalizes, persists, generates semantic tokens, and 
   assert.equal(readStoredThemePalette(storage), null);
 });
 
+test('Home refreshes categories after server recovery and manual archive refresh', () => {
+  const home = read('src/pages/Home.jsx');
+  const categories = read('src/lib/categories.js');
+  assert.match(categories, /const \{ cacheOnly = false, forceRefresh = false \} = options/);
+  assert.match(categories, /const cached = forceRefresh \? null : loadFromCache\(\)/);
+  assert.match(home, /const refreshCategories = useCallback\(async \(\) => \{/);
+  assert.match(home, /serverOnline !== true[\s\S]{0,120}refreshCategories\(\)/);
+  assert.match(home, /handleManualRefreshArchives[\s\S]{0,260}refreshCategories\(\)/);
+});
+
 test('custom theme colors drive interactive surfaces and scrollbars without replacing status semantics', () => {
   const violet = createCustomThemeTokens({ accent: '#a85ee8', secondary: '#4a3270', background: '#08091a' }, 'dark');
   const amber = createCustomThemeTokens({ accent: '#d28a3d', secondary: '#6f4b2d', background: '#08091a' }, 'dark');
