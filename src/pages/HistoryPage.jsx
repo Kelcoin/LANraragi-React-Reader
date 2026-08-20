@@ -137,7 +137,17 @@ export default function HistoryPage({ onSelectArchive, onBack }) {
       if (!active) return;
       // Progress may have been written while hydrating; merge keeps those
       // writes (same-time entries fall back to the hydrated snapshot).
-      setHistoryState(mergeLatestHistoryItems(getHistory(), state.histories));
+      const localHistory = getHistory();
+      const mergedHistory = mergeLatestHistoryItems(localHistory, state.histories);
+      const metadataById = new Map(
+        [...localHistory, ...(Array.isArray(state.histories) ? state.histories : [])]
+          .map((item) => [item.id, item]),
+      );
+      setHistoryState(mergedHistory.map((item) => ({
+        ...metadataById.get(item.id),
+        page: item.page,
+        time: item.time,
+      })));
       setHideReadState(state.hideRead);
     }).catch(() => {
       if (active) setHistoryState(getHistory());

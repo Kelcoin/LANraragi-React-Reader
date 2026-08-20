@@ -516,7 +516,10 @@ test('EH comments keep valid cached comments when a background refresh returns n
 test('history page merges writes made during hydration instead of overwriting them', () => {
   const historyPage = read('src/pages/HistoryPage.jsx');
   const watchlistPage = read('src/pages/WatchlistPage.jsx');
-  assert.match(historyPage, /setHistoryState\(mergeLatestHistoryItems\(getHistory\(\), state\.histories\)\)/);
+  assert.match(historyPage, /const localHistory = getHistory\(\)/);
+  assert.match(historyPage, /const mergedHistory = mergeLatestHistoryItems\(localHistory, state\.histories\)/);
+  assert.match(historyPage, /setHistoryState\(mergedHistory\.map\(\(item\) => \(\{/);
+  assert.match(historyPage, /page:\s*item\.page,\s*time:\s*item\.time/);
   assert.match(watchlistPage, /enhanced && enhanced\.addedAt === item\.addedAt \? \{ \.\.\.item, \.\.\.enhanced \} : item/);
 });
 
