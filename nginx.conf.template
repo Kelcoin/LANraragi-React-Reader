@@ -11,7 +11,7 @@ server {
     index index.html;
 
     add_header Cross-Origin-Opener-Policy "same-origin" always;
-    add_header Cross-Origin-Embedder-Policy "require-corp" always;
+    add_header Cross-Origin-Embedder-Policy "credentialless" always;
 
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript;

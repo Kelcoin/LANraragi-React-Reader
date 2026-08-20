@@ -7,6 +7,27 @@ import { hslToHex, parseHexColor, rgbToHsl } from '../src/lib/color.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
+test('Docker publishing uses Node 22 and publishes amd64 and arm64 images', () => {
+  const dockerfile = read('Dockerfile');
+  const workflow = read('.github/workflows/docker-publish.yml');
+  assert.match(dockerfile, /^FROM --platform=\$BUILDPLATFORM node:22-alpine AS builder$/m);
+  assert.match(workflow, /docker\/setup-qemu-action@v4/);
+  assert.match(workflow, /platforms: linux\/amd64,linux\/arm64/);
+  assert.match(workflow, /cancel-in-progress: true/);
+});
+
+test('Home server status stays visible and uses a bounded probe', () => {
+  const home = read('src/pages/Home.jsx');
+  const cache = read('src/lib/serverInfoCache.js');
+  const api = read('src/lib/api.js');
+  assert.match(home, /server-status-button\$\{serverProbeRunning/);
+  assert.match(home, /serverOnline === null \? ' is-pending'/);
+  assert.match(home, /LRR 服务器异常，点击重试/);
+  assert.match(cache, /SERVER_INFO_TIMEOUT_MS = 5000/);
+  assert.match(cache, /controller\.abort\(new Error\('服务器状态检测超时'\)\)/);
+  assert.match(api, /getServerInfo: \(options = \{\}\) => request\('\/info', 'GET', null, options\)/);
+});
+
 test('EH comment client delegates page error classification to Worker', () => {
   const client = read('src/components/EhComments.jsx');
   assert.doesNotMatch(client, /classifyEhGalleryPage/);
@@ -1556,9 +1577,12 @@ test('home continue-reading cards reuse carousel entrance and successful-exit mo
   assert.match(home, /historyExitIds/);
   assert.match(home, /addEventListener\('lrr:history-changed'/);
   assert.match(home, /historyMotionReadyRef/);
+  assert.match(home, /setHistory\(initialHistory\);\s*historyMotionReadyRef\.current = true;/);
   assert.match(home, /if \(!historyMotionReadyRef\.current\)/);
   assert.match(home, /getVisibleContinueReadingItems\(historyRef\.current, hideReadRef\.current\)/);
   assert.match(home, /getVisibleContinueReadingItems\(next, nextHideRead\)/);
+  assert.match(home, /loadHistoryState\(\)\.then\(\(state\) => \{[\s\S]{0,180}hideReadRef\.current = state\.hideRead;[\s\S]{0,80}\}\)/);
+  assert.doesNotMatch(home, /loadHistoryState\(\)\.then\(\(state\) => \{[\s\S]{0,220}setHistory\(state\.histories\)/);
   assert.match(home, /const handleToggleHideRead = useCallback\(\(\) => \{\s*setHideRead\(!hideReadRef\.current\)\.catch/s);
   assert.match(home, /if \(!historyExitTimerRef\.current\) setHistory\(getHistory\(\)\)/);
   assert.match(home, /hist-\$\{h\.id\}[\s\S]{0,250}home-carousel-card-exit[\s\S]{0,180}home-carousel-card-enter/);
@@ -2130,6 +2154,16 @@ test('custom theme palette normalizes, persists, generates semantic tokens, and 
   assert.equal(properties.has('--accent'), false);
   assert.equal(writeStoredThemePalette(null, storage), null);
   assert.equal(readStoredThemePalette(storage), null);
+});
+
+test('Home refreshes categories after server recovery and manual archive refresh', () => {
+  const home = read('src/pages/Home.jsx');
+  const categories = read('src/lib/categories.js');
+  assert.match(categories, /const \{ cacheOnly = false, forceRefresh = false \} = options/);
+  assert.match(categories, /const cached = forceRefresh \? null : loadFromCache\(\)/);
+  assert.match(home, /const refreshCategories = useCallback\(async \(\) => \{/);
+  assert.match(home, /serverOnline !== true[\s\S]{0,120}refreshCategories\(\)/);
+  assert.match(home, /handleManualRefreshArchives[\s\S]{0,260}refreshCategories\(\)/);
 });
 
 test('custom theme colors drive interactive surfaces and scrollbars without replacing status semantics', () => {

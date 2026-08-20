@@ -536,11 +536,16 @@ const PageImage = React.forwardRef(({
     onReady?.(pageIndex);
   }, [cropBorders, imgSrc, onNaturalSize, onReady, pageIndex, pageUrl, serializedDecode]);
 
-  const handleMountedImageError = useCallback(() => {
+  const handleMountedImageError = useCallback((event) => {
+    if (serializedDecode) {
+      event.currentTarget.style.display = 'none';
+      return;
+    }
+    if (event.currentTarget !== imgRef.current || event.currentTarget.src !== imgSrc) return;
     readyPageUrlRef.current = null;
     setLoadState('error');
     onError?.(pageIndex);
-  }, [onError, pageIndex]);
+  }, [imgSrc, onError, pageIndex, serializedDecode]);
 
   const isReady = !!imgSrc && loadState === 'ready';
   useEffect(() => {
@@ -582,7 +587,9 @@ const PageImage = React.forwardRef(({
         overflow: 'hidden',
         minWidth: 0,
         minHeight: 0,
-        background: isImmersive ? 'var(--immersive-bg)' : 'transparent',
+        background: isImmersive
+          ? 'var(--immersive-bg)'
+          : (!isReady ? 'var(--reader-stage)' : 'transparent'),
       }}
     >
       <img
@@ -597,7 +604,7 @@ const PageImage = React.forwardRef(({
         onError={handleMountedImageError}
         onContextMenu={(e) => isImmersive && e.preventDefault()}
         style={{
-          display: cropFrame ? 'none' : 'block',
+          display: isReady && !cropFrame ? 'block' : 'none',
           width: showRotate ? 'auto' : (style?.width || '100%'),
           height: showRotate ? 'auto' : (style?.height || '100%'),
           maxWidth: showRotate ? `${shellSize.height}px` : style?.maxWidth,
@@ -636,7 +643,7 @@ const PageImage = React.forwardRef(({
           }}
         />
       )}
-      {!isReady && (loadState === 'error' || showLoadingStatus) && (
+      {!isReady && ((!serializedDecode && loadState === 'error') || showLoadingStatus) && (
         <div
           className="reader-image-loading-status"
           role="status" aria-live="polite"
@@ -2458,7 +2465,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
           null,
           immersiveSuperResolutionSourceRegistryRef.current,
         );
-        imgRef.current.src = '';
+        imgRef.current.removeAttribute('src');
         imgRef.current.style.display = 'none';
         delete imgRef.current.dataset.pageIndex;
         delete imgRef.current.dataset.readerUnit;
@@ -4043,6 +4050,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const targetPending = pages.length > 0 && currentIndex !== displayedIndex;
   const displayedSpreadIndex = findSpreadIndex(readerSpreads, { pageIndex: displayedIndex, splitPart });
   const displayedSpread = readerSpreads[Math.max(0, displayedSpreadIndex)] || [];
+  // Keep the last decoded spread mounted while the requested spread is still decoding.
+  // This prevents a target geometry/empty image from flashing before the atomic commit.
+  const immersiveRenderSpread = targetPending && !webtoonActive ? displayedSpread : currentSpread;
   const normalSpreadRenderState = getPendingSpreadRenderState(currentSpread, displayedSpread, targetPending);
   const decodeWindowUnits = (() => {
     const entries = new Map();
@@ -4069,7 +4079,9 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   })();
   const normalPagePending = targetPending && !webtoonActive;
   const pageSwitchLabel = normalPagePending ? `正在切换到第 ${normalTargetIndex + 1} 页…` : '';
-  const immersivePagePending = viewMode === 'immersive' && normalPagePending;
+  const immersiveHasDisplayedBitmap = [imgCurrRef.current, imgCurrSecondRef.current]
+    .some((image) => image?.dataset.pageIndex === String(displayedIndex) && image.complete && image.naturalWidth > 0);
+  const immersivePagePending = viewMode === 'immersive' && normalPagePending && !immersiveHasDisplayedBitmap;
   const spreadPageNumbers = [...new Set(currentSpread.map((unit) => unit.pageIndex + 1))].sort((a, b) => a - b);
   const normalPageLabel = currentSpread.some((unit) => unit.cropSide)
     ? `${normalTargetIndex + 1}（${splitPart + 1}/2） / ${pages.length}`
@@ -4576,7 +4588,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     justifyContent: 'center',
                     padding: '24px',
                     textAlign: 'center',
-                    background: 'var(--immersive-bg)',
+                    background: 'var(--reader-stage)',
                     color: 'var(--immersive-text)',
                     fontSize: 'clamp(18px, 3vw, 30px)',
                     fontWeight: 'var(--font-weight-bold)',
@@ -4870,7 +4882,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
               <div
                 ref={zoomWrapperRef}
                 style={{
-                  ...getImmersiveSpreadGroupStyle(currentSpread),
+                  ...getImmersiveSpreadGroupStyle(immersiveRenderSpread),
                   display: 'flex', justifyContent: 'center', alignItems: 'center',
                   transform: `translate3d(${panRef.current.x}px, ${panRef.current.y}px, 0) scale(${zoomScaleRef.current})`,
                   transformOrigin: 'center center',
@@ -4878,7 +4890,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                   willChange: zoomScaleRef.current > 1 ? 'transform' : 'auto',
                 }}
               >
-                <div style={getImmersiveSpreadSlotStyle(currentSpread, 0)}>
+                <div style={getImmersiveSpreadSlotStyle(immersiveRenderSpread, 0)}>
                   <img
                     ref={imgCurrRef}
                     alt=""
@@ -4887,7 +4899,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
                     onContextMenu={(e) => e.preventDefault()}
                   />
                 </div>
-                <div style={{ ...getImmersiveSpreadSlotStyle(currentSpread, 1), display: currentSpread[1] ? 'flex' : 'none' }}>
+                <div style={{ ...getImmersiveSpreadSlotStyle(immersiveRenderSpread, 1), display: immersiveRenderSpread[1] ? 'flex' : 'none' }}>
                   <img
                     ref={imgCurrSecondRef}
                     alt=""

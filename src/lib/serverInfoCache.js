@@ -4,6 +4,7 @@ import { migrateLegacyStorageKey } from './configScope';
 
 const KEY = 'lrr_server_info_cache_v1';
 const TTL = 30 * 60 * 1000;
+const SERVER_INFO_TIMEOUT_MS = 5000;
 
 const BOOLEAN_FIELDS = [
   'has_password',
@@ -59,6 +60,12 @@ export async function loadServerInfo({ cacheOnly = false, forceRefresh = false }
   const cached = forceRefresh ? null : getStoredServerInfo({ allowStale: !cacheOnly });
   if (cached) return cached;
   if (cacheOnly) return null;
-  const info = await lrrApi.getServerInfo();
-  return cacheServerInfo(info);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error('服务器状态检测超时')), SERVER_INFO_TIMEOUT_MS);
+  try {
+    const info = await lrrApi.getServerInfo({ signal: controller.signal });
+    return cacheServerInfo(info);
+  } finally {
+    clearTimeout(timer);
+  }
 }

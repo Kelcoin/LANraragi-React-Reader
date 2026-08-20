@@ -355,7 +355,7 @@ export const lrrApi = {
     `/categories/${encodeURIComponent(categoryId)}/${encodeURIComponent(archiveId)}`,
     'DELETE',
   ),
-  getServerInfo: () => request('/info'),
+  getServerInfo: (options = {}) => request('/info', 'GET', null, options),
 };
 
 export const checkServerStatus = async (url, key) => {

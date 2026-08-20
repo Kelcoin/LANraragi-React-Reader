@@ -1074,6 +1074,16 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     };
   }, [settingsCategory, showConfig]);
 
+  const refreshCategories = useCallback(async () => {
+    const data = await loadCategories({ forceRefresh: true });
+    if (!Array.isArray(data)) return;
+    setCategories(data);
+    setSelectedCategory((current) => {
+      if (!current || current.id === UNTAGGED_CATEGORY_ID) return current;
+      return data.find((category) => category.id === current.id) || null;
+    });
+  }, []);
+
   const probeServerStatus = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!force && serverProbePromiseRef.current) return serverProbePromiseRef.current;
     if (!force && Date.now() - serverProbeLastAtRef.current < 2500) {
@@ -1085,6 +1095,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       if (!silent) setServerProbeRunning(true);
       try {
         await loadServerInfo({ forceRefresh: true });
+        if (serverOnline !== true) await refreshCategories();
         setServerOnline(true);
         return true;
       } catch {
@@ -1098,7 +1109,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
 
     serverProbePromiseRef.current = task;
     return task;
-  }, [serverOnline]);
+  }, [refreshCategories, serverOnline]);
 
   const exitColdRestoreMode = useCallback(() => {
     if (!coldRestoreRef.current) return;
@@ -1172,15 +1183,14 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     const initialHistory = getHistory();
     historyRef.current = initialHistory;
     setHistory(initialHistory);
+    historyMotionReadyRef.current = true;
     if (coldRestoreRef.current) {
-      historyMotionReadyRef.current = true;
       return;
     }
     loadHistoryState().then((state) => {
-      historyRef.current = state.histories;
+      // loadHistoryState emits lrr:history-changed after hydration. Let the
+      // shared refresh handler apply the state so inserted/removed cards animate.
       hideReadRef.current = state.hideRead;
-      setHistory(state.histories);
-      setHideReadState(state.hideRead);
     }).catch(() => {
       const next = getHistory();
       const nextHideRead = getHideRead();
@@ -1188,8 +1198,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
       hideReadRef.current = nextHideRead;
       setHistory(next);
       setHideReadState(nextHideRead);
-    }).finally(() => {
-      historyMotionReadyRef.current = true;
     });
   }, []);
 
@@ -2095,14 +2103,17 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   const handleManualRefreshArchives = useCallback(async () => {
     requestPresetMenuClose();
     dispatchArchiveRefresh('start');
-    const refreshed = await doFetch(true, { background: true, force: true, clearSearchCache: true });
+    const [refreshed] = await Promise.all([
+      doFetch(true, { background: true, force: true, clearSearchCache: true }),
+      refreshCategories(),
+    ]);
     if (!refreshed) {
       dispatchArchiveRefresh('fail');
       return;
     }
     dispatchArchiveRefresh('replace');
     requestAnimationFrame(() => dispatchArchiveRefresh('finish'));
-  }, [doFetch, requestPresetMenuClose]);
+  }, [doFetch, refreshCategories, requestPresetMenuClose]);
 
   useEffect(() => {
     if (didApplyUrlFilterRef.current) return;
@@ -2325,13 +2336,12 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
           <h1 className="home-brand-title" translate="no" aria-label="Readoshi">
             <span className="home-brand-logo" aria-hidden="true" />
             <span className="home-project-name" aria-hidden="true">Readoshi</span>
-            {serverOnline !== null && (
-              <button
+            <button
                 type="button"
                 onClick={() => probeServerStatus({ force: true })}
                 aria-label="探测 LRR 服务器状态"
-                title={serverProbeRunning ? '正在探测 LRR 服务器' : '点击重新探测 LRR 服务器'}
-                className={`btn btn-quiet btn-icon server-status-button${serverProbeRunning ? ' is-probing' : ''}${serverOnline ? ' is-online' : ' is-offline'}`}
+                title={serverProbeRunning ? '正在探测 LRR 服务器' : (serverOnline ? '点击重新探测 LRR 服务器' : 'LRR 服务器异常，点击重试')}
+                className={`btn btn-quiet btn-icon server-status-button${serverProbeRunning ? ' is-probing' : ''}${serverOnline === null ? ' is-pending' : (serverOnline ? ' is-online' : ' is-offline')}`}
               >
                 {serverProbeRunning && (
                   <>
@@ -2340,8 +2350,7 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
                   </>
                 )}
                 <span className="server-status-dot" />
-              </button>
-            )}
+            </button>
           </h1>
           <div className="home-welcome">
             <span>欢迎回来</span><span className="home-welcome-detail">，继续你的探索之旅</span>
