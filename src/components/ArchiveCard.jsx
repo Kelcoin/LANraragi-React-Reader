@@ -98,7 +98,7 @@ function calculatePanelPosition(cardRect, panelHeight, pointerY = null, pointerX
   };
 }
 
-function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, displayMode = 'card', archiveGridItemKey, archiveGridGap = 16, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange, eagerThumbnail = false }) {
+function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, longPressTitle = '', currentPage, progress, showProgressBar, reserveProgressSpace = false, noCrop, cacheOnly = false, wrapStyle, className, overlay, selectionMode = false, selected = false, onSelectToggle, disabled = false, displayMode = 'card', archiveGridItemKey, archiveGridGap = 16, archiveGridChildrenVersion, archiveGridLayoutVersion, onArchiveGridWidthChange, eagerThumbnail = false, disableTagSearch = false }) {
   const id = archive.arcid || archive.id;
   const [hovered, setHovered] = useState(false);
   const [compactPanelKind, setCompactPanelKind] = useState(null);
@@ -281,6 +281,10 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
               if (key) headers['Authorization'] = `Bearer ${encodeApiKey(key)}`;
               const res = await fetch(`${base}/api/archives/${id}/thumbnail`, { headers, signal });
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              // 202 = thumbnail queued as a minion job; its JSON body must never
+              // enter the thumb cache or every consumer (cards, dedupe scans)
+              // would reuse the undecodable payload until the cache is cleared.
+              if (res.status === 202) return null;
               return res.blob();
             });
         if (!isMounted) return;
@@ -335,6 +339,7 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
       if (url) window.open(url, '_blank', 'noopener,noreferrer');
       return;
     }
+    if (disableTagSearch) return;
     const query = `${tag.trim()}, `;
     const filter = { query, sortBy: 'date_added', order: 'desc', active: true };
     localStorage.setItem('lrr_filter', JSON.stringify(filter));
@@ -1108,5 +1113,4 @@ function ArchiveCard({ archive, onClick, onLongPress, onArchiveContextMenu, long
 }
 
 export default React.memo(ArchiveCard);
-
 

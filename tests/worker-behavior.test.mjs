@@ -282,3 +282,111 @@ test('Worker status uses Readoshi branding and animated centered KV panels', asy
   assert.match(html, /class="collapsible is-open"/);
   assert.match(html, /classList\.toggle\('is-open'/);
 });
+
+test('Worker watchlist rejects additions beyond the configured cap', async () => {
+  const dispatch = createWorker();
+  const fill = Array.from({ length: 1000 }, (_, index) => ({ id: `w-${index}`, addedAt: index + 1 }));
+  const put = await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { items: fill } });
+  assert.equal(put.status, 200);
+  const rejected = await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { item: { id: 'overflow', addedAt: 2000 } } });
+  assert.equal(rejected.status, 409);
+  const body = await rejected.json();
+  assert.equal(body.error, 'WATCHLIST_LIMIT_REACHED');
+  assert.equal(body.maxWatchlist, 1000);
+  // Re-adding an existing id at capacity never grows the list and stays allowed.
+  const refresh = await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { item: { id: 'w-0', addedAt: 3000 } } });
+  assert.equal(refresh.status, 200);
+  const state = await (await dispatch('/watchlist', { scope: SCOPE_A })).json();
+  assert.equal(state.items.length, 1000);
+  assert.ok(!state.items.some((item) => item.id === 'overflow'));
+});
+
+test('Worker status reload activates a newly rotated token', async () => {
+  let currentTokens = JSON.stringify(['old-token']);
+  const dispatch = createWorker([], {
+    HISTORY_KV: {
+      async get(key) { return key === 'tokens' ? currentTokens : null; },
+      async put() {},
+      async delete() {},
+      async list() { return { keys: [], list_complete: true }; },
+    },
+  });
+  // Prime the isolate's token cache with the pre-rotation set.
+  const before = await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
+  assert.equal(before.status, 200);
+  currentTokens = JSON.stringify(['new-token']);
+  // The new token must be able to trigger the reload that activates it, even
+  // though every other route still validates against the stale cached set.
+  const withNew = await dispatch('/?reload=1', { token: 'new-token' });
+  assert.equal(withNew.status, 302);
+  const oldAfter = await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
+  assert.equal(oldAfter.status, 401);
+  const newAfter = await dispatch('/history', { token: 'new-token', scope: SCOPE_A });
+  assert.equal(newAfter.status, 200);
+});
+
+test('Worker status reload keeps accepting the pre-rotation token once', async () => {
+  let currentTokens = JSON.stringify(['old-token']);
+  const dispatch = createWorker([], {
+    HISTORY_KV: {
+      async get(key) { return key === 'tokens' ? currentTokens : null; },
+      async put() {},
+      async delete() {},
+      async list() { return { keys: [], list_complete: true }; },
+    },
+  });
+  await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
+  currentTokens = JSON.stringify(['new-token']);
+  const withOld = await dispatch('/?reload=1', { token: 'old-token' });
+  assert.equal(withOld.status, 302);
+  // After that single reload the old token is gone for good.
+  const oldAfter = await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
+  assert.equal(oldAfter.status, 401);
+});
+
+test('Worker kv import rejects malformed history sections instead of poisoning the key', async () => {
+  const dispatch = createWorker();
+  const response = await dispatch('/kv/import', {
+    method: 'POST',
+    scope: SCOPE_A,
+    body: { data: { sections: { history: { history: '{"histories": 42, "hideRead": false}' } } } },
+  });
+  assert.equal(response.status, 400);
+  const put = await dispatch('/history', { method: 'PUT', scope: SCOPE_A, body: { history: { id: 'one', page: 1, time: 1 } } });
+  assert.equal(put.status, 200);
+});
+
+test('Worker kv export omits the sync token from section keys', async () => {
+  const dispatch = createWorker();
+  await dispatch('/history', { method: 'PUT', scope: SCOPE_A, body: { history: { id: 'one', page: 1, time: 1 } } });
+  const payload = await (await dispatch('/kv/export', { method: 'POST', scope: SCOPE_A, body: {} })).json();
+  assert.deepEqual(Object.keys(payload.data.sections.history), ['history']);
+  assert.deepEqual(Object.keys(payload.data.sections.watchlist), ['watchlist']);
+  assert.deepEqual(Object.keys(payload.data.sections.dedupe), ['dedupe']);
+  assert.ok(!JSON.stringify(payload).includes('test-token'));
+});
+
+test('Worker watchlist cap comes from the max_watchlist KV setting', async () => {
+  const dispatch = createWorker([['max_watchlist', '200']]);
+  const fill = Array.from({ length: 200 }, (_, index) => ({ id: `w-${index}`, addedAt: index + 1 }));
+  const put = await (await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { items: fill } })).json();
+  assert.equal(put.count, 200);
+  const state = await (await dispatch('/watchlist', { scope: SCOPE_A })).json();
+  assert.equal(state.maxWatchlist, 200);
+  assert.equal(state.items.length, 200);
+  const rejected = await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { item: { id: 'overflow', addedAt: 5000 } } });
+  assert.equal(rejected.status, 409);
+  assert.equal((await rejected.json()).maxWatchlist, 200);
+});
+
+test('Worker watchlist cap falls back to 1000 when max_watchlist is out of range', async () => {
+  for (const invalid of ['50', '20000', 'abc', '']) {
+    const dispatch = createWorker([['max_watchlist', invalid]]);
+    const fill = Array.from({ length: 1000 }, (_, index) => ({ id: `w-${index}`, addedAt: index + 1 }));
+    const put = await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { items: fill } });
+    assert.equal(put.status, 200, `fill must fit under the default cap for max_watchlist=${JSON.stringify(invalid)}`);
+    const rejected = await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { item: { id: 'overflow', addedAt: 9000 } } });
+    assert.equal(rejected.status, 409, `expected default cap to reject for max_watchlist=${JSON.stringify(invalid)}`);
+    assert.equal((await rejected.json()).maxWatchlist, 1000);
+  }
+});

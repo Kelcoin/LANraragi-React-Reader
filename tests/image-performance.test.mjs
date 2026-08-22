@@ -479,6 +479,15 @@ test('EH comments serve cached comments within the SWR window instead of re-down
   assert.match(cache, /ts: Number\(accessed\.ts \|\| 0\),/);
 });
 
+test('EH comments animate measured content height changes', () => {
+  const comments = read('src/components/EhComments.jsx');
+  const css = read('src/index.css');
+  assert.match(comments, /const commentsBodyRef = useRef\(null\)/);
+  assert.match(comments, /new ResizeObserver\(updateHeight\)/);
+  assert.match(comments, /className="eh-comments-content-shell"/);
+  assert.match(css, /\.eh-comments-content-shell\s*\{[^}]*transition:\s*height/);
+});
+
 test('failed image decodes throw instead of hanging the decode queue', () => {
   const preview = read('src/lib/readerPreviewDecode.js');
   assert.match(preview, /catch \(error\) \{\s*if \(error\?\.name === 'AbortError'\) throw error;\s*\/\/ decode\(\) rejects on load failure[\s\S]*throw new Error\('Image decode failed'\);/);
