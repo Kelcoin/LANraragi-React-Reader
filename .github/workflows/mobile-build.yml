@@ -609,7 +609,7 @@ jobs:
 
     steps:
       - name: Download mobile artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: Readoshi-*
           path: artifacts

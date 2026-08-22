@@ -65,6 +65,6 @@ test('mobile workflow builds APKs and an unsigned IPA with shared release publis
   assert.match(workflow, /Payload\/Readoshi\.app/);
   assert.match(workflow, /-unsigned\.ipa/);
   assert.match(workflow, /publish-release:[\s\S]*needs: \[build-apk, build-ipa\]/);
-  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /actions\/download-artifact@v5/);
   assert.equal(workflow.includes('GH_REPO: ${{ github.repository }}'), true);
 });
