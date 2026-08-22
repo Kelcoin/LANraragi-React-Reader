@@ -1,8 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ArchiveCard from '../components/ArchiveCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import EhFavoriteDeleteSwitch from '../components/EhFavoriteDeleteSwitch';
 import DedupeArchiveContextMenu from '../components/DedupeArchiveContextMenu';
+import DedupeHelpDialog from '../components/DedupeHelpDialog';
 import ArchiveThumbnailDialog from '../components/ArchiveThumbnailDialog';
 import DatePicker from '../components/DatePicker';
 import ExecutionProgressPanel from '../components/ExecutionProgressPanel';
@@ -13,11 +14,13 @@ import {
   buildDuplicateGroups,
   createDedupeSavedResultPayload,
   createCoverSignature,
+  countDuplicateGroupsWithLargePageGap,
   DEDUPE_DEFAULT_START_DATE,
   filterArchivesByDateRange,
   filterDuplicateGroupsForSavedState,
   findDuplicatePairsAsync,
   getDedupeSmartSelectionSignals,
+  getDedupeGroupFilterData,
   getDuplicateSelectionDisabledIds,
   getTodayDateString,
   groupDuplicatePairsByChain,
@@ -33,9 +36,10 @@ import { ARCHIVE_PROGRESS_VISIBILITY, readArchiveProgressVisibility, shouldShowA
 import { scopedStorageKey } from '../lib/configScope';
 import { getArchiveSearchTotal } from '../lib/archiveSearch';
 import { hasValidWorkerConfig } from '../lib/worker-config';
+import { getImageBlob, deleteImageKeys } from '../lib/imageCache';
 import { useToast } from '../components/Toast';
 
-const THUMBNAIL_CONCURRENCY = 4;
+const THUMBNAIL_CONCURRENCY = 6;
 const DEDUPE_SAVED_RESULT_KEY = 'lrr_dedupe_saved_result_v1';
 
 function archiveId(archive) {
@@ -104,17 +108,29 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function loadDeduplicatorThumbnailBlob(id, { delayMs = 25 } = {}) {
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
-    if (attempt > 1) await delay(delayMs * attempt);
-    const thumb = await lrrApi.getArchiveThumbnail(id);
-    if (thumb?.blob) return thumb.blob;
-    if (thumb?.status === 202 && thumb.job) {
-      await waitForMinionJob(thumb.job, { timeoutMs: 2 * 60 * 1000 });
-      continue;
+async function fetchDeduplicatorThumbnail(id, delayMs) {
+  return getImageBlob(`thumb:${id}`, async (signal) => {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      if (attempt > 1) await delay(delayMs * attempt);
+      const thumb = await lrrApi.getArchiveThumbnail(id, { signal });
+      if (thumb?.blob) return thumb.blob;
+      if (thumb?.status === 202 && thumb.job) {
+        await waitForMinionJob(thumb.job, { timeoutMs: 2 * 60 * 1000 });
+      }
     }
+    return null;
+  });
+}
+
+async function loadDeduplicatorThumbnailBlob(id, { delayMs = 25 } = {}) {
+  let blob = await fetchDeduplicatorThumbnail(id, delayMs);
+  // Older ArchiveCard fetchers cached 202 minion-job JSON bodies under `thumb:`;
+  // heal such entries instead of excluding the archive from every scan.
+  if (blob && /json/i.test(blob.type || '')) {
+    await deleteImageKeys([`thumb:${id}`]);
+    blob = await fetchDeduplicatorThumbnail(id, delayMs);
   }
-  return null;
+  return blob;
 }
 
 async function mapWithConcurrency(items, limit, task, onProgress) {
@@ -269,6 +285,46 @@ function StatsPanel({
   );
 }
 
+function DedupeFilterPanel({ filter, onChange }) {
+  const options = [
+    ['all', '全部'],
+    ['image', '基于图像'],
+    ['filename', '基于档案名'],
+    ['chain', '重复链'],
+  ];
+  const handleKeyDown = (event, index) => {
+    let nextIndex;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index + options.length - 1) % options.length;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % options.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = options.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    onChange(options[nextIndex][0]);
+    event.currentTarget.parentElement?.children[nextIndex]?.focus();
+  };
+  return (
+    <div className="dedupe-filter-panel" role="radiogroup" aria-label="重复组筛选">
+      <div className="settings-category-tabs dedupe-filter-options">
+        {options.map(([value, label], index) => (
+          <button
+            key={value}
+            type="button"
+            className={`btn settings-category-tab dedupe-filter-option${filter === value ? ' is-active' : ''}`}
+            role="radio"
+            aria-checked={filter === value}
+            tabIndex={filter === value ? 0 : -1}
+            onClick={() => onChange(value)}
+            onKeyDown={(event) => handleKeyDown(event, index)}
+          >
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DateRangePanel({ range, running, onChange, onReset, onStart }) {
   return (
     <div className="glass-panel workbench-section dedupe-scope-section" style={{ padding: '14px 16px', marginBottom: '16px' }}>
@@ -333,6 +389,7 @@ function DedupeArchiveItem({
         selected={selected}
         onSelectToggle={onToggle}
         disabled={selectionDisabled}
+        disableTagSearch
       />
       <div className="dedupe-card-size-row">
         <div className="dedupe-card-size">
@@ -341,6 +398,7 @@ function DedupeArchiveItem({
         {smartSignals.roughTranslation && <div className="dedupe-card-smart-tag is-warning">渣翻</div>}
         {smartSignals.extraneousAds && <div className="dedupe-card-smart-tag is-warning">外部广告</div>}
         {smartSignals.uncensored && <div className="dedupe-card-smart-tag is-positive">无修正</div>}
+        {smartSignals.noChinese && <div className="dedupe-card-smart-tag is-warning">无汉语</div>}
       </div>
     </div>
   );
@@ -382,6 +440,8 @@ export default function DeduplicatePage({ onBack }) {
   const [processedDeletedArchiveIds, setProcessedDeletedArchiveIds] = useState(new Set());
   const [processedNonDuplicatePairKeys, setProcessedNonDuplicatePairKeys] = useState(new Set());
   const [savedResultAvailable, setSavedResultAvailable] = useState(hasSavedDedupeResult);
+  const [savedResultLoaded, setSavedResultLoaded] = useState(false);
+  const [duplicateSourceByGroupKey, setDuplicateSourceByGroupKey] = useState({});
   const [lastScanStats, setLastScanStats] = useState(null);
   const [workerWarning, setWorkerWarning] = useState('');
   const [progress, setProgress] = useState(null);
@@ -391,6 +451,11 @@ export default function DeduplicatePage({ onBack }) {
   const [failureReport, setFailureReport] = useState(null);
   const [archiveMenu, setArchiveMenu] = useState(null);
   const [thumbnailArchive, setThumbnailArchive] = useState(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [smartSelectPending, setSmartSelectPending] = useState(false);
+  const [includeFilenameOnly, setIncludeFilenameOnly] = useState(false);
+  const [smartSelectionWarningCount, setSmartSelectionWarningCount] = useState(0);
+  const [groupFilter, setGroupFilter] = useState('all');
   const [dateRange, setDateRange] = useState(() => ({
     start: DEDUPE_DEFAULT_START_DATE,
     end: getTodayDateString(),
@@ -403,11 +468,24 @@ export default function DeduplicatePage({ onBack }) {
   const selectionDisabledIds = useMemo(() => (
     getDuplicateSelectionDisabledIds(groups, selectedArchiveIds)
   ), [groups, selectedArchiveIds]);
+  const filterData = useMemo(() => getDedupeGroupFilterData(groups, duplicateSourceByGroupKey), [duplicateSourceByGroupKey, groups]);
   const groupChains = useMemo(() => groupDuplicatePairsByChain(groups), [groups]);
+  const filteredGroups = groupFilter === 'image'
+    ? filterData.imageGroups
+    : groupFilter === 'filename'
+      ? filterData.filenameGroups
+      : groups;
+  const filteredGroupKeys = useMemo(() => new Set(filteredGroups.map(groupKey)), [filteredGroups]);
+  const visibleChains = useMemo(() => {
+    if (groupFilter === 'chain') return filterData.chains;
+    if (groupFilter === 'all') return groupChains;
+    return groupChains.filter((chain) => chain.some((group) => filteredGroupKeys.has(groupKey(group))));
+  }, [filteredGroupKeys, filterData.chains, groupChains, groupFilter]);
   const groupNumberByKey = useMemo(() => new Map(
     groups.map((group, index) => [groupKey(group), index + 1]),
   ), [groups]);
   const ehFavoriteDeleteSync = getEhFavoriteDeleteSync();
+  const allGroupsSelected = workerReady && groups.length > 0 && selectedGroupKeys.size === groups.length;
 
   const handleOpenArchiveMenu = useCallback((archive, point) => {
     setArchiveMenu({ archive, x: point.x, y: point.y });
@@ -417,7 +495,7 @@ export default function DeduplicatePage({ onBack }) {
     const id = archiveId(archive);
     if (!id) return;
     rememberArchiveMetadata(archive, { immediate: true });
-    window.open(`/?id=${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer');
+    window.open(`/?id=${encodeURIComponent(id)}&incognito=1`, '_blank', 'noopener,noreferrer');
   }, []);
 
   const openArchiveThumbnails = useCallback((archive) => {
@@ -455,12 +533,15 @@ export default function DeduplicatePage({ onBack }) {
 
   const runDetection = useCallback(async () => {
     setRunning(true);
+    setSavedResultLoaded(false);
     setWorkerWarning('');
     setSelectedArchiveIds(new Set());
     setSelectedGroupKeys(new Set());
     setManuallyTouchedGroupKeys(new Set());
     setProcessedDeletedArchiveIds(new Set());
     setProcessedNonDuplicatePairKeys(new Set());
+    setDuplicateSourceByGroupKey({});
+    setGroupFilter('all');
     setGroups([]);
     setLastScanStats(null);
 
@@ -500,7 +581,10 @@ export default function DeduplicatePage({ onBack }) {
         if (!id) return null;
         const blob = await loadDeduplicatorThumbnailBlob(id);
         if (!blob) return null;
-        const signature = await createCoverSignature(blob, 8);
+        const signature = await createCoverSignature(blob, 16);
+        signature.filename = archive.filename || archive.title || '';
+        signature.pageCount = Number(archive.pagecount ?? archive.total) || 0;
+        signature.fileSize = Number(archive.size ?? archive.filesize ?? archive.file_size) || 0;
         signatures.set(id, signature);
         return signature;
       }, (done, total) => {
@@ -538,7 +622,11 @@ export default function DeduplicatePage({ onBack }) {
           ? `按 LRReader 规则比较缩略图，已排除 ${missing} 个缺失封面的档案`
           : '按 LRReader 规则比较缩略图',
       });
+      const duplicateSources = {};
       const pairs = await findDuplicatePairsAsync(signatures, ignoredSet, {
+        onPair: ({ left, right, source }) => {
+          duplicateSources[toPairKey(left, right)] = source;
+        },
         onProgress: ({ current, total, pairs }) => {
           setStatus('正在比较封面');
           setProgress({
@@ -550,6 +638,13 @@ export default function DeduplicatePage({ onBack }) {
         },
       });
       const groupIds = buildDuplicateGroups(pairs, ignoredSet);
+      const sourceByGroup = Object.fromEntries(groupIds
+        .map((ids) => {
+          const pairKeys = pairKeysForGroup(ids.map((id) => ({ arcid: id })));
+          return [ids.slice().sort().join('|'), pairKeys.every((key) => duplicateSources[key] === 'filename') ? 'filename' : 'image'];
+        })
+        .filter(([, source]) => source));
+      setDuplicateSourceByGroupKey(sourceByGroup);
       const nextGroups = filterGroupsByProcessedState(groupIds
         .map((ids) => ids.map((id) => allArchiveMap.get(id)).filter(Boolean))
         .filter((group) => group.length > 1), new Set(), new Set());
@@ -578,62 +673,11 @@ export default function DeduplicatePage({ onBack }) {
     }
   }, [dateRange.end, dateRange.start, loadAllArchives, showToast, workerReady]);
 
-  const toggleArchiveSelection = useCallback((archive) => {
-    const id = archiveId(archive);
-    if (!id) return;
-    const ownerGroupKeys = new Set(groups
-      .filter((group) => groupIds(group).includes(id))
-      .map(groupKey));
-    setManuallyTouchedGroupKeys((prev) => new Set([...prev, ...ownerGroupKeys]));
-    setSelectedArchiveIds((prev) => {
-      if (prev.has(id)) {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      }
-      return new Set(normalizeDuplicateSelection(groups, [...prev, id]));
-    });
-    setSelectedGroupKeys((prev) => new Set(Array.from(prev).filter((key) => !ownerGroupKeys.has(key))));
-  }, [groups]);
-
-  const toggleGroupSelection = useCallback((group) => {
-    const key = groupKey(group);
-    const ids = new Set(groupIds(group));
-    setManuallyTouchedGroupKeys((prev) => new Set([...prev, key]));
-    setSelectedGroupKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-    setSelectedArchiveIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.delete(id));
-      return next;
-    });
-  }, []);
-
-  const smartSelect = useCallback(() => {
-    const result = mergeSmartDuplicateSelection(
-      groups,
-      manuallyTouchedGroupKeys,
-      selectedArchiveIds,
-      selectedGroupKeys,
-    );
-    setSelectedArchiveIds(new Set(result.archiveIds));
-    setSelectedGroupKeys(new Set(result.groupKeys));
-  }, [groups, manuallyTouchedGroupKeys, selectedArchiveIds, selectedGroupKeys]);
-
-  const requestExecuteSelected = useCallback(() => {
-    setDeleteSyncConfirmed(true);
-    setExecutionProgress(null);
-    setExecutePending(true);
-  }, []);
-
   const syncSavedResult = useCallback((nextGroups, {
     nextStatus = status,
     nextSelectedArchiveIds = selectedArchiveIds,
     nextSelectedGroupKeys = selectedGroupKeys,
+    nextManuallyTouchedGroupKeys = manuallyTouchedGroupKeys,
   } = {}) => {
     if (!savedResultAvailable) return;
     try {
@@ -646,6 +690,8 @@ export default function DeduplicatePage({ onBack }) {
         workerWarning,
         selectedArchiveIds: nextSelectedArchiveIds,
         selectedGroupKeys: nextSelectedGroupKeys,
+        manuallyTouchedGroupKeys: nextManuallyTouchedGroupKeys,
+        duplicateSourceByGroupKey,
       });
       if (!payload) {
         localStorage.removeItem(key);
@@ -658,7 +704,9 @@ export default function DeduplicatePage({ onBack }) {
     }
   }, [
     dateRange,
+    duplicateSourceByGroupKey,
     lastScanStats,
+    manuallyTouchedGroupKeys,
     savedResultAvailable,
     selectedArchiveIds,
     selectedGroupKeys,
@@ -666,6 +714,143 @@ export default function DeduplicatePage({ onBack }) {
     status,
     workerWarning,
   ]);
+
+  const persistLoadedDedupeSelection = useCallback(({
+    nextSelectedArchiveIds = selectedArchiveIds,
+    nextSelectedGroupKeys = selectedGroupKeys,
+    nextManuallyTouchedGroupKeys = manuallyTouchedGroupKeys,
+  } = {}) => {
+    if (!savedResultLoaded) return;
+    syncSavedResult(groups, {
+      nextSelectedArchiveIds,
+      nextSelectedGroupKeys,
+      nextManuallyTouchedGroupKeys,
+    });
+  }, [groups, manuallyTouchedGroupKeys, savedResultLoaded, selectedArchiveIds, selectedGroupKeys, syncSavedResult]);
+
+  const toggleArchiveSelection = useCallback((archive) => {
+    const id = archiveId(archive);
+    if (!id) return;
+    const ownerGroupKeys = new Set(groups
+      .filter((group) => groupIds(group).includes(id))
+      .map(groupKey));
+    const nextManuallyTouchedGroupKeys = new Set([...manuallyTouchedGroupKeys, ...ownerGroupKeys]);
+    const nextSelectedArchiveIds = selectedArchiveIds.has(id)
+      ? new Set(Array.from(selectedArchiveIds).filter((selectedId) => selectedId !== id))
+      : new Set(normalizeDuplicateSelection(groups, [...selectedArchiveIds, id]));
+    const nextSelectedGroupKeys = new Set(Array.from(selectedGroupKeys)
+      .filter((key) => !ownerGroupKeys.has(key)));
+    setManuallyTouchedGroupKeys(nextManuallyTouchedGroupKeys);
+    setSelectedArchiveIds(nextSelectedArchiveIds);
+    setSelectedGroupKeys(nextSelectedGroupKeys);
+    persistLoadedDedupeSelection({
+      nextSelectedArchiveIds,
+      nextSelectedGroupKeys,
+      nextManuallyTouchedGroupKeys,
+    });
+  }, [groups, manuallyTouchedGroupKeys, persistLoadedDedupeSelection, selectedArchiveIds, selectedGroupKeys]);
+
+  const toggleGroupSelection = useCallback((group) => {
+    const key = groupKey(group);
+    const ids = new Set(groupIds(group));
+    const nextManuallyTouchedGroupKeys = new Set([...manuallyTouchedGroupKeys, key]);
+    const nextSelectedGroupKeys = new Set(selectedGroupKeys);
+    if (nextSelectedGroupKeys.has(key)) nextSelectedGroupKeys.delete(key);
+    else nextSelectedGroupKeys.add(key);
+    const nextSelectedArchiveIds = new Set(selectedArchiveIds);
+    ids.forEach((id) => nextSelectedArchiveIds.delete(id));
+    setManuallyTouchedGroupKeys(nextManuallyTouchedGroupKeys);
+    setSelectedGroupKeys(nextSelectedGroupKeys);
+    setSelectedArchiveIds(nextSelectedArchiveIds);
+    persistLoadedDedupeSelection({
+      nextSelectedArchiveIds,
+      nextSelectedGroupKeys,
+      nextManuallyTouchedGroupKeys,
+    });
+  }, [manuallyTouchedGroupKeys, persistLoadedDedupeSelection, selectedArchiveIds, selectedGroupKeys]);
+
+  const toggleChainSelection = useCallback((chain) => {
+    const chainGroupKeys = chain.map(groupKey);
+    const chainArchiveIds = new Set(chain.flatMap(groupIds));
+    const nextManuallyTouchedGroupKeys = new Set([...manuallyTouchedGroupKeys, ...chainGroupKeys]);
+    const nextSelectedGroupKeys = new Set(selectedGroupKeys);
+    if (chainGroupKeys.every((key) => selectedGroupKeys.has(key))) {
+      chainGroupKeys.forEach((key) => nextSelectedGroupKeys.delete(key));
+    } else {
+      chain.forEach((group) => nextSelectedGroupKeys.add(groupKey(group)));
+    }
+    const nextSelectedArchiveIds = new Set(selectedArchiveIds);
+    chainArchiveIds.forEach((id) => nextSelectedArchiveIds.delete(id));
+    setManuallyTouchedGroupKeys(nextManuallyTouchedGroupKeys);
+    setSelectedGroupKeys(nextSelectedGroupKeys);
+    setSelectedArchiveIds(nextSelectedArchiveIds);
+    persistLoadedDedupeSelection({
+      nextSelectedArchiveIds,
+      nextSelectedGroupKeys,
+      nextManuallyTouchedGroupKeys,
+    });
+  }, [manuallyTouchedGroupKeys, persistLoadedDedupeSelection, selectedArchiveIds, selectedGroupKeys]);
+
+  const smartSelect = useCallback(() => {
+    const result = mergeSmartDuplicateSelection(
+      groups,
+      manuallyTouchedGroupKeys,
+      selectedArchiveIds,
+      selectedGroupKeys,
+      duplicateSourceByGroupKey,
+      { includeFilenameOnly },
+    );
+    const nextSelectedArchiveIds = new Set(result.archiveIds);
+    const nextSelectedGroupKeys = new Set(result.groupKeys);
+    setSelectedArchiveIds(nextSelectedArchiveIds);
+    setSelectedGroupKeys(nextSelectedGroupKeys);
+    persistLoadedDedupeSelection({ nextSelectedArchiveIds, nextSelectedGroupKeys });
+    setSmartSelectPending(false);
+    const largePageGapCount = countDuplicateGroupsWithLargePageGap(groups);
+    setSmartSelectionWarningCount(largePageGapCount);
+  }, [duplicateSourceByGroupKey, groups, includeFilenameOnly, manuallyTouchedGroupKeys, persistLoadedDedupeSelection, selectedArchiveIds, selectedGroupKeys]);
+
+  const requestSmartSelect = useCallback(() => {
+    const hasFilenameOnlyGroups = groups.some((group) => (
+      duplicateSourceByGroupKey[groupKey(group)] === 'filename'
+    ));
+    if (!hasFilenameOnlyGroups) {
+      smartSelect();
+      return;
+    }
+    setIncludeFilenameOnly(false);
+    setSmartSelectPending(true);
+  }, [duplicateSourceByGroupKey, groups, smartSelect]);
+
+  const dismissSmartSelectionWarning = useCallback(() => {
+    setSmartSelectionWarningCount(0);
+  }, []);
+
+  const toggleAllGroups = useCallback(() => {
+    const allGroupKeys = groups.map(groupKey);
+    const nextSelectedGroupKeys = allGroupsSelected ? new Set() : new Set(allGroupKeys);
+    const nextManuallyTouchedGroupKeys = new Set([...manuallyTouchedGroupKeys, ...allGroupKeys]);
+    const nextSelectedArchiveIds = new Set();
+    setManuallyTouchedGroupKeys(nextManuallyTouchedGroupKeys);
+    setSelectedGroupKeys(nextSelectedGroupKeys);
+    setSelectedArchiveIds(nextSelectedArchiveIds);
+    persistLoadedDedupeSelection({
+      nextSelectedArchiveIds,
+      nextSelectedGroupKeys,
+      nextManuallyTouchedGroupKeys,
+    });
+  }, [allGroupsSelected, groups, manuallyTouchedGroupKeys, persistLoadedDedupeSelection]);
+
+  const requestExecuteSelected = useCallback(() => {
+    setDeleteSyncConfirmed(true);
+    setExecutionProgress(null);
+    setExecutePending(true);
+  }, []);
+
+  useEffect(() => {
+    if (!savedResultLoaded) return;
+    syncSavedResult(groups);
+  }, [duplicateSourceByGroupKey, groups, manuallyTouchedGroupKeys, selectedArchiveIds, selectedGroupKeys, savedResultLoaded, syncSavedResult]);
 
   const executeSelected = useCallback(async () => {
     const selectedGroups = workerReady ? groups.filter((group) => selectedGroupKeys.has(groupKey(group))) : [];
@@ -783,6 +968,8 @@ export default function DeduplicatePage({ onBack }) {
       workerWarning,
       selectedArchiveIds,
       selectedGroupKeys,
+      manuallyTouchedGroupKeys,
+      duplicateSourceByGroupKey,
     });
     if (!payload) {
       setStatus('没有可保存的重复分组');
@@ -802,12 +989,15 @@ export default function DeduplicatePage({ onBack }) {
     lastScanStats,
     selectedArchiveIds,
     selectedGroupKeys,
+    manuallyTouchedGroupKeys,
+    duplicateSourceByGroupKey,
     showToast,
     status,
     workerWarning,
   ]);
 
   const loadSavedResult = useCallback(() => {
+    setSavedResultLoaded(false);
     try {
       const raw = localStorage.getItem(scopedStorageKey(DEDUPE_SAVED_RESULT_KEY));
       if (!raw) {
@@ -836,16 +1026,24 @@ export default function DeduplicatePage({ onBack }) {
       setSelectedGroupKeys(workerReady
         ? new Set((payload.selectedGroupKeys || []).filter((key) => visibleGroupKeys.has(key)))
         : new Set());
-      setManuallyTouchedGroupKeys(new Set());
+      setManuallyTouchedGroupKeys(new Set(
+        (payload.manuallyTouchedGroupKeys || []).filter((key) => visibleGroupKeys.has(key)),
+      ));
       setProcessedDeletedArchiveIds(deletedSet);
       setProcessedNonDuplicatePairKeys(nonDuplicateSet);
       setIgnoredPairs(new Set(Array.isArray(payload.ignoredPairs) ? payload.ignoredPairs : []));
+      setDuplicateSourceByGroupKey(payload.duplicateSourceByGroupKey || {});
+      setGroupFilter('all');
       setDateRange(normalizeDedupeDateRange(payload.dateRange?.start, payload.dateRange?.end, getTodayDateString()));
       setLastScanStats(payload.lastScanStats || null);
       setWorkerWarning(payload.workerWarning || '');
       setProgress(null);
       setSavedResultAvailable(true);
+      setSavedResultLoaded(true);
       setStatus(payload.status || '已载入保存结果');
+      if (Number(payload.version) < 3) {
+        showToast('此结果由旧版本保存，缺少判定来源：智能选择将跳过全部组，建议重新检测', 'info');
+      }
     } catch (err) {
       showToast(err.message || '载入保存结果失败', 'error');
     }
@@ -855,30 +1053,34 @@ export default function DeduplicatePage({ onBack }) {
     try {
       localStorage.removeItem(scopedStorageKey(DEDUPE_SAVED_RESULT_KEY));
       setSavedResultAvailable(false);
+      setSavedResultLoaded(false);
       setStatus('已删除保存结果');
     } catch (err) {
       showToast(err.message || '删除保存结果失败', 'error');
     }
   }, [showToast]);
 
-  const allGroupsSelected = workerReady && groups.length > 0 && selectedGroupKeys.size === groups.length;
-
   const renderGroup = (group) => {
     const key = groupKey(group);
     const selected = selectedGroupKeys.has(key);
+    const hasLargePageGap = countDuplicateGroupsWithLargePageGap([group]) > 0;
     return (
       <section
         key={key}
-        className={`dedupe-group${selected ? ' is-selected' : ''}`}
+        className={`dedupe-group${selected ? ' is-selected' : ''}${hasLargePageGap ? ' is-page-gap-warning' : ''}`}
         onClick={workerReady ? () => toggleGroupSelection(group) : undefined}
         style={{
           position: 'relative',
-          border: selected
+          border: hasLargePageGap
+            ? '1px solid var(--danger)'
+            : selected
             ? '1px solid var(--warning-border)'
             : '1px solid var(--glass-border)',
           borderRadius: '8px',
           padding: '26px 16px 18px',
-          background: selected
+          background: hasLargePageGap
+            ? 'var(--danger-soft)'
+            : selected
             ? 'var(--warning-surface)'
             : 'var(--surface-1)',
         }}
@@ -920,6 +1122,25 @@ export default function DeduplicatePage({ onBack }) {
     );
   };
 
+  const renderChain = (chain) => {
+    const chainSelected = chain.every((group) => selectedGroupKeys.has(groupKey(group)));
+    return (
+      <div className="dedupe-chain" key={chain.map(groupKey).join('~')}>
+        {workerReady ? (
+          <button
+            type="button"
+            className="dedupe-chain-label"
+            aria-pressed={chainSelected}
+            onClick={() => toggleChainSelection(chain)}
+          >
+            关联重复链
+          </button>
+        ) : <div className="dedupe-chain-label">关联重复链</div>}
+        {chain.map(renderGroup)}
+      </div>
+    );
+  };
+
   return (
     <div className="dedupe-page workbench-page">
       <header className="workbench-header dedupe-page-header">
@@ -928,6 +1149,7 @@ export default function DeduplicatePage({ onBack }) {
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button type="button" className="btn" onClick={onBack} disabled={running}>返回</button>
+          <button type="button" className="btn" onClick={() => setHelpOpen(true)}>帮助</button>
           <button type="button" className="btn" onClick={saveResult} disabled={running || groups.length === 0}>保存结果</button>
           <button type="button" className="btn" onClick={loadSavedResult} disabled={running || !savedResultAvailable}>载入保存</button>
           <button type="button" className="btn" onClick={deleteSavedResult} disabled={running || !savedResultAvailable}>删除保存</button>
@@ -958,27 +1180,25 @@ export default function DeduplicatePage({ onBack }) {
         selectedArchiveCount={selectedArchiveIds.size}
         selectedGroupCount={selectedGroupKeys.size}
         running={running}
-        onSmartSelect={smartSelect}
-        onToggleAllGroups={() => {
-          const allGroupKeys = groups.map(groupKey);
-          setManuallyTouchedGroupKeys((prev) => new Set([...prev, ...allGroupKeys]));
-          setSelectedGroupKeys(allGroupsSelected ? new Set() : new Set(allGroupKeys));
-          setSelectedArchiveIds(new Set());
-        }}
+        onSmartSelect={requestSmartSelect}
+        onToggleAllGroups={toggleAllGroups}
         onExecute={requestExecuteSelected}
         showWorkerActions={workerReady}
       />
 
+      {groups.length > 0 && <DedupeFilterPanel filter={groupFilter} onChange={setGroupFilter} />}
+
       <div className="dedupe-groups-grid">
-        {groupChains.map((chain) => (
-          chain.length > 1 ? (
-            <div className="dedupe-chain" key={chain.map(groupKey).join('~')}>
-              <div className="dedupe-chain-label">关联重复链</div>
-              {chain.map(renderGroup)}
-            </div>
-          ) : renderGroup(chain[0])
+        {visibleChains.map((chain) => (
+          chain.length > 1 ? renderChain(chain) : renderGroup(chain[0])
         ))}
       </div>
+
+      {!running && groups.length > 0 && (
+        visibleChains.length === 0
+      ) && (
+        <EmptyState title="没有符合筛选条件的重复组" detail="可切换到其他筛选条件查看检测结果。" />
+      )}
 
       {!running && groups.length === 0 && !lastScanStats && (
         <EmptyState
@@ -1000,12 +1220,42 @@ export default function DeduplicatePage({ onBack }) {
         onOpenNewTab={openArchiveInNewTab}
         onViewThumbnails={openArchiveThumbnails}
       />
+      <DedupeHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       {thumbnailArchive && (
         <ArchiveThumbnailDialog
           archive={thumbnailArchive}
           onClose={() => setThumbnailArchive(null)}
         />
       )}
+      <ConfirmDialog
+        open={smartSelectPending}
+        title="确认智能选择范围"
+        message="基于档案名判定不一定准确，可能把实际不同的档案归为重复。默认不纳入这类重复组，请确认是否包含。"
+        confirmLabel="开始智能选择"
+        cancelLabel="取消"
+        destructive={false}
+        onConfirm={smartSelect}
+        onCancel={() => setSmartSelectPending(false)}
+      >
+        <label className="surface dedupe-smart-select-option">
+          <input
+            type="checkbox"
+            checked={includeFilenameOnly}
+            onChange={(event) => setIncludeFilenameOnly(event.target.checked)}
+          />
+          <span>包含基于档案名判定的重复组</span>
+        </label>
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={smartSelectionWarningCount > 0}
+        title="确认智能选择结果"
+        message={`检测到 ${smartSelectionWarningCount} 组重复档案的页数差距超过 10 页，智能选择结果可能不准确，请查看已标色的重复组。`}
+        confirmLabel="知道了"
+        showCancel={false}
+        destructive={false}
+        onConfirm={dismissSmartSelectionWarning}
+        onCancel={dismissSmartSelectionWarning}
+      />
       <ConfirmDialog
         open={executePending}
         title="确认执行去重操作"

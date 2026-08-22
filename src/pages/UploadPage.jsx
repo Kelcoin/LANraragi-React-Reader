@@ -406,7 +406,13 @@ export default function UploadPage() {
         onEditMetadata={(archive, options) => navigateToMetadata(archive.arcid || archive.id, options)}
         onDownload={handleArchiveDownload}
         onCopyLink={handleArchiveCopyLink}
-        onAddWatchlist={(archive) => addWatchlistItem(archive)}
+        onAddWatchlist={(archive) => {
+          addWatchlistItem(archive).catch((error) => {
+            if (error?.code === 'WATCHLIST_LIMIT_REACHED') {
+              showToast(`待看档案已达上限${error.maxWatchlist ? `（${error.maxWatchlist} 个）` : ''}，请先移除一些待看档案`, 'error');
+            }
+          });
+        }}
         onDelete={(archive) => { setArchiveDeleteSyncConfirmed(true); setArchiveDeleteTarget(archive); }}
       />
       <ConfirmDialog

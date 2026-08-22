@@ -1249,7 +1249,6 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
   const [randomEntriesError, setRandomEntriesError] = useState('');
   const [historyDeleteTarget, setHistoryDeleteTarget] = useState(null);
   const [coverSetting, setCoverSetting] = useState(false);
-  const [coverSetPage, setCoverSetPage] = useState(0);
   const [coverConfirmPage, setCoverConfirmPage] = useState(0);
   const [progressClearing, setProgressClearing] = useState(false);
   const [thumbnailQueueState, setThumbnailQueueState] = useState('idle');
@@ -2210,6 +2209,10 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     readerCleanupTimersRef.current.clear();
     lrrProgressRetryTimersRef.current.forEach((timer) => clearTimeout(timer));
     lrrProgressRetryTimersRef.current.clear();
+    if (singleTapTimerRef.current) {
+      clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = null;
+    }
     releaseReaderImageElements();
   }, [releaseReaderImageElements]);
 
@@ -3460,8 +3463,12 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     });
   }, [pauseSuperResolutionForInteraction]);
 
+  // First non-empty manifest must re-run the restore scroll: with a fixed
+  // webtoon layout the effect's deps are already stable at mount while pages
+  // are still loading, so saved progress would otherwise never scroll.
+  const webtoonPagesReady = pages.length > 0;
   useLayoutEffect(() => {
-    if (!webtoonActive) return undefined;
+    if (!webtoonActive || !webtoonPagesReady) return undefined;
     const frame = requestAnimationFrame(() => {
       const container = webtoonContainerRef.current;
       const target = container?.querySelector(`[data-webtoon-page="${currentIndexRef.current}"]`);
@@ -3470,7 +3477,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
       handleWebtoonScroll();
     });
     return () => cancelAnimationFrame(frame);
-  }, [handleWebtoonScroll, viewMode, webtoonActive]);
+  }, [handleWebtoonScroll, viewMode, webtoonActive, webtoonPagesReady]);
 
   const handlePageVisualReady = useCallback((pageIndex) => {
     if (typeof pageIndex !== 'number') return;
@@ -3532,15 +3539,13 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
     try {
       await lrrApi.setArchiveThumbnail(archiveId, page);
       await deleteImageKeys([`thumb:${archiveId}`, `thumb:hist:${archiveId}`]);
-      setCoverSetPage(page);
       setCoverConfirmPage(0);
-      scheduleReaderCleanupTimer(() => setCoverSetPage((prev) => (prev === page ? 0 : prev)), 1800);
     } catch (err) {
       showToast(err.message || '设置封面失败', 'error');
     } finally {
       setCoverSetting(false);
     }
-  }, [archiveId, coverConfirmPage, coverSetting, scheduleReaderCleanupTimer, showToast]);
+  }, [archiveId, coverConfirmPage, coverSetting, showToast]);
 
   // ===== Back handler: immersive → normal mode, not home =====
   const handleGoBack = useCallback(() => {
@@ -4275,7 +4280,7 @@ export default function Reader({ archiveId, onBack, coldRestoreBoot = false, inc
             >
               <ReaderToolbarButtonContent
                 icon="cover"
-                label={coverSetting ? '设置中...' : coverSetPage === currentIndex + 1 ? '已设为封面' : '设为封面'}
+                label="设为封面"
               />
             </button>
             {viewMode !== 'immersive' && (

@@ -164,6 +164,15 @@ services:
 
 直接打开 Worker 根地址可查看状态并导入或导出阅读历史、待看列表和非重复标记。
 
+### Worker KV 可选配置
+
+除 `tokens` 外，Worker 还会读取以下可选 KV 键（均有 60 秒内存缓存，改动后最多一分钟生效）：
+
+| KV 键 | 取值范围 | 默认值 | 说明 |
+|-------|----------|--------|------|
+| `history_retention_days` | 正整数 | `90` | 阅读历史在 Worker 中的保留天数，超期条目会被清理 |
+| `max_watchlist` | `100` – `10000` | `1000` | 待看档案在 Worker 中的最大同步条数；达到上限后再添加会返回 `WATCHLIST_LIMIT_REACHED`（HTTP 409），前端以 toast 提示需先移除。键不存在或值不合法时使用默认值。重加已有条目不算新增，不受影响。 |
+
 ### E-Hentai
 
 评论互动和同步移除收藏需要有效的 Worker 配置、E-Hentai Cookie，以及档案元数据中的 E-Hentai 来源链接。同步移除收藏至少需要 Cookie 包含 `ipb_member_id` 和 `ipb_pass_hash`。

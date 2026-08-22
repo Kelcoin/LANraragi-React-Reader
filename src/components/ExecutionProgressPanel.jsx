@@ -11,7 +11,7 @@ export default function ExecutionProgressPanel({ progress }) {
         <strong>{progress.label}</strong>
         <span>{current} / {total}</span>
       </div>
-      {progress.detail && <div className="dedupe-execution-progress-detail">{progress.detail}</div>}
+      <div className="dedupe-execution-progress-detail">{progress.detail || '\u00a0'}</div>
       <div className="dedupe-execution-progress-track" aria-hidden="true">
         <span style={{ transform: `scaleX(${percent / 100})` }} />
       </div>

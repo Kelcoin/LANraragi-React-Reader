@@ -137,7 +137,17 @@ async function workerJson(endpoint, { method = 'GET', body = null, keepalive = f
     ? navigator.locks.request('lrr-worker-write-v1', { mode: 'exclusive' }, perform)
     : perform();
   const res = await request;
-  if (!res.ok) throw new Error(`Worker Error: ${res.status}`);
+  if (!res.ok) {
+    // Carry structured error fields (e.g. WATCHLIST_LIMIT_REACHED + maxWatchlist)
+    // so callers can distinguish actionable rejections from generic failures.
+    let errInfo = null;
+    try { errInfo = JSON.parse(await res.text()); } catch {}
+    const error = new Error(`Worker Error: ${res.status}`);
+    error.status = res.status;
+    if (errInfo?.error) error.code = errInfo.error;
+    if (typeof errInfo?.maxWatchlist === 'number') error.maxWatchlist = errInfo.maxWatchlist;
+    throw error;
+  }
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
@@ -232,13 +242,22 @@ export const addWatchlistItem = async (archive) => {
   const item = normalizeWatchlistItem(archive);
   if (!item) return false;
   item.addedAt = Date.now();
-  const next = getStoredWatchlist().filter((entry) => entry.id !== item.id);
+  const stored = getStoredWatchlist();
+  const next = stored.filter((entry) => entry.id !== item.id);
   writeWatchlistCache([item, ...next]);
   if (!hasRemoteWatchlist()) return true;
+  // The worker is the single capacity authority (max_watchlist KV setting);
+  // a WATCHLIST_LIMIT_REACHED rejection propagates so callers can toast.
   try {
     await workerJson('/watchlist', { method: 'PUT', body: { item } });
     return true;
-  } catch {
+  } catch (error) {
+    if (error?.code === 'WATCHLIST_LIMIT_REACHED') {
+      // Roll back the optimistic local write: a kept entry would re-sync (and
+      // re-fail) on every hydration cycle.
+      writeWatchlistCache(stored);
+      throw error;
+    }
     return false;
   }
 };

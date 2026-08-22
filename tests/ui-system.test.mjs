@@ -237,13 +237,10 @@ test('task4 Home surfaces use semantic controls and page-owned settings styles',
   }
   assert.match(home, /server-status-button\$\{serverProbeRunning/);
   assert.match(home, /history-view-all-btn/);
-  assert.match(home, /const \[showBackToTop, setShowBackToTop\] = useState\(false\)/);
-  assert.match(home, /window\.addEventListener\('scroll', handleHomeScroll, \{ passive: true \}\)/);
-  assert.match(home, /window\.scrollTo\(\{ top: 0, left: 0, behavior: 'smooth' \}\)/);
-  assert.match(home, /aria-label="返回顶部"/);
-  assert.match(home, /home-back-to-top\$\{showBackToTop \? ' is-visible' : ''\}/);
-  assert.match(pages, /\.home-back-to-top\s*\{[^}]*position:\s*fixed;[^}]*opacity:\s*0;[^}]*transform:\s*translateY\(10px\) scale\(\.94\);/s);
-  assert.match(pages, /\.home-back-to-top\.is-visible\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*translateY\(0\) scale\(1\);/s);
+  assert.doesNotMatch(home, /showBackToTop|home-back-to-top|返回顶部/);
+  assert.match(read('src/components/BackToTop.jsx'), /aria-label="返回顶部"/);
+  assert.match(pages, /\.back-to-top\s*\{[^}]*position:\s*fixed;[^}]*opacity:\s*0;[^}]*transform:\s*translateY\(10px\) scale\(\.94\);/s);
+  assert.match(pages, /\.back-to-top\.is-visible\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*translateY\(0\) scale\(1\);/s);
   assert.match(home, /archive-search-clear/);
   assert.match(home, /archive-search-preset-toggle/);
   assert.match(home, /className="surface archive-workspace section-reveal/);

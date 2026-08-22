@@ -218,6 +218,22 @@ export async function getImage(key, fetcher, { priority = IMAGE_LOAD_PRIORITY.NO
   return rememberBlob(key, blob);
 }
 
+export async function getImageBlob(key, fetcher, { priority = IMAGE_LOAD_PRIORITY.NORMAL } = {}) {
+  const scope = getConfigScopeId();
+  key = scopedCacheKey(key);
+  const memoryEntry = getMemoryEntry(key);
+  if (memoryEntry) return memoryEntry.blob;
+
+  try {
+    const blob = await scheduleImageLoad(key, (signal) => fetchForScope(fetcher, scope, signal), priority);
+    if (!blob) return null;
+    if (!getMemoryEntry(key)) rememberBlob(key, blob);
+    return blob;
+  } catch {
+    return null;
+  }
+}
+
 export async function clearImageCache({ disk = false } = {}) {
   for (const [, entry] of MEM_CACHE) {
     if (entry?.objectUrl) URL.revokeObjectURL(entry.objectUrl);

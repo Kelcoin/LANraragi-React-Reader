@@ -127,7 +127,25 @@ test('dedupe mutations synchronize an existing saved result and clear it when co
   const page = read('src/pages/DeduplicatePage.jsx');
   assert.match(page, /syncSavedResult\(nextGroups/);
   assert.match(page, /createDedupeSavedResultPayload/);
+  assert.match(page, /duplicateSourceByGroupKey/);
   assert.match(page, /localStorage\.removeItem\(scopedStorageKey\(DEDUPE_SAVED_RESULT_KEY\)\)/);
+  assert.match(page, /const \[savedResultLoaded, setSavedResultLoaded\] = useState\(false\)/);
+  assert.match(page, /if \(!savedResultLoaded\) return;/);
+  assert.match(page, /setSavedResultLoaded\(true\)/);
+  assert.match(page, /setSavedResultLoaded\(false\);[\s\S]*?setGroups\(\[\]\)/);
+});
+
+test('shared back-to-top control is mounted for every non-reader route', () => {
+  const app = read('src/App.jsx');
+  const home = read('src/pages/Home.jsx');
+  const control = read('src/components/BackToTop.jsx');
+  assert.match(app, /import BackToTop from ['"]\.\/components\/BackToTop['"]/);
+  // Reader owns the whole viewport (webtoon scrolls the window); the floating
+  // control must stay disabled there instead of sitting on top of the manga.
+  assert.match(app, /<BackToTop enabled=\{route\.kind !== 'reader'\} \/>/);
+  assert.match(control, /window\.addEventListener\(['"]scroll['"]/);
+  assert.match(control, /aria-label="返回顶部"/);
+  assert.doesNotMatch(home, /showBackToTop|home-back-to-top|返回顶部/);
 });
 
 test('global UI copy and selection styles use the archive terminology consistently', () => {
@@ -229,6 +247,32 @@ test('home lazy route keeps archive skeleton visible during chunk loading', () =
   assert.match(app, /<Suspense fallback=\{getRouteFallback\(route\)\}>/);
   assert.doesNotMatch(app, /ReaderRouteFallback|reader-route-fallback/);
   assert.doesNotMatch(css, /reader-route-fallback/);
+});
+
+test('upload and dedupe route skeletons reserve the current page geometry and actions', () => {
+  const app = read('src/App.jsx');
+  const css = read('src/index.css');
+  assert.match(app, /function UploadRouteFallback()[\s\S]*upload-route-fallback-header/);
+  assert.match(app, /upload-route-fallback-title-icon/);
+  assert.match(app, /upload-route-fallback-actions/);
+  assert.match(app, /upload-route-fallback-tabs/);
+  assert.match(app, /upload-route-fallback-results/);
+  assert.match(app, /dedupe-route-fallback-help/);
+  assert.match(css, /\.upload-route-fallback-panel\s*\{[\s\S]*min-height:\s*460px;/);
+  assert.match(css, /\.upload-route-fallback-dropzone\s*\{[\s\S]*min-height:\s*190px;/);
+  assert.match(css, /\.upload-route-fallback-results\s*\{[\s\S]*min-height:/);
+});
+
+test('metadata route skeleton mirrors the metadata editor fields and actions', () => {
+  const app = read('src/App.jsx');
+  const css = read('src/index.css');
+  assert.match(app, /function MetadataRouteFallback\(\)[\s\S]*metadata-route-fallback-fields/);
+  assert.match(app, /metadata-route-fallback-summary/);
+  assert.match(app, /metadata-route-fallback-tags-group/);
+  assert.match(app, /metadata-route-fallback-plugin/);
+  assert.match(app, /metadata-route-fallback-actions/);
+  assert.match(css, /\.metadata-route-fallback-plugin\s*\{[\s\S]*grid-template-columns:/);
+  assert.match(css, /\.metadata-route-fallback-actions\s*\{[\s\S]*justify-content:\s*center/);
 });
 
 test('archive search preset menu animates out before unmounting', () => {
@@ -572,7 +616,7 @@ test('dedupe results use compact persistence, interlocked selection, and wide-ca
   const page = read('src/pages/DeduplicatePage.jsx');
   const deduplicate = read('src/lib/deduplicate.js');
   const css = read('src/index.css');
-  assert.match(deduplicate, /version:\s*2/);
+  assert.match(deduplicate, /version:\s*3/);
   assert.match(deduplicate, /compactDedupeArchives\(visibleGroups\)/);
   assert.match(page, /normalizeDuplicateSelection/);
   assert.match(page, /getDuplicateSelectionDisabledIds/);
@@ -604,6 +648,12 @@ test('dedupe execution combines actions, groups chains, reports progress, and pr
   const css = read('src/index.css');
   assert.match(page, /groupDuplicatePairsByChain/);
   assert.match(page, /className="dedupe-chain"/);
+  assert.match(page, /toggleChainSelection/);
+  assert.ok(page.includes('chainGroupKeys.every((key) => selectedGroupKeys.has(key))'));
+  assert.ok(page.includes('chain.forEach((group) => nextSelectedGroupKeys.add(groupKey(group)))'));
+  assert.ok(page.includes('className="dedupe-chain-label"'));
+  assert.ok(page.includes('aria-pressed={chainSelected}'));
+  assert.ok(page.includes('toggleChainSelection(chain)'));
   assert.match(page, />\s*执行\s*</);
   assert.doesNotMatch(page, />\s*删除选中\s*</);
   assert.doesNotMatch(page, />\s*标记分组不重复\s*</);
@@ -625,7 +675,7 @@ test('dedupe cards own a focused context menu and progress-free central thumbnai
   assert.match(page, /onContextMenu=\{handleOpenArchiveMenu\}/);
   assert.match(page, /<DedupeArchiveContextMenu/);
   assert.match(page, /<ArchiveThumbnailDialog/);
-  assert.match(menu, />\s*打开阅读页\s*</);
+  assert.match(menu, />\s*打开无痕阅读页\s*</);
   assert.doesNotMatch(menu, /新标签/);
   assert.match(menu, /查看缩略图/);
   assert.doesNotMatch(menu, /删除|下载|编辑元数据/);
@@ -637,6 +687,7 @@ test('dedupe cards own a focused context menu and progress-free central thumbnai
   assert.match(dialog, /<ArchivePageThumbnail/);
   assert.match(dialog, /className="archive-thumbnail-dialog-thumb-media"/);
   assert.match(page, /rememberArchiveMetadata\(archive, \{ immediate: true \}\)/);
+  assert.match(page, /incognito=1/);
   assert.match(css, /\.archive-thumbnail-dialog-grid\s*\{[^}]*grid-auto-rows:\s*176px;/s);
   assert.match(css, /\.archive-thumbnail-dialog-thumb-media\s*\{[^}]*position:\s*relative;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
   assert.match(css, /\.archive-thumbnail-dialog-thumb-media\s*>\s*\.archive-page-thumbnail-(?:image|placeholder)/s);
@@ -647,17 +698,65 @@ test('dedupe cards own a focused context menu and progress-free central thumbnai
   assert.match(css, /\.archive-thumbnail-dialog-preview-image/);
 });
 
+test('dedupe execution keeps the filter visible and reserves stable progress title space', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const progress = read('src/components/ExecutionProgressPanel.jsx');
+  const css = read('src/index.css');
+  assert.match(page, /<DedupeFilterPanel filter=\{groupFilter\} onChange=\{setGroupFilter\} \/>/);
+  assert.doesNotMatch(page, /!running && groups\.length > 0 && \(\s*<DedupeFilterPanel/);
+  assert.match(page, /groupFilter === 'image'[\s\S]*renderChain/);
+  assert.match(page, /groupFilter === 'filename'[\s\S]*renderChain/);
+  assert.match(progress, /className="dedupe-execution-progress-detail"/);
+  assert.match(css, /\.dedupe-execution-progress-detail\s*\{[^}]*min-height:/s);
+});
+
+test('dedupe help, tag isolation, and loaded selection persistence contracts exist', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  const help = read('src/components/DedupeHelpDialog.jsx');
+  const archiveCard = read('src/components/ArchiveCard.jsx');
+  assert.match(page, /DedupeHelpDialog/);
+  assert.match(help, /className="dialog confirm-dialog dedupe-help-dialog dropdown-animate"/);
+  assert.match(help, /选中的档案.*删除|删除.*选中的档案/s);
+  assert.match(archiveCard, /disableTagSearch/);
+  assert.match(page, /disableTagSearch/);
+  assert.match(page, /persistLoadedDedupeSelection/);
+});
+
+test('smart selection asks before including filename evidence and confirms risky page gaps', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  assert.match(page, /smartSelectPending/);
+  assert.match(page, /includeFilenameOnly/);
+  assert.match(page, /includeFilenameOnly={false}|setIncludeFilenameOnly\(false\)/);
+  assert.match(page, /hasFilenameOnlyGroups/);
+  assert.match(page, /if \(!hasFilenameOnlyGroups\) \{[\s\S]*smartSelect\(\);[\s\S]*return;/);
+  assert.match(page, /基于档案名判定不一定准确/);
+  assert.match(page, /smartSelectionWarningCount/);
+  assert.match(page, /超过 10 页/);
+  assert.match(page, /showCancel=\{false\}/);
+  assert.match(page, /知道了/);
+  assert.match(page, /is-page-gap-warning/);
+});
+
 test('dedupe groups expose broad group selection and visible smart-selection tags', () => {
   const page = read('src/pages/DeduplicatePage.jsx');
   const css = read('src/index.css');
 
   assert.match(page, /getDedupeSmartSelectionSignals/);
-  assert.match(page, /className=\{`dedupe-group\$\{selected \? ' is-selected' : ''\}`\}[\s\S]*?onClick=\{workerReady \? \(\) => toggleGroupSelection\(group\) : undefined\}/);
+  assert.match(page, /className=\{`dedupe-group\$\{selected \? ' is-selected' : ''\}\$\{hasLargePageGap \? ' is-page-gap-warning' : ''\}`\}[\s\S]*?onClick=\{workerReady \? \(\) => toggleGroupSelection\(group\) : undefined\}/);
   assert.match(page, /className="dedupe-group-toggle"[\s\S]*?onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*toggleGroupSelection\(group\);/);
   assert.match(page, /className=\{`dedupe-card-item[\s\S]*?onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.match(page, /smartSignals\.roughTranslation[\s\S]*?>渣翻</);
   assert.match(page, /smartSignals\.extraneousAds[\s\S]*?>外部广告</);
   assert.match(page, /smartSignals\.uncensored[\s\S]*?>无修正</);
+  assert.ok(page.includes('{smartSignals.noChinese && <div className="dedupe-card-smart-tag is-warning">无汉语</div>}'));
+  assert.match(page, /includeFilenameOnly/);
+  assert.match(page, /role="radiogroup" aria-label="重复组筛选"/);
+  assert.match(page, /tabIndex=\{filter === value \? 0 : -1\}/);
+  assert.match(page, /ArrowLeft|ArrowRight/);
+  assert.doesNotMatch(page, /dedupe-filter-count/);
+  assert.ok(page.includes("['image', '基于图像'"));
+  assert.ok(page.includes("['filename', '基于档案名'"));
+  assert.ok(page.includes("['chain', '重复链'"));
   assert.match(css, /\.dedupe-card-smart-tag\.is-warning/);
   assert.match(css, /\.dedupe-card-smart-tag\.is-positive/);
 });
@@ -695,7 +794,8 @@ test('dedupe bulk group toggle lives below scan stats and its context menu stays
   const css = read('src/index.css');
   assert.match(page, /function StatsPanel\([\s\S]*aria-pressed=\{allGroupsSelected\}[\s\S]*全选分组/);
   assert.match(page, /<StatsPanel[\s\S]*allGroupsSelected=\{allGroupsSelected\}/);
-  assert.match(page, /onToggleAllGroups=\{\(\) => \{[\s\S]*setManuallyTouchedGroupKeys\(\(prev\) => new Set\(\[\.\.\.prev, \.\.\.allGroupKeys\]\)\)/);
+  assert.match(page, /onToggleAllGroups=\{toggleAllGroups\}/);
+  assert.match(page, /const toggleAllGroups = useCallback\(\(\) => \{[\s\S]*setManuallyTouchedGroupKeys\(nextManuallyTouchedGroupKeys\)/);
   assert.match(page, /\['选中档案', selectedArchiveCount\]/);
   assert.match(page, /\['选中分组', selectedGroupCount\]/);
   assert.match(page, /function StatsPanel\([\s\S]*智能选择[\s\S]*>\s*执行\s*</);
@@ -2453,4 +2553,46 @@ test('empty archive search is a no-op', () => {
   const home = read('src/pages/Home.jsx');
   const handler = home.match(/const handleSearch = \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   assert.match(handler, /if \(!hasArchiveSearchQuery\(filter\.query\)\) return;/);
+});
+
+test('random roaming filter reads hydrated history through a ref', () => {
+  const home = read('src/pages/Home.jsx');
+  assert.match(home, /filterRandomArchives\(Array\.isArray\(res\?\.data\) \? res\.data : \[\], historyRef\.current, randomHideRead\)/);
+});
+
+test('webtoon scroll restore re-runs once the page manifest lands', () => {
+  const reader = read('src/pages/Reader.jsx');
+  assert.match(reader, /const webtoonPagesReady = pages\.length > 0;/);
+  assert.match(reader, /if \(!webtoonActive \|\| !webtoonPagesReady\) return undefined;/);
+  assert.match(reader, /\}, \[handleWebtoonScroll, viewMode, webtoonActive, webtoonPagesReady\]\)/);
+});
+
+test('archive thumbnails never cache 202 minion job bodies', () => {
+  const card = read('src/components/ArchiveCard.jsx');
+  assert.match(card, /if \(res\.status === 202\) return null;/);
+});
+
+test('dedupe heals poisoned thumbnail cache entries instead of skipping archives', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  assert.match(page, /await deleteImageKeys\(\[`thumb:\$\{id\}`\]\)/);
+  assert.match(page, /\/json\/i\.test\(blob\.type/);
+});
+
+test('legacy dedupe saved results warn about missing detection sources', () => {
+  const page = read('src/pages/DeduplicatePage.jsx');
+  assert.match(page, /Number\(payload\.version\) < 3/);
+});
+
+test('watchlist capacity is enforced by the worker and surfaced as a toast', () => {
+  const lib = read('src/lib/watchlist.js');
+  const home = read('src/pages/Home.jsx');
+  const upload = read('src/pages/UploadPage.jsx');
+  // No independent frontend cap: the worker's WATCHLIST_LIMIT_REACHED rejection
+  // propagates, the optimistic local write is rolled back, and callers toast.
+  assert.doesNotMatch(lib, /WATCHLIST_MAX_ITEMS/);
+  assert.match(lib, /WATCHLIST_LIMIT_REACHED[\s\S]*writeWatchlistCache\(stored\);[\s\S]*throw error;/);
+  assert.match(home, /待看档案已达上限/);
+  assert.match(upload, /待看档案已达上限/);
+  assert.doesNotMatch(home, /待看档案已满/);
+  assert.doesNotMatch(upload, /待看档案已满/);
 });

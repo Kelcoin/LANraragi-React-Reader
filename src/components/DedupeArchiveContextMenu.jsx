@@ -95,7 +95,7 @@ export default function DedupeArchiveContextMenu({ menu, onClose, onOpenNewTab, 
           collisionPadding={8}
         >
           <Menu.Popup className="archive-context-menu dedupe-archive-context-menu dropdown-animate" finalFocus={false}>
-            <MenuButton onClick={run(onOpenNewTab)}>打开阅读页</MenuButton>
+            <MenuButton onClick={run(onOpenNewTab)}>打开无痕阅读页</MenuButton>
             <MenuButton onClick={run(onViewThumbnails)}>查看缩略图</MenuButton>
             <MenuButton disabled={favoriteBusy} closeOnClick={false} onClick={toggleFavorite}>
               {favoriteBusy

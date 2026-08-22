@@ -9,6 +9,7 @@ import PwaStatus from './components/PwaStatus';
 import SecretInput from './components/SecretInput';
 import AppVersion from './components/AppVersion';
 import ConfigTransferDialog from './components/ConfigTransferDialog';
+import BackToTop from './components/BackToTop';
 import { useToast } from './components/Toast';
 import { cacheServerInfo } from './lib/serverInfoCache';
 import { flushHistorySync } from './lib/history';
@@ -82,12 +83,36 @@ function HomeRouteFallback() {
 function MetadataRouteFallback() {
   return (
     <main className="route-fallback-shell metadata-route-fallback" role="status" aria-label="正在加载元数据">
-      <section className="route-fallback-panel metadata-route-fallback-panel">
+      <header className="metadata-route-fallback-header">
         <div className="route-fallback-heading shimmer-strip" />
-        <div className="metadata-route-fallback-field shimmer-strip" />
-        <div className="metadata-route-fallback-area shimmer-strip" />
-        <div className="metadata-route-fallback-tags">
-          {Array.from({ length: 10 }, (_, index) => <span className="metadata-route-fallback-tag shimmer-strip" key={`metadata-route-tag-${index}`} />)}
+      </header>
+      <section className="route-fallback-panel metadata-route-fallback-panel">
+        <div className="metadata-route-fallback-fields">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div className="metadata-route-fallback-field-group" key={`metadata-route-field-${index}`}>
+              <span className="metadata-route-fallback-label shimmer-strip" />
+              <span className="metadata-route-fallback-field shimmer-strip" />
+            </div>
+          ))}
+          <div className="metadata-route-fallback-field-group metadata-route-fallback-summary">
+            <span className="metadata-route-fallback-label shimmer-strip" />
+            <span className="metadata-route-fallback-area shimmer-strip" />
+          </div>
+          <div className="metadata-route-fallback-field-group metadata-route-fallback-tags-group">
+            <span className="metadata-route-fallback-label shimmer-strip" />
+            <span className="metadata-route-fallback-field shimmer-strip" />
+            <div className="metadata-route-fallback-tags">
+              {Array.from({ length: 8 }, (_, index) => <span className="metadata-route-fallback-tag shimmer-strip" key={`metadata-route-tag-${index}`} />)}
+            </div>
+          </div>
+        </div>
+        <div className="metadata-route-fallback-plugin">
+          <span className="metadata-route-fallback-plugin-select shimmer-strip" />
+          <span className="metadata-route-fallback-plugin-input shimmer-strip" />
+          <span className="metadata-route-fallback-plugin-button shimmer-strip" />
+        </div>
+        <div className="metadata-route-fallback-actions">
+          {Array.from({ length: 4 }, (_, index) => <span className="metadata-route-fallback-action shimmer-strip" key={`metadata-route-action-${index}`} />)}
         </div>
       </section>
     </main>
@@ -116,7 +141,11 @@ function DedupeRouteFallback() {
       <header className="workbench-header dedupe-page-header dedupe-route-fallback-header">
         <div className="route-fallback-heading shimmer-strip" />
         <div className="dedupe-route-fallback-header-actions">
-          {Array.from({ length: 4 }, (_, index) => <span className="dedupe-route-fallback-header-action shimmer-strip" key={`dedupe-fallback-action-${index}`} />)}
+          <span className="dedupe-route-fallback-header-action shimmer-strip" />
+          <span className="dedupe-route-fallback-header-action dedupe-route-fallback-help shimmer-strip" />
+          <span className="dedupe-route-fallback-header-action shimmer-strip" />
+          <span className="dedupe-route-fallback-header-action shimmer-strip" />
+          <span className="dedupe-route-fallback-header-action shimmer-strip" />
         </div>
       </header>
       <section className="surface workbench-section dedupe-scope-section dedupe-route-fallback-scope">
@@ -146,10 +175,41 @@ function DedupeRouteFallback() {
 function UploadRouteFallback() {
   return (
     <main className="route-fallback-shell upload-route-fallback" role="status" aria-label="正在加载上传页">
+      <header className="upload-route-fallback-header">
+        <div className="upload-route-fallback-title">
+          <span className="upload-route-fallback-title-icon shimmer-strip" />
+          <div>
+            <div className="upload-route-fallback-title-heading shimmer-strip" />
+            <div className="upload-route-fallback-title-detail shimmer-strip" />
+          </div>
+        </div>
+        <div className="upload-route-fallback-actions">
+          <span className="upload-route-fallback-action shimmer-strip" />
+        </div>
+      </header>
+      <div className="upload-route-fallback-tabs">
+        <span className="upload-route-fallback-tab shimmer-strip" />
+        <span className="upload-route-fallback-tab shimmer-strip" />
+      </div>
       <section className="route-fallback-panel upload-route-fallback-panel">
-        <div className="route-fallback-heading shimmer-strip" />
+        <div className="upload-route-fallback-section-heading">
+          <span className="upload-route-fallback-section-icon shimmer-strip" />
+          <div>
+            <div className="upload-route-fallback-section-title shimmer-strip" />
+            <div className="upload-route-fallback-section-detail shimmer-strip" />
+          </div>
+        </div>
         <div className="upload-route-fallback-dropzone shimmer-strip" />
-        <div className="upload-route-fallback-field shimmer-strip" />
+      </section>
+      <section className="route-fallback-panel upload-route-fallback-results">
+        <div className="upload-route-fallback-results-heading">
+          <span className="upload-route-fallback-results-title shimmer-strip" />
+          <div className="upload-route-fallback-results-actions">
+            <span className="upload-route-fallback-results-action shimmer-strip" />
+            <span className="upload-route-fallback-results-action shimmer-strip" />
+          </div>
+        </div>
+        <span className="upload-route-fallback-progress shimmer-strip" />
       </section>
     </main>
   );
@@ -436,6 +496,9 @@ export default function App() {
       <Suspense fallback={getRouteFallback(route)}>
         {routeContent}
       </Suspense>
+      {/* Reader owns the whole viewport (webtoon scrolls the window); a global
+          floating button there would sit on top of the manga. */}
+      <BackToTop enabled={route.kind !== 'reader'} />
       <PwaStatus />
     </>
   );

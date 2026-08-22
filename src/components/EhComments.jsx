@@ -214,6 +214,8 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
   const [needsCookie, setNeedsCookie] = useState(false);
   const [shouldAutoLoad, setShouldAutoLoad] = useState(false);
   const sectionRef = useRef(null);
+  const commentsBodyRef = useRef(null);
+  const [commentsBodyHeight, setCommentsBodyHeight] = useState(null);
   const hasAutoLoadedRef = useRef(false);
   const requestSeqRef = useRef(0);
   const requestAbortRef = useRef(null);
@@ -244,6 +246,7 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
     setNeedsCookie(false);
     setApiData(EMPTY_API_DATA);
     setShouldAutoLoad(false);
+    setCommentsBodyHeight(null);
     hasAutoLoadedRef.current = false;
 
     if (!sourceUrl || !ehEnabled) return undefined;
@@ -264,6 +267,16 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
       requestAbortRef.current?.abort();
     };
   }, [cookie, ehEnabled, ehToken, ehWorker, sourceUrl]);
+
+  useEffect(() => {
+    const node = commentsBodyRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const updateHeight = () => setCommentsBodyHeight(Math.ceil(node.getBoundingClientRect().height));
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [sourceUrl]);
 
   const fetchComments = useCallback(async (forceRefresh) => {
     if (!sourceUrl) return;
@@ -552,11 +565,13 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         )}
       </div>
 
-      {!loaded && !loading && !error && (
-        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)' }}>
-          点击「重新加载」获取 E-Hentai 评论
-        </div>
-      )}
+      <div className="eh-comments-content-shell" style={{ height: commentsBodyHeight == null ? 'auto' : `${commentsBodyHeight}px` }}>
+        <div ref={commentsBodyRef}>
+          {!loaded && !loading && !error && (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)' }}>
+              点击「重新加载」获取 E-Hentai 评论
+            </div>
+          )}
 
       {loading && !loaded && (
         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-sub)', fontSize: 'var(--font-size-body)' }}>
@@ -582,8 +597,8 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
         </div>
       )}
 
-      {loaded && comments.length > 0 && (
-        <>
+          {loaded && comments.length > 0 && (
+            <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', fontSize: 'var(--font-size-sm)' }}>
             <span style={{ color: 'var(--text-sub)' }}>
               排序: {ehSortMethod === 'time' ? '时间' : '分数'} / {ehSortOrder === 'asc' ? '正序' : '倒序'}
@@ -715,8 +730,10 @@ export default function EhComments({ sourceUrl, ehEnabled, ehCookie, ehWorker, e
               </div>
             )}
           </div>
-        </>
-      )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -379,13 +379,15 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     return { ...DEFAULT_FILTER };
   });
   const snapshotFilterKey = `${filter.query}|${filter.sortBy}|${filter.order}|${filter.active}`;
-  const homeSnapshot = (() => {
+  // Memoized: cold-restore sessions re-ran the full snapshot JSON.parse on
+  // every render (every keystroke in the filter) without this.
+  const homeSnapshot = useMemo(() => {
     if (archiveCatalogDirty) return null;
     const snapshot = navSnapshot || (coldRestoreBoot ? loadHomeSnapshot() : null);
     if (!snapshot) return null;
     const cachedKey = `${snapshot.filter?.query || ''}|${snapshot.filter?.sortBy || DEFAULT_FILTER.sortBy}|${snapshot.filter?.order || DEFAULT_FILTER.order}|${!!snapshot.filter?.active}`;
     return cachedKey === snapshotFilterKey ? snapshot : null;
-  })();
+  }, [archiveCatalogDirty, navSnapshot, coldRestoreBoot, snapshotFilterKey]);
   const [history, setHistory] = useState([]);
   const [historyEntranceIds, setHistoryEntranceIds] = useState(() => new Set());
   const [historyExitIds, setHistoryExitIds] = useState(() => new Set());
@@ -552,7 +554,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
   });
   const [randomsRefreshing, setRandomsRefreshing] = useState(false);
   const [watchlistOverflow, setWatchlistOverflow] = useState(false);
-  const [showBackToTop, setShowBackToTop] = useState(false);
   const coldRestoreRef = useRef(coldRestoreBoot);
   const navigationRestoreRef = useRef(!!navSnapshot && !!homeSnapshot);
   const verticalScrollRestoredRef = useRef(false);
@@ -584,19 +585,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     const check = () => setIsNarrow(window.innerWidth <= HOME_NARROW_MAX_WIDTH);
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
-  }, []);
-
-  useEffect(() => {
-    const handleHomeScroll = () => {
-      setShowBackToTop(window.scrollY > 320);
-    };
-    handleHomeScroll();
-    window.addEventListener('scroll', handleHomeScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleHomeScroll);
-  }, []);
-
-  const handleBackToTop = useCallback(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
   }, []);
 
   const suggestActiveRef = useRef(false);
@@ -1714,7 +1702,10 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
             (signal) => lrrApi.getRandom(requestCount, { signal }),
             RANDOMS_REQUEST_TIMEOUT_MS,
           );
-          return filterRandomArchives(Array.isArray(res?.data) ? res.data : [], history, randomHideRead);
+          // historyRef, not history: the mount-time randoms effect captures this
+          // callback while history is still [], letting read archives through
+          // whenever the filter runs before hydration lands.
+          return filterRandomArchives(Array.isArray(res?.data) ? res.data : [], historyRef.current, randomHideRead);
         } catch (error) {
           lastError = error;
           return null;
@@ -2307,11 +2298,18 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
     }
   }, [showToast]);
 
-  const addWatchlistArchive = useCallback((archive) => {
+  const addWatchlistArchive = useCallback(async (archive) => {
     if (!archive?.arcid && !archive?.id) return;
-    addWatchlistItem(archive).catch(() => {});
+    try {
+      await addWatchlistItem(archive);
+    } catch (error) {
+      if (error?.code === 'WATCHLIST_LIMIT_REACHED') {
+        showToast(`待看档案已达上限${error.maxWatchlist ? `（${error.maxWatchlist} 个）` : ''}，请先移除一些待看档案`, 'error');
+      }
+      return;
+    }
     if (!watchlistExitTimerRef.current) setWatchlist(getWatchlist());
-  }, []);
+  }, [showToast]);
 
   const removeWatchlistArchive = useCallback(async (archive) => {
     const archiveId = archive?.id || archive?.arcid;
@@ -2812,15 +2810,6 @@ export default function Home({ onSelectArchive, onLogout, themeMode = 'auto', on
         </div>
       </section>
     </div>
-    <button
-      type="button"
-      aria-label="返回顶部"
-      title="返回顶部"
-      className={`btn btn-secondary btn-icon home-back-to-top${showBackToTop ? ' is-visible' : ''}`}
-      onClick={handleBackToTop}
-    >
-      ↑
-    </button>
     {showConfig && createPortal(
       <div className="settings-overlay" role="presentation" onClick={() => setShowConfig(false)}>
         <form ref={settingsDialogRef} className="surface settings-panel settings-panel-form settings-panel-height-animate" style={{ height: settingsPanelHeight == null ? 'auto' : `${settingsPanelHeight}px` }} role="dialog" aria-modal="true" aria-labelledby="home-settings-title" tabIndex={-1} onClick={e => e.stopPropagation()} onSubmit={(e) => {

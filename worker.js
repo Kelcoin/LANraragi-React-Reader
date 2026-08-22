@@ -14,7 +14,7 @@ const DEDUPE_KEY_PREFIX = 'dedupe:';
 const SYNC_SCHEMA_VERSION = 3;
 const PROJECT_NAME = 'Readoshi';
 const PROJECT_URL = 'https://github.com/Kelcoin/Readoshi';
-const WORKER_VERSION = '1.1.3';
+const WORKER_VERSION = '1.2.0';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -46,6 +46,7 @@ let tokenLoadPromise = null;      // Promise that resolves once KV tokens are lo
 let cachedTokens = new Set();     // Set<string>; empty set means no token can pass
 let authEnabled = true;           // Worker auth is mandatory for sync and EH proxy routes
 let requestCount = 0;             // in-memory counter, seeded from KV on first load
+let flushedRequestCount = 0;      // last value persisted back to stats:requests
 let statusSummaryCache = null;
 let statusSummaryLoadedAt = 0;
 let statusSummaryPromise = null;
@@ -157,8 +158,9 @@ async function loadTokens() {
       cachedTokens = new Set(tokens);
       // Seed in-memory counter from KV
       try {
-        const rawCount = await HISTORY_KV.get('stats:requests');
-        requestCount = rawCount ? parseInt(rawCount) || 0 : 0;
+      const rawCount = await HISTORY_KV.get('stats:requests');
+      requestCount = rawCount ? parseInt(rawCount) || 0 : 0;
+      flushedRequestCount = requestCount;
       } catch {}
       return true;
     } catch (e) {
@@ -189,9 +191,14 @@ async function ensureTokensLoaded() {
   await loadTokens();
 }
 
-// Increment request counter (in-memory; periodically flushed to KV)
+// Increment request counter; batched write-back keeps the KV value close so
+// an isolate restart no longer regresses the status-page stat.
 function incrementCounter() {
   requestCount += 1;
+  if (typeof HISTORY_KV !== 'undefined' && requestCount - flushedRequestCount >= 25) {
+    flushedRequestCount = requestCount;
+    HISTORY_KV.put('stats:requests', String(requestCount)).catch(() => {});
+  }
 }
 
 // ── Auth Guard ─────────────────────────────────────────────────
@@ -875,7 +882,7 @@ async function putHistory(request) {
   }
 
   const merged = new Map();
-  for (const h of existing.histories) {
+  for (const h of Array.isArray(existing.histories) ? existing.histories : []) {
     if (!h?.id) continue;
     const deletedAt = deletedMap.get(h.id) || 0;
     if ((h.time || 0) > deletedAt) merged.set(h.id, h);
@@ -972,7 +979,29 @@ async function deleteHistory(request) {
   }
 }
 
-function normalizeWatchlistItems(values) {
+const DEFAULT_MAX_WATCHLIST_ITEMS = 1000;
+let cachedMaxWatchlistItems = null;
+let maxWatchlistLoadedAt = 0;
+const MAX_WATCHLIST_CACHE_MS = 60 * 1000;
+
+async function getMaxWatchlistItems() {
+  const now = Date.now();
+  if (cachedMaxWatchlistItems != null && now - maxWatchlistLoadedAt < MAX_WATCHLIST_CACHE_MS) return cachedMaxWatchlistItems;
+  try {
+    const raw = await HISTORY_KV.get('max_watchlist');
+    const value = Number(raw);
+    // 100–10000 is the supported range; anything else falls back to the default.
+    cachedMaxWatchlistItems = Number.isFinite(value) && value >= 100 && value <= 10000
+      ? Math.floor(value)
+      : DEFAULT_MAX_WATCHLIST_ITEMS;
+  } catch {
+    cachedMaxWatchlistItems = DEFAULT_MAX_WATCHLIST_ITEMS;
+  }
+  maxWatchlistLoadedAt = now;
+  return cachedMaxWatchlistItems;
+}
+
+function normalizeWatchlistItems(values, maxItems = DEFAULT_MAX_WATCHLIST_ITEMS) {
   const merged = new Map();
   for (const item of Array.isArray(values) ? values : []) {
     const id = item?.id || item?.arcid;
@@ -983,17 +1012,17 @@ function normalizeWatchlistItems(values) {
   }
   return Array.from(merged.values())
     .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
-    .slice(0, 500);
+    .slice(0, maxItems);
 }
 
 async function readWatchlistState(key, request) {
   return readScopedKvJson(key, 'watchlist:' + getToken(request), { items: [], deleted: [], lastSync: 0 });
 }
 
-function compactWatchlistState(state, now = Date.now()) {
+function compactWatchlistState(state, now = Date.now(), maxItems = DEFAULT_MAX_WATCHLIST_ITEMS) {
   const deleted = normalizeDeletedItems(state?.deleted, DEFAULT_HISTORY_RETENTION_DAYS, now);
   const deletedMap = new Map(deleted.map((item) => [item.id, item.deletedAt]));
-  const items = normalizeWatchlistItems(state?.items)
+  const items = normalizeWatchlistItems(state?.items, maxItems)
     .filter((item) => (item.addedAt || 0) > (deletedMap.get(item.id) || 0));
   return { schemaVersion: SYNC_SCHEMA_VERSION, items, deleted, lastSync: Number(state?.lastSync) || 0 };
 }
@@ -1007,8 +1036,9 @@ async function getWatchlist(request) {
   if (!watchlistKey) return json({ error: 'Missing or invalid x-lrr-server-scope' }, 400);
   try {
     const state = await readWatchlistState(watchlistKey, request);
-    const compacted = compactWatchlistState(state);
-    return json(compacted);
+    const maxItems = await getMaxWatchlistItems();
+    const compacted = compactWatchlistState(state, Date.now(), maxItems);
+    return json({ ...compacted, maxWatchlist: maxItems });
   } catch (err) {
     return json({ error: 'KV read failed: ' + err.message }, 500);
   }
@@ -1030,17 +1060,26 @@ async function putWatchlist(request) {
   const watchlistKey = getSyncKey('watchlist', request);
   if (!watchlistKey) return json({ error: 'Missing or invalid x-lrr-server-scope' }, 400);
   try {
+    const maxItems = await getMaxWatchlistItems();
     return await withMutationLock(watchlistKey, async () => {
-      const existing = compactWatchlistState(await readWatchlistState(watchlistKey, request));
+      const existing = compactWatchlistState(await readWatchlistState(watchlistKey, request), Date.now(), maxItems);
       const deletedMap = new Map(existing.deleted.map((item) => [item.id, item.deletedAt]));
       const accepted = normalizeWatchlistItems(incoming)
         .filter((item) => (item.addedAt || 0) > (deletedMap.get(item.id) || 0));
+      // Reject instead of silently truncating: the client surfaces a "list is
+      // full" toast. Re-adding an existing id never grows the list and stays
+      // allowed at capacity.
+      const existingIds = new Set(existing.items.map((item) => item.id));
+      const newCount = accepted.filter((item) => !existingIds.has(item.id)).length;
+      if (existing.items.length + newCount > maxItems) {
+        return json({ error: 'WATCHLIST_LIMIT_REACHED', maxWatchlist: maxItems }, 409);
+      }
       for (const item of accepted) deletedMap.delete(item.id);
       const result = compactWatchlistState({
         items: [...existing.items, ...accepted],
         deleted: Array.from(deletedMap, ([id, deletedAt]) => ({ id, deletedAt })),
         lastSync: Date.now(),
-      });
+      }, Date.now(), maxItems);
       await HISTORY_KV.put(watchlistKey, JSON.stringify(result));
       return json({ ok: true, count: result.items.length });
     });
@@ -1066,8 +1105,9 @@ async function deleteWatchlist(request) {
   const watchlistKey = getSyncKey('watchlist', request);
   if (!watchlistKey) return json({ error: 'Missing or invalid x-lrr-server-scope' }, 400);
   try {
+    const maxItems = await getMaxWatchlistItems();
     return await withMutationLock(watchlistKey, async () => {
-      const existing = compactWatchlistState(await readWatchlistState(watchlistKey, request));
+      const existing = compactWatchlistState(await readWatchlistState(watchlistKey, request), Date.now(), maxItems);
       const now = Date.now();
       const deletedMap = new Map(existing.deleted.map((item) => [item.id, item.deletedAt]));
       ids.forEach((id) => deletedMap.set(id, now));
@@ -1075,7 +1115,7 @@ async function deleteWatchlist(request) {
         items: existing.items.filter((item) => !removeSet.has(item.id)),
         deleted: Array.from(deletedMap, ([id, deletedAt]) => ({ id, deletedAt })),
         lastSync: now,
-      }, now);
+      }, now, maxItems);
       await HISTORY_KV.put(watchlistKey, JSON.stringify(result));
       return json({ ok: true, removed: ids.length, count: result.items.length });
     });
@@ -1185,17 +1225,21 @@ async function exportKV(request) {
   };
 
   try {
+    // Section values are keyed by neutral names, never the raw KV key: the
+    // KV key embeds the sync token, and an export file is meant to be shared
+    // as a backup/migration artifact. importKV accepts either shape via its
+    // firstObjectValue fallback.
     if (includeHistory) {
       const raw = await HISTORY_KV.get(historyKey);
-      data.sections.history = { [historyKey]: raw || '' };
+      data.sections.history = { history: raw || '' };
     }
     if (includeWatchlist) {
       const raw = await HISTORY_KV.get(watchlistKey);
-      data.sections.watchlist = { [watchlistKey]: raw || '' };
+      data.sections.watchlist = { watchlist: raw || '' };
     }
     if (includeDedupe) {
       const raw = await HISTORY_KV.get(dedupeKey);
-      data.sections.dedupe = { [dedupeKey]: raw || '[]' };
+      data.sections.dedupe = { dedupe: raw || '[]' };
     }
     return json({ ok: true, data });
   } catch (err) {
@@ -1220,13 +1264,26 @@ async function importKV(request) {
   if (selected.dedupe !== false && input.dedupe && !dedupeKey) return json({ error: 'Missing or invalid x-lrr-server-scope' }, 400);
 
   let imported = 0;
+  // Never store an unvalidated section verbatim: a malformed import (e.g. a
+  // hand-edited export with {"histories": 42}) would otherwise crash every
+  // later mutation on that key with an opaque 500.
+  const parseSectionValue = (value) => {
+    if (value && typeof value === 'object') return value;
+    try { return JSON.parse(String(value)); } catch { return null; }
+  };
+  const validateSection = (parsed, arrayField) => parsed !== null && typeof parsed === 'object'
+    && (parsed[arrayField] === undefined || Array.isArray(parsed[arrayField]));
   try {
     if (selected.history !== false && input.history && typeof input.history === 'object') {
       const historyKey = getSyncKey('history', request);
       if (!historyKey) return json({ error: 'Missing or invalid x-lrr-server-scope' }, 400);
       const value = input.history[historyKey] ?? firstObjectValue(input.history);
       if (value !== undefined && value !== null && value !== '') {
-        await HISTORY_KV.put(historyKey, typeof value === 'string' ? value : JSON.stringify(value));
+        const parsed = parseSectionValue(value);
+        if (!validateSection(parsed, 'histories')) return json({ error: 'Invalid history section' }, 400);
+        await withMutationLock(historyKey, async () => {
+          await HISTORY_KV.put(historyKey, JSON.stringify(parsed));
+        });
         imported += 1;
       }
     }
@@ -1235,7 +1292,11 @@ async function importKV(request) {
       if (!watchlistKey) return json({ error: 'Missing or invalid x-lrr-server-scope' }, 400);
       const value = input.watchlist[watchlistKey] ?? firstObjectValue(input.watchlist);
       if (value !== undefined && value !== null && value !== '') {
-        await HISTORY_KV.put(watchlistKey, typeof value === 'string' ? value : JSON.stringify(value));
+        const parsed = parseSectionValue(value);
+        if (!validateSection(parsed, 'items')) return json({ error: 'Invalid watchlist section' }, 400);
+        await withMutationLock(watchlistKey, async () => {
+          await HISTORY_KV.put(watchlistKey, JSON.stringify(parsed));
+        });
         imported += 1;
       }
     }
@@ -1314,9 +1375,17 @@ async function statusPage(request) {
   if (reloadParam === '1') {
     // Forcing a full KV rescan must be authenticated; the public status page
     // must not be able to trigger unbounded KV reads from the outside.
-    const authErr = await requireAuth(request);
-    if (authErr) return authErr;
+    // Reload tokens BEFORE validating so an operator holding only a newly
+    // rotated token can trigger the reload that activates it; a token that
+    // was valid before the reload also stays accepted for this one action.
+    const previousTokens = cachedTokens ? new Set(cachedTokens) : new Set();
     await reloadTokens();
+    const authErr = await requireAuth(request);
+    if (authErr) {
+      const token = request.headers.get('x-sync-token') || '';
+      if (!previousTokens.has(token)) return authErr;
+      recordAuthSuccess(getClientIP(request));
+    }
     statusSummaryCache = null;
     const nextUrl = new URL(request.url);
     nextUrl.searchParams.delete('reload');
