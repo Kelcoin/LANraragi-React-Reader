@@ -102,6 +102,28 @@ test('smart selection signals normalize the three visible priority tags', () => 
   });
 });
 
+test('cover matching tolerates a small spatially aligned watermark', () => {
+  const makeSignature = (patch = false, inverted = false) => {
+    const pixels = new Uint8ClampedArray(8 * 8 * 4);
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        const index = (y * 8 + x) * 4;
+        let value = (x * 23 + y * 17) % 256;
+        if (inverted) value = 255 - value;
+        if (patch && x >= 6 && y >= 4) value = 255 - value;
+        pixels[index] = value;
+        pixels[index + 1] = value;
+        pixels[index + 2] = value;
+        pixels[index + 3] = 255;
+      }
+    }
+    return { width: 8, height: 8, ratio: 1, pixels };
+  };
+
+  assert.equal(deduplicate.areSignaturesDuplicate(makeSignature(), makeSignature(true)), true);
+  assert.equal(deduplicate.areSignaturesDuplicate(makeSignature(), makeSignature(false, true)), false);
+});
+
 test('duplicate pairs remain pairs while connected chains are displayed together', () => {
   assert.deepEqual(groupDuplicatePairsByChain([
     ['D', 'E'],

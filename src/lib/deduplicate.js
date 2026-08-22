@@ -369,28 +369,42 @@ export async function createCoverSignature(blob, width = 8) {
   };
 }
 
-export function areSignaturesDuplicate(left, right, {
-  pixelThreshold = 30,
-  percentDifference = 0.2,
-  aspectRatioLimit = 0.1,
-} = {}) {
-  if (!left || !right) return false;
-  if (Math.abs(left.ratio - right.ratio) > aspectRatioLimit) return false;
-
+function getColorDifference(left, right) {
   const width = Math.min(left.width, right.width);
   const height = Math.min(left.height, right.height);
-  let differences = 0;
+  const differences = [];
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const li = (y * left.width + x) * 4;
       const ri = (y * right.width + x) * 4;
-      const diff = Math.abs(left.pixels[li] - right.pixels[ri])
+      differences.push(
+        Math.abs(left.pixels[li] - right.pixels[ri])
         + Math.abs(left.pixels[li + 1] - right.pixels[ri + 1])
-        + Math.abs(left.pixels[li + 2] - right.pixels[ri + 2]);
-      if (diff > pixelThreshold) differences += 1;
+        + Math.abs(left.pixels[li + 2] - right.pixels[ri + 2]),
+      );
     }
   }
-  return differences / (width * height) < percentDifference;
+  return differences;
+}
+
+export function areSignaturesDuplicate(left, right, {
+  pixelThreshold = 30,
+  percentDifference = 0.2,
+  aspectRatioLimit = 0.1,
+  outlierPercent = 0.15,
+} = {}) {
+  if (!left || !right) return false;
+  if (Math.abs(left.ratio - right.ratio) > aspectRatioLimit) return false;
+
+  const differences = getColorDifference(left, right);
+  const changedRatio = differences.filter((diff) => diff > pixelThreshold).length / differences.length;
+  if (changedRatio < percentDifference) return true;
+
+  // Keep spatial correspondence; only discard a small watermark/logo region.
+  if (changedRatio > 0.55 || outlierPercent <= 0) return false;
+  differences.sort((a, b) => a - b);
+  const retained = differences.slice(0, Math.max(1, Math.floor(differences.length * (1 - outlierPercent))));
+  return retained.filter((diff) => diff > pixelThreshold).length / retained.length < percentDifference;
 }
 
 export function findDuplicatePairs(signatures, ignoredPairKeys = new Set(), options = {}) {
