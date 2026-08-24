@@ -14,7 +14,7 @@ const DEDUPE_KEY_PREFIX = 'dedupe:';
 const SYNC_SCHEMA_VERSION = 3;
 const PROJECT_NAME = 'Readoshi';
 const PROJECT_URL = 'https://github.com/Kelcoin/Readoshi';
-const WORKER_VERSION = '1.2.0';
+const WORKER_VERSION = '1.2.1';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -42,7 +42,7 @@ function text(data, status = 200, extraHeaders = {}) {
 }
 
 // ── Memory-Cached State (loaded once at first request) ──────────
-let tokenLoadPromise = null;      // Promise that resolves once KV tokens are loaded
+let tokenLoadPromise = null;      // Promise that resolves once runtime tokens are loaded
 let cachedTokens = new Set();     // Set<string>; empty set means no token can pass
 let authEnabled = true;           // Worker auth is mandatory for sync and EH proxy routes
 let requestCount = 0;             // in-memory counter, seeded from KV on first load
@@ -127,7 +127,7 @@ function recordAuthSuccess(ip) {
 
 // ── Token Auth ─────────────────────────────────────────────────
 function parseTokens(raw) {
-  const trimmed = (raw || '').trim();
+  const trimmed = (typeof raw === 'string' ? raw : String(raw ?? '')).trim();
   if (!trimmed) return [];
 
   try {
@@ -140,49 +140,51 @@ function parseTokens(raw) {
   return trimmed.split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
 }
 
-// Load tokens from KV exactly once.  All concurrent callers share
-// the same Promise so the KV is only read a single time.
-// Returns true if tokens were successfully loaded from KV.
+function getRuntimeVariable(name) {
+  try {
+    return globalThis[name];
+  } catch {
+    return undefined;
+  }
+}
+
+// Load tokens from Runtime Variables and Secrets exactly once. All concurrent
+// callers share the same Promise so the binding is only read a single time.
+// Returns true when the runtime configuration was read successfully.
 async function loadTokens() {
   if (tokenLoadPromise) return tokenLoadPromise;
   tokenLoadPromise = (async () => {
-    if (typeof HISTORY_KV === 'undefined') {
-      authEnabled = true;
-      cachedTokens = new Set();
-      return false;
-    }
     try {
-      const raw = await HISTORY_KV.get('tokens');
-      const tokens = parseTokens(raw);
+      const tokens = parseTokens(getRuntimeVariable('TOKENS'));
       authEnabled = true;
       cachedTokens = new Set(tokens);
-      // Seed in-memory counter from KV
-      try {
-      const rawCount = await HISTORY_KV.get('stats:requests');
-      requestCount = rawCount ? parseInt(rawCount) || 0 : 0;
-      flushedRequestCount = requestCount;
-      } catch {}
+      // Statistics remain persistent user-agnostic data in KV.
+      if (typeof HISTORY_KV !== 'undefined') {
+        try {
+          const rawCount = await HISTORY_KV.get('stats:requests');
+          requestCount = rawCount ? parseInt(rawCount) || 0 : 0;
+          flushedRequestCount = requestCount;
+        } catch {}
+      }
       return true;
-    } catch (e) {
-      // KV read error → fail CLOSED (reject all tokens)
-      // This prevents the scenario where KV is temporarily unavailable
-      // and unauthorized requests slip through.
+    } catch {
+      // Runtime binding errors fail CLOSED: no token can match.
       authEnabled = true;
-      cachedTokens = new Set(); // empty set → NO token matches
+      cachedTokens = new Set();
       return false;
     }
   })();
   return tokenLoadPromise;
 }
 
-// Force reload tokens from KV (called from status page admin action)
+// Force reload tokens from Runtime Variables/Secrets (called from status page admin action)
 async function reloadTokens() {
   tokenLoadPromise = null;
   return loadTokens();
 }
 
 function isValidToken(token) {
-  // Empty or missing KV tokens fail closed: no token can match.
+  // Empty or missing runtime tokens fail closed: no token can match.
   if (!token) return false;
   return cachedTokens.has(token);
 }
@@ -766,7 +768,7 @@ async function getHistoryRetentionDays() {
   const now = Date.now();
   if (cachedHistoryRetentionDays != null && now - historyRetentionLoadedAt < HISTORY_RETENTION_CACHE_MS) return cachedHistoryRetentionDays;
   try {
-    const raw = await HISTORY_KV.get('history_retention_days');
+    const raw = getRuntimeVariable('HISTORY_RETENTION_DAYS');
     const days = Number(raw);
     cachedHistoryRetentionDays = Number.isFinite(days) && days > 0 ? days : DEFAULT_HISTORY_RETENTION_DAYS;
   } catch {
@@ -988,7 +990,7 @@ async function getMaxWatchlistItems() {
   const now = Date.now();
   if (cachedMaxWatchlistItems != null && now - maxWatchlistLoadedAt < MAX_WATCHLIST_CACHE_MS) return cachedMaxWatchlistItems;
   try {
-    const raw = await HISTORY_KV.get('max_watchlist');
+    const raw = getRuntimeVariable('MAX_WATCHLIST_ITEMS');
     const value = Number(raw);
     // 100–10000 is the supported range; anything else falls back to the default.
     cachedMaxWatchlistItems = Number.isFinite(value) && value >= 100 && value <= 10000
@@ -1393,7 +1395,7 @@ async function statusPage(request) {
   }
 
   await ensureTokensLoaded();
-  const kvOk = tokenLoadPromise ? (await tokenLoadPromise) : false;
+  const runtimeConfigOk = tokenLoadPromise ? (await tokenLoadPromise) : false;
   const reqCount = requestCount;
   const { totalArchives, userCount, watchlistCount, dedupeCount } = await getStatusSummary();
   const hasKV = typeof HISTORY_KV !== 'undefined';
@@ -1402,7 +1404,7 @@ async function statusPage(request) {
   const tokenStatusHtml = authEnabled
     ? (tokenCount > 0
       ? `<div class="stat"><span class="label">Token 认证</span><span class="ok">已启用 (${tokenCount} 个)</span></div>`
-      : `<div class="stat"><span class="label">⚠ Token 认证</span><span class="err">已启用但 KV tokens 为空，所有受保护接口都会拒绝</span></div>`)
+      : `<div class="stat"><span class="label">⚠ Token 认证</span><span class="err">已启用但 Runtime TOKENS 为空，所有受保护接口都会拒绝</span></div>`)
     : `<div class="stat"><span class="label">Token 认证</span><span class="err">强制启用</span></div>`;
   const workerVersion = `v${WORKER_VERSION}`;
 
@@ -1478,7 +1480,7 @@ async function statusPage(request) {
   <div class="stat"><span class="label">阅读记录数</span><span class="value">${totalArchives}</span></div>
   <div class="stat"><span class="label">待看记录数</span><span class="value">${watchlistCount}</span></div>
   <div class="stat"><span class="label">KV 存储</span><span class="${hasKV ? 'ok' : 'warn'}">${hasKV ? '已绑定' : '未绑定'}</span></div>
-  <div class="stat"><span class="label">KV 读取</span><span class="${kvOk ? 'ok' : 'err'}">${kvOk ? '正常' : '失败'}</span></div>
+  <div class="stat"><span class="label">Runtime 配置</span><span class="${runtimeConfigOk ? 'ok' : 'err'}">${runtimeConfigOk ? '已读取' : '读取失败'}</span></div>
   <div class="stat"><span class="label">非重复档案记录</span><span class="value">${dedupeCount}</span></div>
 
   <div class="divider"></div>

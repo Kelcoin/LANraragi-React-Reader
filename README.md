@@ -151,7 +151,7 @@ services:
 根目录的 `worker.js` 可部署为 Cloudflare Worker，负责多设备同步、E-Hentai 代理和同步数据管理。
 
 1. 创建 KV 命名空间，并绑定为 `HISTORY_KV`。
-2. 在 KV 中创建键 `tokens`，值为允许访问的 Token JSON 数组：
+2. 在 Worker 的 **Settings → Variables and Secrets** 中创建 `TOKENS`（推荐使用 Secret），值为允许访问的 Token JSON 数组：
 
    ```json
    ["your-sync-token"]
@@ -164,14 +164,15 @@ services:
 
 直接打开 Worker 根地址可查看状态并导入或导出阅读历史、待看列表和非重复标记。
 
-### Worker KV 可选配置
+### Worker Runtime 配置
 
-除 `tokens` 外，Worker 还会读取以下可选 KV 键（均有 60 秒内存缓存，改动后最多一分钟生效）：
+以下配置从 Worker 的 **Runtime Variables and Secrets** 读取，不会写入或读取 KV。修改后重新部署 Worker，或访问根地址追加 `?reload=1` 触发配置缓存刷新：
 
-| KV 键 | 取值范围 | 默认值 | 说明 |
+| Runtime 变量 | 取值范围 | 默认值 | 说明 |
 |-------|----------|--------|------|
-| `history_retention_days` | 正整数 | `90` | 阅读历史在 Worker 中的保留天数，超期条目会被清理 |
-| `max_watchlist` | `100` – `10000` | `1000` | 待看档案在 Worker 中的最大同步条数；达到上限后再添加会返回 `WATCHLIST_LIMIT_REACHED`（HTTP 409），前端以 toast 提示需先移除。键不存在或值不合法时使用默认值。重加已有条目不算新增，不受影响。 |
+| `TOKENS` | JSON 数组，或空格/逗号分隔的字符串 | 无 | Worker 访问 Token。未配置时认证保持启用，但所有受保护请求都会拒绝。 |
+| `HISTORY_RETENTION_DAYS` | 正整数 | `90` | 阅读历史在 Worker 中的保留天数，超期条目会被清理。 |
+| `MAX_WATCHLIST_ITEMS` | `100` – `10000` | `1000` | 待看档案在 Worker 中的最大同步条数；达到上限后再添加会返回 `WATCHLIST_LIMIT_REACHED`（HTTP 409）。值不存在或不合法时使用默认值。重加已有条目不算新增。 |
 
 ### E-Hentai
 

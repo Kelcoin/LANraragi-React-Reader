@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const workerSource = fs.readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
 
 function createWorker(entries = [], globals = {}) {
-  const values = new Map([['tokens', JSON.stringify(['test-token'])], ...entries]);
+  const values = new Map(entries);
   let listener = null;
   const context = {
     URL,
@@ -24,6 +24,7 @@ function createWorker(entries = [], globals = {}) {
     setTimeout,
     clearTimeout,
     APP_VERSION: 'test',
+    TOKENS: JSON.stringify(['test-token']),
     HISTORY_KV: {
       async get(key) { return values.get(key) ?? null; },
       async put(key, value) { values.set(key, String(value)); },
@@ -301,47 +302,35 @@ test('Worker watchlist rejects additions beyond the configured cap', async () =>
   assert.ok(!state.items.some((item) => item.id === 'overflow'));
 });
 
-test('Worker status reload activates a newly rotated token', async () => {
-  let currentTokens = JSON.stringify(['old-token']);
+test('Worker ignores KV token values and uses the Runtime TOKENS binding', async () => {
   const dispatch = createWorker([], {
     HISTORY_KV: {
-      async get(key) { return key === 'tokens' ? currentTokens : null; },
+      async get(key) { return key === 'tokens' ? JSON.stringify(['kv-token']) : null; },
       async put() {},
       async delete() {},
       async list() { return { keys: [], list_complete: true }; },
     },
+    TOKENS: JSON.stringify(['runtime-token']),
   });
-  // Prime the isolate's token cache with the pre-rotation set.
-  const before = await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
+  const before = await dispatch('/history', { token: 'runtime-token', scope: SCOPE_A });
   assert.equal(before.status, 200);
-  currentTokens = JSON.stringify(['new-token']);
-  // The new token must be able to trigger the reload that activates it, even
-  // though every other route still validates against the stale cached set.
-  const withNew = await dispatch('/?reload=1', { token: 'new-token' });
-  assert.equal(withNew.status, 302);
-  const oldAfter = await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
-  assert.equal(oldAfter.status, 401);
-  const newAfter = await dispatch('/history', { token: 'new-token', scope: SCOPE_A });
-  assert.equal(newAfter.status, 200);
+  const kvToken = await dispatch('/history', { token: 'kv-token', scope: SCOPE_A });
+  assert.equal(kvToken.status, 401);
 });
 
-test('Worker status reload keeps accepting the pre-rotation token once', async () => {
-  let currentTokens = JSON.stringify(['old-token']);
+test('Worker status reload refreshes the Runtime TOKENS cache', async () => {
   const dispatch = createWorker([], {
     HISTORY_KV: {
-      async get(key) { return key === 'tokens' ? currentTokens : null; },
+      async get() { return null; },
       async put() {},
       async delete() {},
       async list() { return { keys: [], list_complete: true }; },
     },
+    TOKENS: JSON.stringify(['runtime-token']),
   });
-  await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
-  currentTokens = JSON.stringify(['new-token']);
-  const withOld = await dispatch('/?reload=1', { token: 'old-token' });
-  assert.equal(withOld.status, 302);
-  // After that single reload the old token is gone for good.
-  const oldAfter = await dispatch('/history', { token: 'old-token', scope: SCOPE_A });
-  assert.equal(oldAfter.status, 401);
+  await dispatch('/history', { token: 'runtime-token', scope: SCOPE_A });
+  const reload = await dispatch('/?reload=1', { token: 'runtime-token' });
+  assert.equal(reload.status, 302);
 });
 
 test('Worker kv import rejects malformed history sections instead of poisoning the key', async () => {
@@ -366,8 +355,8 @@ test('Worker kv export omits the sync token from section keys', async () => {
   assert.ok(!JSON.stringify(payload).includes('test-token'));
 });
 
-test('Worker watchlist cap comes from the max_watchlist KV setting', async () => {
-  const dispatch = createWorker([['max_watchlist', '200']]);
+test('Worker watchlist cap comes from the MAX_WATCHLIST_ITEMS runtime setting', async () => {
+  const dispatch = createWorker([], { MAX_WATCHLIST_ITEMS: '200' });
   const fill = Array.from({ length: 200 }, (_, index) => ({ id: `w-${index}`, addedAt: index + 1 }));
   const put = await (await dispatch('/watchlist', { method: 'PUT', scope: SCOPE_A, body: { items: fill } })).json();
   assert.equal(put.count, 200);
