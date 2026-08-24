@@ -7,6 +7,10 @@ const client = fs.readFileSync(new URL('../src/lib/worker-kv.js', import.meta.ur
 
 test('Worker accepts sync tokens from headers only', () => {
   assert.doesNotMatch(worker, /searchParams\.get\(['"]token['"]\)/);
+  assert.match(worker, /getRuntimeVariable\(['"]TOKENS['"]\)/);
+  assert.doesNotMatch(worker, /HISTORY_KV\.get\(['"]tokens['"]\)/);
+  assert.match(worker, /getRuntimeVariable\(['"]HISTORY_RETENTION_DAYS['"]\)/);
+  assert.match(worker, /getRuntimeVariable\(['"]MAX_WATCHLIST_ITEMS['"]\)/);
 });
 
 test('EH proxy validates exact HTTPS hosts and every redirect', () => {
@@ -42,7 +46,7 @@ test('sync mutations serialize and retain timestamp tombstones', () => {
 test('Worker owns an independent SemVer and has no remote update checker', () => {
   const workerVersion = worker.match(/const WORKER_VERSION\s*=\s*['"]([^'"]+)['"]/);
   assert.match(workerVersion?.[1] || '', /^\d+\.\d+\.\d+$/);
-  assert.equal(workerVersion?.[1], '1.2.0');
+  assert.equal(workerVersion?.[1], '1.2.1');
   assert.match(worker, /const workerVersion = `v\$\{WORKER_VERSION\}`/);
   assert.doesNotMatch(worker, /APP_RELEASE|APP_VERSION|FALLBACK_APP_VERSION/);
   assert.doesNotMatch(worker, /WORKER_RELEASE|WORKER_UPDATE_BRANCH|checkWorkerUpdate|getWorkerSourceUrl|raw\.githubusercontent\.com\/Kelcoin\/Readoshi\/.+\/worker\.js/);
